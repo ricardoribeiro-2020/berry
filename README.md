@@ -1,2 +1,4 @@
 # berry
-Calculates Berry connections from DFT packages
+This project calculates Berry connections from DFT calculations.
+
+
