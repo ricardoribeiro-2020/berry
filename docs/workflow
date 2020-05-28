@@ -1,0 +1,46 @@
+** This is the workflow for the berry suite of programs **
+
+1) First an scf calculation has to be done with the dft software (we will use Quantum ESPRESSO for now)
+ - in the working directory, one needs to create a directory called 'dft' and copy to that directory the QE input file for an scf calculation and the pseudopotentials files.
+
+ - An input file for the berry run has to be created in the running directory with several parameters defined.
+	minimum parameters:
+		origin of k-points
+		number of k-points in each direction
+		step of the k-points
+		number of bands
+
+ - with this data, the program should prepare and run an nscf calculation, departing from the scf calculation done previously.
+
+ - After running nscf calculation, the program should read the main output file to gather data from the calculation that will be used latter, and should save it to a specific, formated files.
+	Data needed to gather and save:
+		lattice vectors
+		lattice dimensions
+		reciprocal lattice dimensions
+		reciprocal lattice vectors
+		ordered eigenvalues
+		ordered list of k-points
+		ordered list of occupations
+		ordered list of real space points
+		total number of k-points
+		number of k-points in each direction
+		total number of real space points
+		number of real space points in each direction
+
+- Generates and saves:
+		list of neighbors of each k-point (which neighbors to consider may be an input parameter)
+		for each (k,r) the phase factor of the Bloch functions
+	This finishes the preparatory phase.
+
+- Make wavefunctions coherent:
+	read wavefunctions in real space
+	choose a low symmetry point in real space and apply a phase to all wave functions so that the phase in that point is set to zero
+	save all wavefunctions
+
+
+2) Calculate the dot product of each wavefunction of a k-point with each wavefunction of the neighboring k-points.
+
+
+
+
+
