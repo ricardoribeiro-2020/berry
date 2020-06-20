@@ -14,14 +14,14 @@
 
  - After running nscf calculation, the program should read the main output file to gather data from the calculation that will be used latter, and should save it to a specific, formated files.
 	Data needed to gather and save:
+		*lattice dimensions
+		*reciprocal lattice dimensions
 		lattice vectors
-		lattice dimensions
-		reciprocal lattice dimensions
 		reciprocal lattice vectors
 		ordered eigenvalues
 		ordered list of k-points
 		ordered list of occupations
-		ordered list of real space points
+		*ordered list of real space points
 		total number of k-points
 		number of k-points in each direction
 		total number of real space points

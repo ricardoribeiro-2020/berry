@@ -14,13 +14,10 @@ import time
 # This are the subroutines and functions
 import contatempo
 import dft
+from headerfooter import header,footer
 import loaddata as d
 
-print()
-print('     Program GENERATEWFC v.0.1 starts '+time.asctime())
-print()
-print('     This program is part of the open-source BERRY suite.')
-print()
+header('GENERATEWFC',time.asctime())
 
 starttime = time.time()                         # Starts counting time
 
@@ -44,21 +41,22 @@ elif len(sys.argv)==3:
   nk = int(sys.argv[1])
   nb = int(sys.argv[2])
   print(' Will run just for k-point',nk,'and band',nb)
+print()
 
 # Creates file with wfc of all bands at nk  ** DFT **
 if nk == -1 and nb == -1:
   for nk in range(0,d.nks):
     for nb in range(1,d.nbnd+1):
-      print(' Calculating wfc for k-point',nk,'and band',nb)
+#      print(' Calculating wfc for k-point',nk,'and band',nb)
       dft.wfck2r(dftdirectory,wfcdirectory,nk,nb,d.npr)   
 
 elif nk != -1 and nb == -1:
   for nb in range(1,d.nbnd+1):
-    print(' Calculating wfc for k-point',nk,'and band',nb)
+#    print(' Calculating wfc for k-point',nk,'and band',nb)
     dft.wfck2r(dftdirectory,wfcdirectory,nk,nb,d.npr)   
 
 else:
-  print(' Calculating wfc for k-point',nk,'and band',nb)
+#  print(' Calculating wfc for k-point',nk,'and band',nb)
   dft.wfck2r(dftdirectory,wfcdirectory,nk,nb,d.npr)   
 
 
@@ -67,6 +65,10 @@ else:
 
 
 
+# Finished
+endtime = time.time()
+
+footer(contatempo.tempo(starttime,endtime))
 
 
 

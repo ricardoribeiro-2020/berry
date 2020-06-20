@@ -80,19 +80,33 @@ def nscf(mpi,directory,name_nscf,nscf,nkps,kpoints,nbands):
 
 
 # wfck2r calculation and wavefunctions extraction *********************
-def wfck2r(directory,nk1,wfcdirectory,create=True,limite=400):
-  print(' Extracting wavefunctions; limite = ',limite,' nk = ',nk1)
-  sys.stdout.flush()
-  comando = "&inputpp  prefix = 'bn' , outdir = '"+directory+"out/' , first_k = "+str(nk1+1)+", last_k = "+str(nk1+1)+",loctave=.true., /"
-  if create:
-    os.system('echo "'+comando+'"|wfck2r.x > '+directory+'tmp')
-    #os.system('ls -l wfck2r.mat')
+def wfck2r(dftdir,directory,nk1,nb1,npr1):
+#  print(' Extracting wavefunctions; nk = ',nk1,'; nb = ',nb1)
 
-    comando2 = "&input limite = "+str(limite)+", nk1 = "+str(nk1)+", wfcdirectory = '"+wfcdirectory+"',/"
-    os.system('echo "'+comando2+'"|./extractwfc.x')
-
-  readwfck2r.trimmedFile()                        # cuts data from the rest of file
+  comando = "&inputpp  prefix = 'bn' ,\
+                       outdir = '"+str(dftdir)+"out/' ,\
+                      first_k = "+str(nk1+1)+" ,\
+                       last_k = "+str(nk1+1)+" ,\
+                   first_band = "+str(nb1)+" ,\
+                    last_band = "+str(nb1)+" , \
+                      loctave = .true., /"
   #print(comando)
+  sys.stdout.flush()
+
+  os.system('echo "'+comando+'"|wfck2r.x > '+str(dftdir)+'tmp')
+
+  comando2 = "&input\
+  nk = "+str(nk1)+" ,\
+  nb = "+str(nb1)+" ,\
+  np = "+str(nb1)+" ,\
+  wfcdirectory = '"+str(directory)+"' ,/"
+
+#  print(comando2)
+  berrypath = str(os.environ['BERRYPATH'])
+
+  os.system('echo "'+comando2+'"|'+berrypath+'bin/extractwfc.x')
+
+  #readwfck2r.trimmedFile()                        # cuts data from the rest of file
 
   return
 

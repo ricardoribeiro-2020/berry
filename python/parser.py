@@ -1,7 +1,5 @@
 # This function receives as input a QE file and a keyword, and extracts the correspondeing value
-# This is to include maths
-import math
-import re
+
 # This is to make operations in the shell
 import os
 import sys
@@ -13,13 +11,13 @@ def parser(keyword, qefile):
 	fnumbers = ['ecutwfc','degauss']
 	if keyword in strings:
 		string = os.popen('grep ' + keyword + ' ' + qefile).read().split()[2]
-		print(keyword,string)
+		return string.strip('\'')
 	elif keyword in numbers:
-		number = re.findall(r'\d+',os.popen('grep ' + keyword + ' ' + qefile).read())[0]
-		print(keyword,number)
+		number = int(re.findall(r'\d+',os.popen('grep ' + keyword + ' ' + qefile).read())[0])
+		return number
 	elif keyword in fnumbers:
-		number = re.findall(r'\d+\.\d+',os.popen('grep ' + keyword + ' ' + qefile).read())[0]
-		print(keyword,number)
+		number = float(re.findall(r'\d+\.\d+',os.popen('grep ' + keyword + ' ' + qefile).read())[0])
+		return number
 	elif keyword == 'CELL_PARAMETERS':
 		lines = os.popen('grep -A3 ' + keyword + ' ' + qefile).read()
 		cell = re.findall(r'\d+\.\d+',lines)
