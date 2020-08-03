@@ -19,6 +19,9 @@ header('DOTPRODUCT',time.asctime())
 
 starttime = time.time()                         # Starts counting time
 
+berrypath = str(d.berrypath)
+print(' Path to BERRY files:',berrypath)
+
 wfcdirectory = str(d.wfcdirectory)
 print(' Directory where the wfc are:',wfcdirectory)
 nkx = d.nkx
@@ -57,19 +60,19 @@ for nk in range(nks):
   +",  nbnd = "+str(nbnd)\
   +",    np = "+str(npr) \
   +",    nr = "+str(nr)  \
-  +", wfcdirectory = "+wfcdirectory\
+  +", wfcdirectory = '"+wfcdirectory+"'"\
   +", neighbor = "+str(neighbors[nk,j])\
-  +", /"
-#      print(comando)
+  +", / \n"
+      print(comando)
 
       comando1 = "&phaseskp  "
       for i in range(10):
-        comando1 += "phase("+str(i)+") = ("+str(np.real(phase[i,nk]))+" , "+str(np.imag(phase[i,nk]))+") ,"
-      comando1 += " /"
+        comando1 += "phase("+str(i)+")=("+str(np.real(phase[i,nk]))+","+str(np.imag(phase[i,nk]))+"),"
+      comando1 += " / \n"
       print(comando1)
       sys.stdout.flush()
 
-# os.system('echo "'+comando+'"|connections.x > '+'connections.out')
+  os.system('echo "'+comando+comando1+'"|'+berrypath+'bin/connections.x > '+'connections.out')
 
 
 

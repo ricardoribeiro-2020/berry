@@ -1,7 +1,7 @@
 ###################################################################################
 # This program runs a set of dft calculations, and prepares for further processing
 ###################################################################################
-
+#
 # This is to include maths
 import numpy as np
 
@@ -218,7 +218,7 @@ for l in range(nr3):
 phase = np.zeros((nr,nks),dtype=complex)
 for i in range(nr):
   for nk in range(nks):
-    phase[i,nk] = np.exp(2*np.pi*(kpoints[nk,0]*r[i,0]\
+    phase[i,nk] = np.exp(2j*np.pi*(kpoints[nk,0]*r[i,0]\
                                + kpoints[nk,1]*r[i,1]\
                                +kpoints[nk,2]*r[i,2]))
 
@@ -282,6 +282,8 @@ with open('positions.npy', 'wb') as f:
 f.close()
 print(' Positions saved to file positions.npy')
 
+berrypath = str(os.environ['BERRYPATH'])
+print(' Path of BERRY files',berrypath)
 
 # Save data to file 'datafile.npy'
 with open('datafile.npy', 'wb') as f:
@@ -310,6 +312,7 @@ with open('datafile.npy', 'wb') as f:
   np.save(f,nr3)            # Number of points of wfc in real space z direction
   np.save(f,nr)             # Total number of points of wfc in real space
   np.save(f,nbnd)           # Number of bands
+  np.save(f,berrypath)      # Path of BERRY files
 f.close()
 print(' Data saved to file datafile.npy')
 

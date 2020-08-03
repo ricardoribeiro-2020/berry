@@ -17,18 +17,21 @@ PROGRAM connect
 IMPLICIT NONE
 
   INTEGER(KIND=4) :: i,j,l, nk, nk1, banda, banda1
-  INTEGER :: IOstatus
-  INTEGER :: nbnd, nks, nr
+  INTEGER :: IOstatus,n0(10),n1(10),n2(10),n3(10)
+  INTEGER :: nbnd, nks, nr, np, neighbor
   CHARACTER(LEN=20) :: fmt1, fmt2, fmt3, fmt4, fmt5, fmt6, fmt7
   CHARACTER(LEN=50) :: dummy, wfcdirectory
   CHARACTER(LEN=15) :: str1, str2
   CHARACTER(LEN=50) :: infile
   REAL(KIND=8),ALLOCATABLE :: psir(:,:,:), psii(:,:,:)
   REAL(KIND=8),ALLOCATABLE :: dp(:,:,:,:)
-  COMPLEX(KIND=8),ALLOCATABLE :: phase(:,:), dphase(:),dpc(:,:,:,:)
+  COMPLEX(KIND=8),ALLOCATABLE :: phase(:), dphase(:),dpc(:,:,:,:)
   INTEGER(KIND=4),ALLOCATABLE :: connections(:,:,:), connections1(:,:,:), connections2(:,:,:)
   REAL(KIND=8) :: tol0, tol1, tol2
   COMPLEX(KIND=8),PARAMETER :: pi2=(0,-6.28318530717958647688)
+
+  NAMELIST / input / nk, nbnd, np, nr, neighbor, wfcdirectory
+  NAMELIST / phaseskp / phase
 
   fmt1 = '(3f14.8,3f22.16)'
   fmt2 = '(i4)'
@@ -43,17 +46,19 @@ IMPLICIT NONE
   tol1 = 0.85
   tol2 = 0.8
 
-  NAMELIST / input / nk, nbnd, np, nr, neighbor, wfcdirectory
   READ(*,NML=input)
 
   ALLOCATE(phase(0:nr))
 
-  NAMELIST / phaseskp /
+  READ(*,NML=phaseskp)
+
+  write(*,*) phase(0:10)
+
+stop
 
   ALLOCATE(dp(0:nks-1,1:nbnd,1:nbnd,0:3),dpc(0:nks-1,1:nbnd,1:nbnd,0:3))
   ALLOCATE(connections(0:nks-1,1:nbnd,0:3),connections2(0:nks-1,1:nbnd,0:3))
   ALLOCATE(connections1(0:nks-1,1:nbnd,0:3))
-  ALLOCATE(phase(0:nr,0:nks-1),dphase(0:nr))
 
   dpc = (0,0)
   connections = 0
@@ -70,7 +75,7 @@ IMPLICIT NONE
     DO banda = 1,nbnd
       WRITE(str1,*) nk1
       WRITE(str2,*) banda
-      infile(nk1,banda) = trim(wfcdirectory)//'/k000'//trim(adjustl(str1))//'b000'//trim(adjustl(str2))//'.wfc'
+!      infile(nk1,banda) = trim(wfcdirectory)//'/k000'//trim(adjustl(str1))//'b000'//trim(adjustl(str2))//'.wfc'
 !      WRITE(*,*)nk1,banda,infile(nk1,banda)
       OPEN(FILE=infile(nk1,banda),UNIT=5,STATUS='OLD')
       i = 1
@@ -93,7 +98,7 @@ IMPLICIT NONE
 !     rho(nk1,:,:,0) = 9E10
       connections(nk1,:,0) = -1
     ELSE
-      dphase(:) = phase(:,nk1)*CONJG(phase(:,n0(nk1)))
+!      dphase(:) = phase(:,nk1)*CONJG(phase(:,n0(nk1)))
       DO banda = 1,nbnd
         DO banda1 = 1,nbnd
           dpc(nk1,banda, banda1,0) = SUM(dphase(:)* &
@@ -113,7 +118,7 @@ IMPLICIT NONE
 !     rho(nk1,:,:,1) = 9E10
       connections(nk1,:,1) = -1
     ELSE
-      dphase(:) = phase(:,nk1)*CONJG(phase(:,n1(nk1)))
+!      dphase(:) = phase(:,nk1)*CONJG(phase(:,n1(nk1)))
       DO banda = 1,nbnd
         DO banda1 = 1,nbnd
           dpc(nk1,banda, banda1,1) = SUM(dphase(:)* &
@@ -133,7 +138,7 @@ IMPLICIT NONE
 !     rho(nk1,:,:,2) = 9E10
       connections(nk1,:,2) = -1
     ELSE
-      dphase(:) = phase(:,nk1)*CONJG(phase(:,n2(nk1)))
+!      dphase(:) = phase(:,nk1)*CONJG(phase(:,n2(nk1)))
       DO banda = 1,nbnd
         DO banda1 = 1,nbnd
           dpc(nk1,banda, banda1,2) = SUM(dphase(:)* &
@@ -153,7 +158,7 @@ IMPLICIT NONE
 !     rho(nk1,:,:,3) = 9E10
       connections(nk1,:,3) = -1
     ELSE
-      dphase(:) = phase(:,nk1)*CONJG(phase(:,n3(nk1)))
+!      dphase(:) = phase(:,nk1)*CONJG(phase(:,n3(nk1)))
       DO banda = 1,nbnd
         DO banda1 = 1,nbnd
           dpc(nk1,banda, banda1,3) = SUM(dphase(:)* &
