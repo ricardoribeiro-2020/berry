@@ -30,8 +30,7 @@ IMPLICIT NONE
   REAL(KIND=8) :: tol0, tol1, tol2
   COMPLEX(KIND=8),PARAMETER :: pi2=(0,-6.28318530717958647688)
 
-  NAMELIST / input / nk, nbnd, np, nr, neighbor, wfcdirectory
-  NAMELIST / phaseskp / phase
+  NAMELIST / input / nk, nbnd, np, nr, neighbor, wfcdirectory, phase
 
   fmt1 = '(3f14.8,3f22.16)'
   fmt2 = '(i4)'
@@ -46,13 +45,15 @@ IMPLICIT NONE
   tol1 = 0.85
   tol2 = 0.8
 
-  READ(*,NML=input)
-
+  OPEN(FILE='tmp',UNIT=2,STATUS='OLD')
+  READ(2,*) nr
+  CLOSE(UNIT=2)
   ALLOCATE(phase(0:nr))
 
-  READ(*,NML=phaseskp)
+  READ(*,NML=input)
 
-  write(*,*) phase(0:10)
+!  write(*,*)nk,nbnd,np,nr,wfcdirectory,neighbor
+
 
 stop
 

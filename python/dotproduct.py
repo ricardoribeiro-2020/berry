@@ -1,5 +1,5 @@
 ###################################################################################
-# This program calculates the dot product of the wfc with their neighbors
+# This program calculates the dot product of the wfc Bloch factor with their neighbors
 ###################################################################################
 
 # This is to include maths
@@ -19,6 +19,7 @@ header('DOTPRODUCT',time.asctime())
 
 starttime = time.time()                         # Starts counting time
 
+# Reading data needed for the run
 berrypath = str(d.berrypath)
 print(' Path to BERRY files:',berrypath)
 
@@ -46,42 +47,40 @@ print()
 
 phase = d.phase
 print(' Phases loaded')
-print(phase[10000,10])
+#print(phase[10000,10])
 
 neighbors = d.neighbors
 print(' Neighbors loaded')
 
-for nk in range(nks):
-  for j in range(4):
-    if neighbors[nk,j] != -1:
+# Finished reading data needed for the run
+
+with open('tmp','w') as tmp:             # Creates temporary file to store the number of points in r-space
+  tmp.write(str(nr))
+tmp.closed
+print()
+
+for nk in range(nks):                    # runs through all k-points
+  for j in range(4):                     # runs through all neighbors
+    if neighbors[nk,j] != -1:            # exclude invalid neighbors
 #      print(nk,j,neighbors[nk,j])
       comando = "&input  \
          nk = "+str(nk)  \
   +",  nbnd = "+str(nbnd)\
   +",    np = "+str(npr) \
-  +",    nr = "+str(nr)  \
   +", wfcdirectory = '"+wfcdirectory+"'"\
-  +", neighbor = "+str(neighbors[nk,j])\
-  +", / \n"
-      print(comando)
+  +", neighbor = "+str(neighbors[nk,j])+",   "
+      for i in range(nr):
+        comando += "phase("+str(i)+")=("+str(np.real(phase[i,nk]))+","+str(np.imag(phase[i,nk]))+"),"
+      comando += " / "                   # prepares command to send to f90 program connections.x
 
-      comando1 = "&phaseskp  "
-      for i in range(10):
-        comando1 += "phase("+str(i)+")=("+str(np.real(phase[i,nk]))+","+str(np.imag(phase[i,nk]))+"),"
-      comando1 += " / \n"
-      print(comando1)
+      print("Calculating   nk = "+str(nk)+"  neighbor = "+str(neighbors[nk,j]))
       sys.stdout.flush()
 
-  os.system('echo "'+comando+comando1+'"|'+berrypath+'bin/connections.x > '+'connections.out')
+      os.system('echo "'+comando+'"|'+berrypath+'bin/connections.x')      # Runs f90 program connections.x
 
+#      print('echo "'+comando+'"|'+berrypath+'bin/connections.x')
 
-
-
-
-
-
-
-
+os.system('rm tmp')
 # Finished
 endtime = time.time()
 
