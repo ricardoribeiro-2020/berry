@@ -9,6 +9,7 @@ import numpy as np
 import os
 import sys
 import time
+import subprocess
 
 # This are the subroutines and functions
 import contatempo
@@ -39,7 +40,7 @@ print(' Number of points in each direction:',nr1,nr2,nr3)
 nr = d.nr
 print(' Total number of points in real space:',nr)
 npr = d.npr
-print(' Number of processors to use')
+print(' Number of processors to use',npr)
 
 nbnd = d.nbnd
 print(' Number of bands:',nbnd)
@@ -58,6 +59,9 @@ with open('tmp','w') as tmp:             # Creates temporary file to store the n
   tmp.write(str(nr))
 tmp.closed
 print()
+os.system('rm -f dp.dat dpc.dat')
+os.system('touch dp.dat dpc.dat')
+sys.stdout.flush()
 
 for nk in range(nks):                    # runs through all k-points
   for j in range(4):                     # runs through all neighbors
@@ -66,21 +70,23 @@ for nk in range(nks):                    # runs through all k-points
       comando = "&input  \
          nk = "+str(nk)  \
   +",  nbnd = "+str(nbnd)\
-  +",    np = "+str(npr) \
+  +",    nr = "+str(nr) \
+  +",   npr = "+str(npr) \
   +", wfcdirectory = '"+wfcdirectory+"'"\
   +", neighbor = "+str(neighbors[nk,j])+",   "
-      for i in range(nr):
-        comando += "phase("+str(i)+")=("+str(np.real(phase[i,nk]))+","+str(np.imag(phase[i,nk]))+"),"
+      for i in range(3):
+        comando += "phase("+str(i)+",0)=("+str(np.real(phase[i,nk]))+","+str(np.imag(phase[i,nk]))+"),"
+        comando += "phase("+str(i)+",1)=("+str(np.real(phase[i,neighbors[nk,j]]))+","+str(np.imag(phase[i,neighbors[nk,j]]))+"),"
       comando += " / "                   # prepares command to send to f90 program connections.x
 
       print("Calculating   nk = "+str(nk)+"  neighbor = "+str(neighbors[nk,j]))
+#      print('echo "'+comando+'"|'+berrypath+'bin/connections.x')
       sys.stdout.flush()
 
       os.system('echo "'+comando+'"|'+berrypath+'bin/connections.x')      # Runs f90 program connections.x
+#      sys.exit("Stop")
 
-#      print('echo "'+comando+'"|'+berrypath+'bin/connections.x')
-
-os.system('rm tmp')
+#os.system('rm tmp')
 # Finished
 endtime = time.time()
 
