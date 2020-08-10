@@ -9,12 +9,12 @@ import numpy as np
 import os
 import sys
 import time
-import subprocess
 
 # This are the subroutines and functions
 import contatempo
 from headerfooter import header,footer
 import loaddata as d
+import connections
 
 header('DOTPRODUCT',time.asctime())
 
@@ -48,16 +48,12 @@ print()
 
 phase = d.phase
 print(' Phases loaded')
-#print(phase[10000,10])
+#print(phase[10000,10]) # phase[nr,nks]
 
 neighbors = d.neighbors
 print(' Neighbors loaded')
 
 # Finished reading data needed for the run
-
-with open('tmp','w') as tmp:             # Creates temporary file to store the number of points in r-space
-  tmp.write(str(nr))
-tmp.closed
 print()
 os.system('rm -f dp.dat dpc.dat')
 os.system('touch dp.dat dpc.dat')
@@ -65,28 +61,17 @@ sys.stdout.flush()
 
 for nk in range(nks):                    # runs through all k-points
   for j in range(4):                     # runs through all neighbors
-    if neighbors[nk,j] != -1:            # exclude invalid neighbors
+    neighbor = neighbors[nk,j]
+    if neighbor != -1:            # exclude invalid neighbors
 #      print(nk,j,neighbors[nk,j])
-      comando = "&input  \
-         nk = "+str(nk)  \
-  +",  nbnd = "+str(nbnd)\
-  +",    nr = "+str(nr) \
-  +",   npr = "+str(npr) \
-  +", wfcdirectory = '"+wfcdirectory+"'"\
-  +", neighbor = "+str(neighbors[nk,j])+",   "
-      for i in range(3):
-        comando += "phase("+str(i)+",0)=("+str(np.real(phase[i,nk]))+","+str(np.imag(phase[i,nk]))+"),"
-        comando += "phase("+str(i)+",1)=("+str(np.real(phase[i,neighbors[nk,j]]))+","+str(np.imag(phase[i,neighbors[nk,j]]))+"),"
-      comando += " / "                   # prepares command to send to f90 program connections.x
 
-      print("Calculating   nk = "+str(nk)+"  neighbor = "+str(neighbors[nk,j]))
-#      print('echo "'+comando+'"|'+berrypath+'bin/connections.x')
+      phases = np.stack((phase[:,nk],phase[:,neighbor]),axis=1)
+
+      print("Calculating   nk = "+str(nk)+"  neighbor = "+str(neighbor))
       sys.stdout.flush()
+      connections.connect(nk,nbnd,npr,neighbor,wfcdirectory,phases,nr)
+#    sys.exit("Stop")
 
-      os.system('echo "'+comando+'"|'+berrypath+'bin/connections.x')      # Runs f90 program connections.x
-#      sys.exit("Stop")
-
-#os.system('rm tmp')
 # Finished
 endtime = time.time()
 

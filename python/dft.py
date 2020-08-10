@@ -48,7 +48,7 @@ def template(directory,name_scf):
 # NSCF calculation ****************************************************
 def nscf(mpi,directory,name_nscf,nscf,nkps,kpoints,nbands):
   nscffile = directory + name_nscf
-  verifica = os.popen("test -f " + nscffile + ".out;echo $?").read()   #if 1\n does no exist if 0\n exists
+  verifica = os.popen("test -f " + nscffile + ".out;echo $?").read()   #if 1\n does not exist if 0\n exists
   
   if verifica == '1\n':  # If output file does not exist, run the nscf calculation
 
@@ -80,11 +80,16 @@ def nscf(mpi,directory,name_nscf,nscf,nkps,kpoints,nbands):
 
 
 # wfck2r calculation and wavefunctions extraction *********************
-def wfck2r(dftdir,directory,nk1,nb1,npr1):
+def wfck2r(dftdirectory,wfcdirectory,nk1,nb1,npr1):
 #  print(' Extracting wavefunctions; nk = ',nk1,'; nb = ',nb1)
 
+  if npr1 == 1:
+    mpi = ''
+  else:
+    mpi = 'mpirun -np '+str(npr1)+' '
+
   comando = "&inputpp  prefix = 'bn' ,\
-                       outdir = '"+str(dftdir)+"out/' ,\
+                       outdir = '"+str(dftdirectory)+"out/' ,\
                       first_k = "+str(nk1+1)+" ,\
                        last_k = "+str(nk1+1)+" ,\
                    first_band = "+str(nb1)+" ,\
@@ -93,18 +98,18 @@ def wfck2r(dftdir,directory,nk1,nb1,npr1):
   #print(comando)
   sys.stdout.flush()
 
-  os.system('echo "'+comando+'"|wfck2r.x > '+str(dftdir)+'tmp')
+  os.system('echo "'+comando+'"|wfck2r.x > '+str(dftdirectory)+'tmp')
 
   comando2 = "&input\
   nk = "+str(nk1)+" ,\
   nb = "+str(nb1)+" ,\
-  np = "+str(nb1)+" ,\
-  wfcdirectory = '"+str(directory)+"' ,/"
+ npr = "+str(npr1)+" ,\
+  wfcdirectory = '"+str(wfcdirectory)+"' ,/"
 
 #  print(comando2)
   berrypath = str(os.environ['BERRYPATH'])
 
-  os.system('echo "'+comando2+'"|'+berrypath+'bin/extractwfc.x')
+  os.system('echo "'+comando2+'"|'+mpi+berrypath+'bin/extractwfc.x')
 
   #readwfck2r.trimmedFile()                        # cuts data from the rest of file
 

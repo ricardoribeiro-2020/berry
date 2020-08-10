@@ -27,6 +27,8 @@ dftdirectory = str(d.dftdirectory)
 # Creates directory for wfc
 os.system('mkdir -p '+wfcdirectory)
 print(' Wavefunctions will be saved in directory',wfcdirectory)
+print(' This program will run in '+str(d.npr)+' processors')
+print()
 
 nk = -1
 nb = -1
@@ -46,17 +48,17 @@ print()
 # Creates file with wfc of all bands at nk  ** DFT **
 if nk == -1 and nb == -1:
   for nk in range(0,d.nks):
+    print(' Calculating wfc for k-point',nk)
     for nb in range(1,d.nbnd+1):
-#      print(' Calculating wfc for k-point',nk,'and band',nb)
       dft.wfck2r(dftdirectory,wfcdirectory,nk,nb,d.npr)   
 
 elif nk != -1 and nb == -1:
   for nb in range(1,d.nbnd+1):
-#    print(' Calculating wfc for k-point',nk,'and band',nb)
+    print(' Calculating wfc for k-point',nk,'and band',nb)
     dft.wfck2r(dftdirectory,wfcdirectory,nk,nb,d.npr)   
 
 else:
-#  print(' Calculating wfc for k-point',nk,'and band',nb)
+  print(' Calculating wfc for k-point',nk,'and band',nb)
   dft.wfck2r(dftdirectory,wfcdirectory,nk,nb,d.npr)   
 
 

@@ -24,13 +24,13 @@ IMPLICIT NONE
   CHARACTER(LEN=50) :: dummy, wfcdirectory, outfile
   COMPLEX*8 :: z
   INTEGER(KIND=4) :: nr, rpoint
-  INTEGER  :: nk,nb,np
+  INTEGER  :: nk,nb,npr
   CHARACTER(LEN=15) :: str1, str2
   CHARACTER(LEN=20) :: fmt1
   REAL(KIND=8),ALLOCATABLE :: modulus(:),phase(:),psir(:),psii(:)
   LOGICAL :: flag
 
-  NAMELIST / input / nk, nb, np, wfcdirectory
+  NAMELIST / input / nk, nb, npr, wfcdirectory
   READ(*,NML=input)
 
   maq = 0

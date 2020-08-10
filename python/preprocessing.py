@@ -93,7 +93,7 @@ print(' Name of scf file:',name_scf)
 print(' Name od nscf file:',name_nscf)
 print(' Name of directory for wfc:',wfcdirectory)
 print()
-print(' Finished readinf input file')
+print(' Finished reading input file')
 print()
 
 sys.stdout.flush()
@@ -109,7 +109,7 @@ dft.scf(mpi,dftdirectory,name_scf)
 nscf = dft.template(dftdirectory,name_scf)         
 
 nscfkpoints = ''                                # to append to nscf file
-nks = nkx*nky*nkz             # total number of k-points
+nks = nkx*nky*nkz                               # total number of k-points
 nk = 0                                          # count the k-points
 kpoints = np.zeros((nks,3), dtype=float)
 for l in range(nkz):
@@ -124,7 +124,7 @@ for l in range(nkz):
       nk = nk + 1
 
 # Runs nscf calculations for all k-points  ** DFT **
-#dft.nscf(mpi,dftdirectory,name_nscf,nscf,nkps,nscfkpoints,nbnd)  
+dft.nscf(mpi,dftdirectory,name_nscf,nscf,nks,nscfkpoints,nbnd)  
 sys.stdout.flush()
 
 print(' Extracting data from DFT calculations')
@@ -186,9 +186,8 @@ nbnd = int(root[3][9][3].text)
 print(' Number of bands in the DFT calculation: ',nbnd)
 nks = int(root[3][9][10].text)
 print(' Number of k-points in the DFT calculation: ',nks)
-
-
 print()
+
 #for child in root[3][9]:
 #  print(child.tag, child.attrib,child.text)
 #  for child1 in child:
@@ -198,7 +197,7 @@ print()
 eigenval = []
 for it in root[3][9].iter('eigenvalues'):
   eigenval.append(list(map(float,it.text.split())))
-eigenvalues = np.array(eigenval)
+eigenvalues = 2*np.array(eigenval)
 #print(eigenvalues)
 
 occupat = []
@@ -206,6 +205,10 @@ for it in root[3][9].iter('occupations'):
   occupat.append(list(map(float,it.text.split())))
 occupations = np.array(occupat)
 #print(occupations)
+
+berrypath = str(os.environ['BERRYPATH'])
+print(' Path of BERRY files',berrypath)
+print()
 
 count = 0
 r = np.zeros((nr,3), dtype=float)
@@ -218,9 +221,9 @@ for l in range(nr3):
 phase = np.zeros((nr,nks),dtype=complex)
 for i in range(nr):
   for nk in range(nks):
-    phase[i,nk] = np.exp(2j*np.pi*(kpoints[nk,0]*r[i,0]\
-                               + kpoints[nk,1]*r[i,1]\
-                               +kpoints[nk,2]*r[i,2]))
+    phase[i,nk] = np.exp(1j*(kpoints[nk,0]*r[i,0]\
+                           + kpoints[nk,1]*r[i,1]\
+                           + kpoints[nk,2]*r[i,2]))
 
 with open('phase.npy','wb') as ph:
   np.save(ph,phase)
@@ -267,7 +270,7 @@ print(' Neighbors saved to file neighbors.npy')
 with open('eigenvalues.npy', 'wb') as f:
   np.save(f,eigenvalues)
 f.closed
-print(' Eigenvalues saved to file eigenvalues.npy')
+print(' Eigenvalues saved to file eigenvalues.npy (Ry)')
 
 
 # Save occupations to file
@@ -280,10 +283,13 @@ print(' Occupations saved to file occupations.npy')
 with open('positions.npy', 'wb') as f:
   np.save(f,r)
 f.close()
-print(' Positions saved to file positions.npy')
+print(' Positions saved to file positions.npy (bohr)')
 
-berrypath = str(os.environ['BERRYPATH'])
-print(' Path of BERRY files',berrypath)
+# Save kpoints to file
+with open('kpoints.npy', 'wb') as f:
+  np.save(f,kpoints)
+f.close()
+print(' kpoints saved to file kpoints.npy (2pi/bohr)')
 
 # Save data to file 'datafile.npy'
 with open('datafile.npy', 'wb') as f:

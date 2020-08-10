@@ -34,6 +34,7 @@
 		eigenvalues.npy
 		occupations.npy
 		positions.npy
+		kpoints.npy
 		datafile.npy (This is the main data file; see code for what and how data is saved)
 
  - Generates and saves:
@@ -57,9 +58,17 @@
 3) Calculate the dot product of each wavefunction's Bloch factor of a k-point with each wavefunction's Bloch factor of the neighboring k-points.
  - This means wavefunctions have to be multiplied by e^{-ik.r} in each point r.
 
- - The python script dotproduct.py runs through wfc and calls program connections.x to do the hard part of the calculations
+ - The python script dotproduct.py runs through wfc and calls fortran program connections.f90 to do the hard part of the calculations
+	connections.f90 has to be compiled using
+		py -m numpy.f2py -c connections.f90 -m connections
+	in order to become a python subroutine. The resulting compile program has to be copied to a place where python can find it.
+	For instance, the directory berry/python.
 
-
+ - In the end we get two files dpc.dat and dp.dat
+	dpc.dat contains for each pair of k-points and bands the dot product of the wavefunctions
+	dp.dat contains the modulus of dpc.dat
+	The files are formated as:
+		kp	neighbor	band	band1	dot product-complex number (or modulus)
 
 
 
