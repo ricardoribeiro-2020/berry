@@ -70,6 +70,26 @@
 	The files are formated as:
 		kp	neighbor	band	band1	dot product-complex number (or modulus)
 
+4) Find which eigenvalues/eigenfunctions have continuity, by running program compara.py .
+ - This program reads the dot product files dp.dat and dpc.dat and uses the first to check continuity.
+
+ - It creates two files (apontador and bandas) in the wfc directory, that will be used latter (DEPRECATED)
+
+ - It creates two files (bandsfinal.npy and signalfinal.npy)
+	The first stores an array bandsfinal[nks,nbnd] = number of band that is continuous to band in nbnd
+	The second signalfinal[nks,nbnd] equals -1 if there is an inconsistency at that k-point or a number >=0
+		giving the number of times it found a coninuity. The larger the value, the better.
+
+
+
+
+
+
+
+
+
+
+
 
 
 

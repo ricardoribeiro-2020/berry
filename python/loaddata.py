@@ -5,7 +5,6 @@
 # This is to include maths
 import numpy as np
 
-
 # To read the data from file:
 with open('datafile.npy', 'rb') as f:
   k0           = np.load(f)
@@ -37,26 +36,39 @@ with open('datafile.npy', 'rb') as f:
 f.close()
 
 
-with open('eigenvalues.npy', 'rb') as f:
+# Read eigenvalues from file   eigenvalues = np.array(eigenval)
+with open('eigenvalues.npy', 'rb') as f: 
   eigenvalues = np.load(f)
 f.close()
 
 
-# Read occupations from file
+# Read occupations from file   occupations = np.array(occupat)
 with open('occupations.npy', 'rb') as f:
   occupations = np.load(f)
 f.close()
 
 
-# Read phase from file
+# Read phase from file         phase = np.zeros((nr,nks),dtype=complex)
 with open('phase.npy','rb') as f:
   phase = np.load(f)
 f.close()
 
 
-# Read neighbors from file
+# Read neighbors from file     neig = np.full((nks,4),-1,dtype=int)
 with open('neighbors.npy','rb') as f:
   neighbors = np.load(f)
+f.close()
+
+
+# Read kpoints from file       kpoints = np.zeros((nks,3), dtype=float)
+with open('kpoints.npy', 'rb') as f:
+  kpoints = np.load(f)
+f.close()
+
+
+# Read positions from file     r = np.zeros((nr,3), dtype=float)
+with open('positions.npy', 'rb') as f:
+  r = np.load(f)
 f.close()
 
 

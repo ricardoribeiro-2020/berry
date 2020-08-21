@@ -9,7 +9,7 @@ import sys
 def scf(mpi,directory,name_scf):
 
   scffile = directory + name_scf
-  verifica = os.popen("test -f " + scffile + ".out;echo $?").read()   #if 1\n does no exist if 0\n exists
+  verifica = os.popen("test -f " + scffile + ".out;echo $?").read()   #if 1\n does not exist if 0\n exists
   
   if verifica == '1\n':  # If output file does not exist, run the scf calculation
     print(' Running scf calculation')
