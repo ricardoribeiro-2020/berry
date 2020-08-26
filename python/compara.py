@@ -15,7 +15,6 @@ import time
 import contatempo
 from headerfooter import header,footer
 import loaddata as d
-import connections
 
 
 header('DOTPRODUCT',time.asctime())
@@ -62,7 +61,7 @@ print(' Eigenvlaues loaded')
 dp = np.loadtxt('dp.dat')
 print(' Modulus of direct product loaded')
 
-bands = np.full((nks,nbnd,100),-1)
+bands = np.full((nks,nbnd,100),-1,dtype=int)
 
 #print(eigenvalues)
 for bnd in range(nbnd):
@@ -88,7 +87,7 @@ for i in range(dp.shape[0]):
 tol = 0.9
 ntentativ = 5                                   # Nr of tentatives
 initialks = []                                  # List to save the initial k-points that are choosen randomly
-signal = np.zeros((nks,nbnd,ntentativ+1))                # = nr of matches, -1 if contradictory matches
+signal = np.zeros((nks,nbnd,ntentativ+1),dtype=int)       # = nr of matches, -1 if contradictory matches
 # Create arrays of tentatives         
 for tentative in range(ntentativ):           
   if firskpoint >= 0 and firskpoint < nks and tentative == 0:
@@ -143,8 +142,8 @@ listdone.sort()
 ##########################################################################
 
 
-bandsfinal = np.full((nks,nbnd),-1)        # Array for the final results
-                                           # gives the original band that belongs to new band (nk,nb)
+bandsfinal = np.full((nks,nbnd),-1,dtype=int)        # Array for the final results
+                                                     # gives the machine band that belongs to band (nk,nb)
 signalfinal = np.zeros((nks,nbnd),dtype=int)         # Array for final signalling
 first = True
 attrib = []
@@ -173,7 +172,7 @@ for i in initialks:                        # Runs through all sets of bands
               continue
             elif bandsfinal[nk,nb] == -1 and bands[nk,nb,cont] != -1:
               bandsfinal[nk,nb] = bands[nk,nb,cont]
-              signalfinal[nk,nb] += 1
+              signalfinal[nk,nb] = 1
               print(' Changed ',nk,nb)
             elif signalfinal[nk,nb] == -1:
               continue
@@ -189,12 +188,12 @@ for i in initialks:                        # Runs through all sets of bands
 
 #sys.exit("Stop")
 
-nrnotattrib = np.full((nbnd),-1,dtype=int) 
 
 print(' *** Final Report ***')
 print()
+nrnotattrib = np.full((nbnd),-1,dtype=int) 
 sep = ' '
-print(' Bands: gives the original band that belongs to new band (nk,nb)')
+print(' Bands: gives the machine nr that belongs to new band (nk,nb)')
 for nb in range(nbnd):
   nk = -1
   nrnotattrib[nb] = np.count_nonzero(bandsfinal[:,nb] == -1)
@@ -253,7 +252,7 @@ print()
 print(' nr k-points not attributed to a band')
 print(' Band       nr k-points')
 for nb in range(nbnd):
-  print(nb,nrnotattrib[nb])
+  print(' ',nb,'         ',nrnotattrib[nb])
 
 print()
 print(' Signaling')
@@ -275,6 +274,7 @@ with open(wfcdirectory+'/bandas','w') as ba:
 ba.closed
 
 print(' Saving files bandsfinal.npy and signalfinal.npy')
+print(' bandsfinal.npy gives the machine number for each k-point/band')
 with open('bandsfinal.npy', 'wb') as f:
   np.save(f,bandsfinal)
 f.closed

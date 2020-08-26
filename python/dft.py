@@ -83,11 +83,7 @@ def nscf(mpi,directory,name_nscf,nscf,nkps,kpoints,nbands):
 def wfck2r(dftdirectory,wfcdirectory,nk1,nb1,npr1):
 #  print(' Extracting wavefunctions; nk = ',nk1,'; nb = ',nb1)
 
-  if npr1 == 1:
-    mpi = ''
-  else:
-    mpi = 'mpirun -np '+str(npr1)+' '
-
+  mpi = ''
   comando = "&inputpp  prefix = 'bn' ,\
                        outdir = '"+str(dftdirectory)+"out/' ,\
                       first_k = "+str(nk1+1)+" ,\

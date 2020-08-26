@@ -12,6 +12,7 @@
 		number of bands
 
  - with this data, the program preprocessing.py should prepare and run scf and nscf calculations.
+ - the variable $BERRYPATH should have been defined before (export BERRYPATH="/path/to/berry"); if not, the program will deduce it from the path of preprocessing.py
 
  - After running nscf calculation, the program preprocessing.py reads the main output file and gathers data from the calculation that will be used latter, and saves it to formated files.
 	Data needed to gather and save:
@@ -78,7 +79,7 @@
  - It creates two files (bandsfinal.npy and signalfinal.npy)
 	The first stores an array bandsfinal[nks,nbnd] = number of band that is continuous to band in nbnd
 	The second signalfinal[nks,nbnd] equals -1 if there is an inconsistency at that k-point or a number >=0
-		giving the number of times it found a coninuity. The larger the value, the better.
+		giving the number of times it found a continuity. The larger the value, the better.
 
 
 

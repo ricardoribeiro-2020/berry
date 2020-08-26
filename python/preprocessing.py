@@ -71,7 +71,7 @@ for i in inputvar:
     step = float(ii[1])
   if ii[0] == 'nbnd':
     nbnd = int(ii[1])
-  if ii[0] == 'np':
+  if ii[0] == 'npr':
     npr = int(ii[1])
   if ii[0] == 'dftdirectory':
     dftdirectory = ii[1]
@@ -206,7 +206,10 @@ for it in root[3][9].iter('occupations'):
 occupations = np.array(occupat)
 #print(occupations)
 
-berrypath = str(os.environ['BERRYPATH'])
+try:
+  berrypath = str(os.environ['BERRYPATH'])
+except KeyError:
+  berrypath = str(os.path.dirname(os.path.dirname(__file__)))
 print(' Path of BERRY files',berrypath)
 print()
 
@@ -335,10 +338,12 @@ for j in range(nky):
   for i in range(nkx):
     nk = nk + 1
     if nk < 10:
-      lin += sep+sep+sep+str(nk)
+      lin += sep+sep+sep+sep+str(nk)
     elif nk > 9 and nk < 100:
-      lin += sep+sep+str(nk)
+      lin += sep+sep+sep+str(nk)
     elif nk > 99 and nk < 1000:
+      lin += sep+sep+str(nk)
+    elif nk > 999 and nk < 10000:
       lin += sep+str(nk)
   print(lin)
 
