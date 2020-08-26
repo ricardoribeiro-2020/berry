@@ -56,7 +56,7 @@ neighbors = d.neighbors
 print(' Neighbors loaded')
 
 eigenvalues = d.eigenvalues
-print(' Eigenvlaues loaded')
+print(' Eigenvalues loaded')
 #print(eigenvalues)
 
 dp = np.loadtxt('dp.dat')
