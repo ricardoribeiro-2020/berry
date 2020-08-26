@@ -210,6 +210,8 @@ try:
   berrypath = str(os.environ['BERRYPATH'])
 except KeyError:
   berrypath = str(os.path.dirname(os.path.dirname(__file__)))
+if berrypath[-1] != '/':
+  berrypath = berrypath + '/'
 print(' Path of BERRY files',berrypath)
 print()
 

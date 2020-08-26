@@ -57,13 +57,14 @@ print(' Neighbors loaded')
 
 eigenvalues = d.eigenvalues
 print(' Eigenvlaues loaded')
+#print(eigenvalues)
 
 dp = np.loadtxt('dp.dat')
 print(' Modulus of direct product loaded')
 
+print(' Finished reading data')
+##########################################################################
 bands = np.full((nks,nbnd,100),-1,dtype=int)
-
-#print(eigenvalues)
 for bnd in range(nbnd):
   bands[:,bnd,0] = bnd
 #  print(bands[:,bnd,0])

@@ -11,7 +11,7 @@ import os
 import sys
 import time
 
-# This are the subroutines and functions
+# These are the subroutines and functions
 import contatempo
 from headerfooter import header,footer
 import loaddata as d

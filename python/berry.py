@@ -1,5 +1,4 @@
-# This program reads a set of wavefunctions of for different k and bands and translates that
-# to another set for different points in real space, the functions become a function of k instead of r
+# This program  caluculates the Berry connections
 
 # This is to include maths
 import math

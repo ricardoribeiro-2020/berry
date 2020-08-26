@@ -83,8 +83,21 @@
 
 
 
+5) compara.py may need to be run several times until the results are good.
+ - Even so, there may be a few points that need fixing and others that are actual discontinuities and so need an interpolation.
+ - For this, interpolation.py should be run.
+ - It will create a new pair of files bandsfinal.npy and signalfinal.npy
 
 
+6) With the bands right, now proceeds to calculate the wavefunctions in k-space and their gradients.
+ - For that, run r2k.py with one or two arguments
+	If one, will calculate from band 0 to the value inputed.
+	If two, will calculate for the set of bands between the two values, inclusive.
+
+ - Will save the wavefunctions of each band in a compressed file wfcpos#.gz where # = number of band
+ - Will save the gradients of each band in a compressed file wfcgra.gz where # = number of band
+
+7) 
 
 
 
