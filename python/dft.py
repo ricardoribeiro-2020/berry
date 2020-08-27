@@ -1,6 +1,7 @@
+###################################################################################
 # These routines run the DFT calculations
+###################################################################################
 
-import readwfck2r
 # This is to make operations in the shell
 import os
 import sys
@@ -106,8 +107,6 @@ def wfck2r(dftdirectory,wfcdirectory,nk1,nb1,npr1):
   berrypath = str(os.environ['BERRYPATH'])
 
   os.system('echo "'+comando2+'"|'+mpi+berrypath+'bin/extractwfc.x')
-
-  #readwfck2r.trimmedFile()                        # cuts data from the rest of file
 
   return
 

@@ -23,13 +23,18 @@ header('CONDUTIVITY',time.asctime())
 starttime = time.time()                         # Starts counting time
 
 
-if len(sys.argv)!=3:
+if len(sys.argv)<3:
   print(' ERROR in number of arguments. Has to have two integers.\n \
           If the first is negative, it will only calculate transitions between the too bands.')
   sys.exit("Stop")
-
-bandfilled = int(sys.argv[1])                  # Number of the last filled band at k=0
-bandempty = int(sys.argv[2])                   # Number of the last empty band at k=0
+elif len(sys.argv)==3:
+  bandfilled = int(sys.argv[1])                  # Number of the last filled band at k=0
+  bandempty = int(sys.argv[2])                   # Number of the last empty band at k=0
+  inputfile = ''
+elif len(sys.argv)==4:
+  bandfilled = int(sys.argv[1])                  # Number of the last filled band at k=0
+  bandempty = int(sys.argv[2])                   # Number of the last empty band at k=0
+  inputfile = str(sys.argv[3])                   # Name of the file where data for the graphic is
 
 if bandfilled < 0:
   bandfilled = -bandfilled
@@ -40,6 +45,27 @@ else:
   print(' Calculating transitions from bands <'+str(bandfilled)+' to bands up to '+str(bandempty))
 
 print(' List of bands: ',str(bandlist))
+
+# Default values:
+enermax = 2.5            # Maximum energy (Ry)
+enerstep = 0.001         # Energy step (Ry)
+broadning = 0.01j        # energy broadning (Ry) 
+if inputfile != '':
+  with open(inputfile,'r') as le:
+    inputvar = le.read().split("\n")
+  le.close()
+  # Read that from input file
+  for i in inputvar:
+    ii = i.split()
+    if len(ii) == 0:
+      continue
+    if ii[0] == 'enermax':
+      enermax = float(ii[1])
+    if ii[0] == 'enerstep':
+      enerstep = float(ii[1])
+    if ii[0] == 'broadning':
+      broadning = 1j*float(ii[1])
+
 
 
 Ry = 13.6056923                                # Conversion factor from Ry to eV
@@ -98,9 +124,6 @@ print(' Finished reading data')
 ################################################## Finished reading data
 
 
-enermax = 2.5            # Maximum energy (Ry)
-enerstep = 0.001         # Energy step (Ry)
-broadning = 0.01j        # energy broadning (Ry) 
 const = 4*2j/(2*np.pi)**2            # = i2e^2/hslash 1/(2pi)^2     in Rydberg units
                                        # the '4' comes from spin degeneracy, that is summed in s and s'
 vk = dk*dk/(2*np.pi)**2              # element of volume in k-space in units of bohr^-1
