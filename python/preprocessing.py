@@ -112,15 +112,22 @@ nscfkpoints = ''                                # to append to nscf file
 nks = nkx*nky*nkz                               # total number of k-points
 nk = 0                                          # count the k-points
 kpoints = np.zeros((nks,3), dtype=float)
+nktoijl = np.zeros((nks,3),dtype=int)           # Converts index nk to indices i,j,l
+ijltonk = np.zeros((nkx,nky,nkz),dtype=int)           # Converts indices i,j,l to index nk
+
 for l in range(nkz):
   for j in range(nky):
     for i in range(nkx):
       k1, k2, k3 = round(k0[0] + step*i,8), round(k0[1] + step*j,8), round(k0[2] + step*l,8)
       kkk = "{:.7f}".format(k1) + '  ' + "{:.7f}".format(k2) + '  ' + "{:.7f}".format(k3)
-      nscfkpoints = nscfkpoints + kkk + '  1\n'
+      nscfkpoints = nscfkpoints + kkk + '  1\n'                       # Build kpoints for nscf calculation
       kpoints[nk,0] = k1
       kpoints[nk,1] = k2
       kpoints[nk,2] = k3
+      nktoijl[nk,0] = i
+      nktoijl[nk,1] = j
+      nktoijl[nk,2] = l
+      ijltonk[i,j,l] = nk
       nk = nk + 1
 
 # Runs nscf calculations for all k-points  ** DFT **
@@ -295,6 +302,20 @@ with open('kpoints.npy', 'wb') as f:
   np.save(f,kpoints)
 f.close()
 print(' kpoints saved to file kpoints.npy (2pi/bohr)')
+
+# Save nktoijl to file
+with open('nktoijl.npy', 'wb') as f:
+  np.save(f,nktoijl)
+f.close()
+print(' nktoijl saved to file nktoijl.npy, with convertion from nk to ijl')
+
+# Save ijltonk to file
+with open('ijltonk.npy', 'wb') as f:
+  np.save(f,ijltonk)
+f.close()
+print(' ijltonk saved to file ijltonk.npy, with convertion from ijl to nk')
+
+
 
 # Save data to file 'datafile.npy'
 with open('datafile.npy', 'wb') as f:

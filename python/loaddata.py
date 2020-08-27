@@ -36,13 +36,13 @@ with open('datafile.npy', 'rb') as f:
 f.close()
 
 
-# Read eigenvalues from file   eigenvalues = np.array(eigenval)
+# Read eigenvalues from file   eigenvalues = np.array(nks,nbnd)
 with open('eigenvalues.npy', 'rb') as f: 
   eigenvalues = np.load(f)
 f.close()
 
 
-# Read occupations from file   occupations = np.array(occupat)
+# Read occupations from file   occupations = np.array(nks,nbnd)
 with open('occupations.npy', 'rb') as f:
   occupations = np.load(f)
 f.close()
@@ -63,6 +63,16 @@ f.close()
 # Read kpoints from file       kpoints = np.zeros((nks,3), dtype=float)
 with open('kpoints.npy', 'rb') as f:
   kpoints = np.load(f)
+f.close()
+
+# Read nktoijl from file       nktoijl = np.zeros((nks,3),dtype=int)
+with open('nktoijl.npy', 'rb') as f:
+  nktoijl = np.load(f)
+f.close()
+
+# Read ijltonk from file       ijltonk = np.zeros((nkx,nky,nkz),dtype=int)
+with open('ijltonk.npy', 'rb') as f:
+  ijltonk = np.load(f)
 f.close()
 
 
