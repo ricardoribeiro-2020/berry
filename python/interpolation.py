@@ -15,11 +15,17 @@ import time
 import contatempo
 from headerfooter import header,footer
 import loaddata as d
-
+import interpolat
 
 header('DOTPRODUCT',time.asctime())
 
 starttime = time.time()                         # Starts counting time
+
+if len(sys.argv)!=2:
+  print(' ERROR in number of arguments. You probably want to give the last band to be considered.')
+  sys.exit("Stop")
+
+lastband = int(sys.argv[1])
 
 # Reading data needed for the run
 berrypath = str(d.berrypath)
@@ -34,10 +40,6 @@ print(' Number of k-points in each direction:',nkx,nky,nkz)
 nks = d.nks
 print(' Total number of k-points:',nks)
 
-nr1 = d.nr1
-nr2 = d.nr2
-nr3 = d.nr3
-print(' Number of points in each direction:',nr1,nr2,nr3)
 nr = d.nr
 print(' Total number of points in real space:',nr)
 npr = d.npr
@@ -75,139 +77,81 @@ with open('signalfinal.npy', 'rb') as f:
   signalfinal = np.load(f)
 f.closed
 
-##########################################################################
 
-# Select points signaled -1
-problem = np.where(signalfinal == -1)
-kpproblem = problem[0]
-bnproblem = problem[1]
 
-# Create array with (kp,b1,b2) with the two problematic bands of each k-point
-# in array kpproblem, the k-points are in pairs, so make use of it
-problemlength = int(kpproblem.size/2)
-kpb1b2 = np.zeros((problemlength,3),dtype=int)
+###################################################################################
 
 print()
-print(' Report on problems found')
-print()
-for i in range(problemlength):
-  kpb1b2[i,0] = kpproblem[i*2]
-  kpb1b2[i,1] = bnproblem[i*2]
-  kpb1b2[i,2] = bnproblem[i*2+1]
-
-  print(' Neighbors of the k-point with problem: ',kpb1b2[i,0],neighbors[kpb1b2[i,0],:])
-  print(bandsfinal[kpb1b2[i,0],:])
-  validneig = np.count_nonzero(neighbors[kpb1b2[i,0],:] != -1)
-  count11 = count12 = count21 = count22 = 0
-  for neig in range(4):
-    if neighbors[kpb1b2[i,0],neig] != -1:
-      print(bandsfinal[neighbors[kpb1b2[i,0],neig],:])
-      print(kpb1b2[i,0],neighbors[kpb1b2[i,0],neig],bnproblem[i*2],bnproblem[i*2], \
-               connections[kpb1b2[i,0],neig,bnproblem[i*2],bnproblem[i*2]])
-      print(kpb1b2[i,0],neighbors[kpb1b2[i,0],neig],bnproblem[i*2],bnproblem[i*2+1], \
-               connections[kpb1b2[i,0],neig,bnproblem[i*2],bnproblem[i*2+1]])
-      print(kpb1b2[i,0],neighbors[kpb1b2[i,0],neig],bnproblem[i*2+1],bnproblem[i*2], \
-               connections[kpb1b2[i,0],neig,bnproblem[i*2+1],bnproblem[i*2]]) 
-      print(kpb1b2[i,0],neighbors[kpb1b2[i,0],neig],bnproblem[i*2+1],bnproblem[i*2+1], \
-               connections[kpb1b2[i,0],neig,bnproblem[i*2+1],bnproblem[i*2+1]])
-
-      if connections[kpb1b2[i,0],neig,bnproblem[i*2],bnproblem[i*2]] > 0.85:
-        count11 += 1
-      if connections[kpb1b2[i,0],neig,bnproblem[i*2],bnproblem[i*2+1]] > 0.85:
-        count12 += 1
-      if connections[kpb1b2[i,0],neig,bnproblem[i*2+1],bnproblem[i*2]] > 0.85:
-        count21 += 1
-      if connections[kpb1b2[i,0],neig,bnproblem[i*2+1],bnproblem[i*2+1]] > 0.85:
-        count22 += 1
-
-
-  if count11 == validneig:
-    signalfinal[kpb1b2[i,0],bnproblem[i*2]] = validneig                  # signals problem as solved
-    signalfinal[kpb1b2[i,0],bnproblem[i*2+1]] = validneig                # signals problem as solved
-
-  if count12 == validneig:
-    signalfinal[kpb1b2[i,0],bnproblem[i*2]] = validneig                  # signals problem as solved
-    signalfinal[kpb1b2[i,0],bnproblem[i*2+1]] = validneig                # signals problem as solved
-
-  if count21 == validneig:
-    signalfinal[kpb1b2[i,0],bnproblem[i*2]] = validneig                  # signals problem as solved
-    signalfinal[kpb1b2[i,0],bnproblem[i*2+1]] = validneig                # signals problem as solved
-
-  if count22 == validneig:
-    signalfinal[kpb1b2[i,0],bnproblem[i*2]] = validneig                  # signals problem as solved
-    signalfinal[kpb1b2[i,0],bnproblem[i*2+1]] = validneig                # signals problem as solved
-
-print()
-print(' Cases where attribution failed')
-print()
-# Select points signaled 0
-kpproblem,bnproblem = np.where(signalfinal == 0)
-problemlength = int(kpproblem.size)
-kpb1b2 = np.zeros((problemlength,2),dtype=int)
-for i in range(problemlength):
-  kpb1b2[i,0] = kpproblem[i]
-  kpb1b2[i,1] = bnproblem[i]
-  validneig = np.count_nonzero(neighbors[kpb1b2[i,0],:] != -1)
-  count11 = 0
-  refbnd = -1
-  for neig in range(4):
-    if neighbors[kpb1b2[i,0],neig] != -1:
-      for j in range(nbnd):
-        if connections[kpb1b2[i,0],neig,bnproblem[i],bandsfinal[neighbors[kpb1b2[i,0],neig],j]] > 0.8 and bandsfinal[neighbors[kpb1b2[i,0],neig],j] !=-1:
-          print(kpb1b2[i,0],neighbors[kpb1b2[i,0],neig],bnproblem[i],bandsfinal[neighbors[kpb1b2[i,0],neig],j], \
-               connections[kpb1b2[i,0],neig,bnproblem[i],bandsfinal[neighbors[kpb1b2[i,0],neig],j]])
-          if refbnd == -1:
-            refbnd = bandsfinal[neighbors[kpb1b2[i,0],neig],j]
-            count11 +=1
-          elif refbnd == bandsfinal[neighbors[kpb1b2[i,0],neig],j]:
-            count11 +=1
-          else:
-            count11 = -100
-  if count11 > 0:
-    print(' Found!')
-    bandsfinal[kpb1b2[i,0],kpb1b2[i,1]] = refbnd
-    signalfinal[kpb1b2[i,0],kpb1b2[i,1]] = count11
-
-
-
-
-print()
+print('**********************')
 print(' Problems not solved')
-problem = np.where(signalfinal == -1)
-kpproblem = problem[0]
-bnproblem = problem[1]
+kpproblem,bnproblem = np.where(signalfinal == -1)
+print(kpproblem)
+print(bnproblem)
+print(' Will make interpolations of the wavefunctions.')
+for i in range(kpproblem.size):
+  if bnproblem[i] <= lastband:
+    nk0 = kpproblem[i]
+    nb0 = bnproblem[i]
+    xx0 = np.full((7),-1,dtype=int)
+    xx1 = np.full((7),-1,dtype=int)
+    print(' ',nk0,'  ',nb0)
+    print(neighbors[nk0,:])
+    for j in range(4):
+      nk = neighbors[nk0,j]
+      if nk != -1 and nb0 <= lastband:
+        if j == 0:
+          xx0[2] = nk
+        elif j == 1:
+          xx1[2] = nk
+        elif j == 2:
+          xx0[4] = nk
+        elif j == 3:
+          xx1[4] = nk
+        for jj in range(4):
+          nk1 = neighbors[nk,jj]
+          if nk1 != -1:
+            if j == jj and j == 0:
+              xx0[1] = nk1
+              nk2 = neighbors[nk1,0]
+              if nk2 != -1:
+                xx0[0] = nk2
+            elif j == jj and j == 1:
+              xx1[1] = nk1
+              nk2 = neighbors[nk1,1]
+              if nk2 != -1:
+                xx1[0] = nk2
+            elif j == jj and j == 2:
+              xx0[5] = nk1
+              nk2 = neighbors[nk1,2]
+              if nk2 != -1:
+                xx0[6] = nk2
+            elif j == jj and j == 3:
+              xx1[5] = nk1
+              nk2 = neighbors[nk1,3]
+              if nk2 != -1:
+                xx1[6] = nk2
+ 
+ 
+    bx0 = np.full((7),-1,dtype=int)
+    bx1 = np.full((7),-1,dtype=int)
+ 
+    # Determine every pair k,b for the wfc used for the interpolation
+    bx0 = bandsfinal[xx0,bnproblem[i]]
+    bx1 = bandsfinal[xx1,bnproblem[i]]
+ 
+    print('xx0',xx0)
+    print('bx0',bx0)
+    print('xx1',xx1)
+    print('bx1',bx1)
+ 
+ 
+    # nk0,nb0 - kpoint/machine band to be substituted
+    print(' Interpolating ',nk0,nb0)
+    interpolat.interpol(nr,nk0,nb0,xx0,xx1,bx0,bx1,wfcdirectory)
 
-problemlength = int(kpproblem.size/2)
-kpb1b2 = np.zeros((problemlength,3),dtype=int)
-for i in range(problemlength):
-  kpb1b2[i,0] = kpproblem[i*2]
-  kpb1b2[i,1] = bnproblem[i*2]
-  kpb1b2[i,2] = bnproblem[i*2+1]
 
-  print(' Neighbors of the k-point with problem: ',neighbors[kpb1b2[i,0],:])
-  print(bandsfinal[kpb1b2[i,0],:])
-  validneig = np.count_nonzero(neighbors[kpb1b2[i,0],:] != -1)
-  count11 = 0
-  count12 = 0
-  count21 = 0
-  count22 = 0
-  for neig in range(4):
-    if neighbors[kpb1b2[i,0],neig] != -1:
-      print(bandsfinal[neighbors[kpb1b2[i,0],neig],:])
-      print(kpb1b2[i,0],neighbors[kpb1b2[i,0],neig],bnproblem[i*2],bnproblem[i*2], \
-               connections[kpb1b2[i,0],neig,bnproblem[i*2],bnproblem[i*2]])
-      print(kpb1b2[i,0],neighbors[kpb1b2[i,0],neig],bnproblem[i*2],bnproblem[i*2+1], \
-               connections[kpb1b2[i,0],neig,bnproblem[i*2],bnproblem[i*2+1]])
-      print(kpb1b2[i,0],neighbors[kpb1b2[i,0],neig],bnproblem[i*2+1],bnproblem[i*2], \
-               connections[kpb1b2[i,0],neig,bnproblem[i*2+1],bnproblem[i*2]])
-      print(kpb1b2[i,0],neighbors[kpb1b2[i,0],neig],bnproblem[i*2+1],bnproblem[i*2+1], \
-               connections[kpb1b2[i,0],neig,bnproblem[i*2+1],bnproblem[i*2+1]])
-
-
-
-
-
-
+#sys.exit("Stop")
+###################################################################################
 print()
 print(' *** Final Report ***')
 print()
@@ -230,9 +174,9 @@ for nb in range(nbnd):
         lin += sep+sep+str(f)
       elif f>= 0 and f < 10:
         lin += sep+sep+sep+str(f)
-      elif f > 9 and nk < 100:
+      elif f > 9 and f < 100:
         lin += sep+sep+str(f)
-      elif f > 99 and nk < 1000:
+      elif f > 99 and f < 1000:
         lin += sep+str(f)
     print(lin)
 print()
@@ -287,30 +231,10 @@ for nb in range(nbnd):
   if nrsignal[nb,1] != 0:
     print('  band ',nb,'  failed attribution of ',nrsignal[nb,1],' k-points')
 
+print()
+print(' Number of bands interpolated: ',kpproblem.shape)
 
 print()
-print(' Saving files new apontador and bandas.')
-with open(wfcdirectory+'/apontador','w') as aa:      # Reads pointers of bands from file
-  for nb in range(nbnd):
-    for nk in range(nks):
-      aa.write('  ' + str(nk) + '  ' + str(bandsfinal[nk,nb]) + '  ' + str(nb) + '  ' + str(signalfinal[nk,nb]) + '\n')
-aa.closed
-with open(wfcdirectory+'/bandas','w') as ba:
-  for nb in range(nbnd):
-    for nk in range(nks):
-      ba.write('  ' + str(nb) + '  ' + str(nk) + '  ' + str(bandsfinal[nk,nb]) + '\n')
-ba.closed
-
-print(' Saving new files bandsfinal.npy and signalfinal.npy')
-print(' bandsfinal.npy gives the machine number for each k-point/band')
-with open('bandsfinal1.npy', 'wb') as f:
-  np.save(f,bandsfinal)
-f.closed
-with open('signalfinal1.npy', 'wb') as f:
-  np.save(f,signalfinal)
-f.closed
-
-
 
 
 # Finished
