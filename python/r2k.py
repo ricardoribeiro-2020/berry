@@ -107,7 +107,7 @@ for banda in range(nbndmin,nbndmax):   # For each band
   for kp in range(nks):
     banda0 = bandsfinal[kp,banda] + 1         # Chooses the machine nr for reading the wfc
     if signalfinal[kp,banda] == -1:           # if its a signaled wfc, choose interpolated
-      fich = wfcdirectory+"/k0"+str(kp)+"b0"+str(banda0)+".wfc"
+      fich = wfcdirectory+"/k0"+str(kp)+"b0"+str(banda0)+".wfc1"
     else:                                     # else choose original
       fich = wfcdirectory+"/k0"+str(kp)+"b0"+str(banda0)+".wfc"
     wfct_k[kp] = np.loadtxt(fich)

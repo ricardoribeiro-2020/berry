@@ -11,7 +11,6 @@
  draw2D_corrected.py
  draw2D_machine.py
  drawberry.py
- draw_wfc_grad.py
  generatewfc.py
  headerfooter.py
  interpolation.py
@@ -41,7 +40,6 @@
  draw2D_corrected.py
  draw2D_machine.py
  drawberry.py
- draw_wfc_grad.py
 
 * Auxiliary programs:
  comutator.py
@@ -145,10 +143,9 @@
 
 
 5) compara.py may need to be run several times until the results are good.
- - Even so, there may be a few points that need fixing and others that are actual discontinuities and so need an interpolation.
+ - Even so, there may be a few points that are actual discontinuities and so need an interpolation.
  - For this, interpolation.py should be run.
- - It will create a new pair of files bandsfinal.npy and signalfinal.npy
-
+ - It will create new interpolated wavefunctions with extension .wfc1
 
 6) With the bands right, now proceeds to calculate the wavefunctions in k-space and their gradients.
  - For that, run r2k.py with one or two arguments
