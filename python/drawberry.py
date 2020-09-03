@@ -1,26 +1,23 @@
 # This program is to read and draw wfc and grad wfc
 
 # This is to include maths
-import math
-import re
 import numpy as np
+
 # This is to draw
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D,axes3d
+
 # This is to make operations in the shell
 import sys
-import time
-# This are the subroutines and functions
-import load
+
 # This to make parallel processing
 import joblib
 
-wfcdirectory = 'wfc'
 bandwfc = int(sys.argv[1])
 gradwfc = int(sys.argv[2])
 tipo = sys.argv[3]
 
-filename = wfcdirectory+'/berryCon'+str(bandwfc)+'-'+str(gradwfc)
+filename = 'berryCon'+str(bandwfc)+'-'+str(gradwfc)
 
 berryConnection = joblib.load(filename+'.gz')
 

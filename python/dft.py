@@ -1,6 +1,7 @@
+###################################################################################
 # These routines run the DFT calculations
+###################################################################################
 
-import readwfck2r
 # This is to make operations in the shell
 import os
 import sys
@@ -9,7 +10,7 @@ import sys
 def scf(mpi,directory,name_scf):
 
   scffile = directory + name_scf
-  verifica = os.popen("test -f " + scffile + ".out;echo $?").read()   #if 1\n does no exist if 0\n exists
+  verifica = os.popen("test -f " + scffile + ".out;echo $?").read()   #if 1\n does not exist if 0\n exists
   
   if verifica == '1\n':  # If output file does not exist, run the scf calculation
     print(' Running scf calculation')
@@ -48,7 +49,7 @@ def template(directory,name_scf):
 # NSCF calculation ****************************************************
 def nscf(mpi,directory,name_nscf,nscf,nkps,kpoints,nbands):
   nscffile = directory + name_nscf
-  verifica = os.popen("test -f " + nscffile + ".out;echo $?").read()   #if 1\n does no exist if 0\n exists
+  verifica = os.popen("test -f " + nscffile + ".out;echo $?").read()   #if 1\n does not exist if 0\n exists
   
   if verifica == '1\n':  # If output file does not exist, run the nscf calculation
 
@@ -80,19 +81,32 @@ def nscf(mpi,directory,name_nscf,nscf,nkps,kpoints,nbands):
 
 
 # wfck2r calculation and wavefunctions extraction *********************
-def wfck2r(directory,nk1,wfcdirectory,create=True,limite=400):
-  print(' Extracting wavefunctions; limite = ',limite,' nk = ',nk1)
-  sys.stdout.flush()
-  comando = "&inputpp  prefix = 'bn' , outdir = '"+directory+"out/' , first_k = "+str(nk1+1)+", last_k = "+str(nk1+1)+",loctave=.true., /"
-  if create:
-    os.system('echo "'+comando+'"|wfck2r.x > '+directory+'tmp')
-    #os.system('ls -l wfck2r.mat')
+def wfck2r(dftdirectory,wfcdirectory,nk1,nb1,npr1):
+#  print(' Extracting wavefunctions; nk = ',nk1,'; nb = ',nb1)
 
-    comando2 = "&input limite = "+str(limite)+", nk1 = "+str(nk1)+", wfcdirectory = '"+wfcdirectory+"',/"
-    os.system('echo "'+comando2+'"|./extractwfc.x')
-
-  readwfck2r.trimmedFile()                        # cuts data from the rest of file
+  mpi = ''
+  comando = "&inputpp  prefix = 'bn' ,\
+                       outdir = '"+str(dftdirectory)+"out/' ,\
+                      first_k = "+str(nk1+1)+" ,\
+                       last_k = "+str(nk1+1)+" ,\
+                   first_band = "+str(nb1)+" ,\
+                    last_band = "+str(nb1)+" , \
+                      loctave = .true., /"
   #print(comando)
+  sys.stdout.flush()
+
+  os.system('echo "'+comando+'"|wfck2r.x > '+str(dftdirectory)+'tmp')
+
+  comando2 = "&input\
+  nk = "+str(nk1)+" ,\
+  nb = "+str(nb1)+" ,\
+ npr = "+str(npr1)+" ,\
+  wfcdirectory = '"+str(wfcdirectory)+"' ,/"
+
+#  print(comando2)
+  berrypath = str(os.environ['BERRYPATH'])
+
+  os.system('echo "'+comando2+'"|'+mpi+berrypath+'bin/extractwfc.x')
 
   return
 
