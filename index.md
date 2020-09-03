@@ -1,37 +1,19 @@
-## Welcome to GitHub Pages
+# berry
 
-You can use the [editor on GitHub](https://github.com/ricardoribeiro-2020/berry/edit/gh-pages/index.md) to maintain and preview the content for your website in Markdown files.
+## Welcome to berry suite homepage
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+**berry** is a set of programs that calculate Berry connections from DFT calculations.
 
-### Markdown
+Berry connections can be used to calculate the fisrt order optical conductivity and the second order optical conductivity for second harmonic generation (SHG).
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+In practice it retrieves the wavefunctions and their gradients in reciprocal space totally ordered by unentangled bands, where continuity applies. Therefore, this suite of programs can be used in other calculations other than Berry connections and related topics, with small adaptations.
 
-```markdown
-Syntax highlighted code block
+This version 0.1 is the very beginning and so it still has limitations. 
+It can only be used with 2D materials and with DFT suite Quantum Espresso.
 
-# Header 1
-## Header 2
-### Header 3
+It is expected that this software will evolve with more possibilities in the near future.
 
-- Bulleted
-- List
-
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
-
-[Link](url) and ![Image](src)
-```
-
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
-
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/ricardoribeiro-2020/berry/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
 
 ### Support or Contact
 
-Having trouble with Pages? Check out our [documentation](https://docs.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
+This project is maintained by Ricardo Mendes Ribeiro (ricardo.ribeiro@physics.org).
