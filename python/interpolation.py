@@ -87,7 +87,9 @@ print(' Problems not solved')
 kpproblem,bnproblem = np.where(signalfinal == -1)
 print(kpproblem)
 print(bnproblem)
+nrinter = 0
 print(' Will make interpolations of the wavefunctions.')
+sys.stdout.flush()
 for i in range(kpproblem.size):
   if bnproblem[i] <= lastband:
     nk0 = kpproblem[i]
@@ -148,7 +150,7 @@ for i in range(kpproblem.size):
     # nk0,nb0 - kpoint/machine band to be substituted
     print(' Interpolating ',nk0,nb0)
     interpolat.interpol(nr,nk0,nb0,xx0,xx1,bx0,bx1,wfcdirectory)
-
+    nrinter += 1
 
 #sys.exit("Stop")
 ###################################################################################
@@ -232,7 +234,7 @@ for nb in range(nbnd):
     print('  band ',nb,'  failed attribution of ',nrsignal[nb,1],' k-points')
 
 print()
-print(' Number of bands interpolated: ',kpproblem.shape)
+print(' Number of bands interpolated: ',nrinter)
 
 print()
 

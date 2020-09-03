@@ -199,46 +199,6 @@ for c in range(1):
       negcount += 1
 
 
-##########################################################################
-print()
-print(' Try a more relaxed attribution where it failed')
-print()
-attcount = 0
-# Select points signaled 0
-kpproblem,bnproblem = np.where(signal[:,:,1] == 0)
-problemlength = int(kpproblem.size)
-kpb1b2 = np.zeros((problemlength,2),dtype=int)
-for i in range(problemlength):
-  kpb1b2[i,0] = kpproblem[i]
-  kpb1b2[i,1] = bnproblem[i]
-  validneig = np.count_nonzero(neighbors[kpb1b2[i,0],:] != -1)
-  count11 = 0
-  refbnd = -1
-  for neig in range(4):
-    if neighbors[kpb1b2[i,0],neig] != -1:
-      for j in range(nbnd):
-        if connections[kpb1b2[i,0],neig,bnproblem[i],bands[neighbors[kpb1b2[i,0],neig],j,1]] > 0.8 and bands[neighbors[kpb1b2[i,0],neig],j,1] !=-1:
-          print(kpb1b2[i,0],neighbors[kpb1b2[i,0],neig],bnproblem[i],bands[neighbors[kpb1b2[i,0],neig],j,1], \
-               connections[kpb1b2[i,0],neig,bnproblem[i],bands[neighbors[kpb1b2[i,0],neig],j,1]])
-          if refbnd == -1:
-            refbnd = bands[neighbors[kpb1b2[i,0],neig],j,1]
-            count11 +=1
-          elif refbnd == bands[neighbors[kpb1b2[i,0],neig],j,1]:
-            count11 +=1
-          else:
-            count11 = -100
-  if count11 > 0:
-    print(' Found band to attribute!')
-    bands[kpb1b2[i,0],kpb1b2[i,1],1] = refbnd
-    signal[kpb1b2[i,0],kpb1b2[i,1],1] = count11
-    attcount += 1
-
-
-
-
-
-
-
 
 
 
@@ -350,6 +310,46 @@ for nk0 in range(nks):
                   signal[nk0,nb0,1] = 1
                 eigcont += 1
                 break
+
+
+
+
+##########################################################################
+print()
+print(' Try a more relaxed attribution where it failed')
+print()
+attcount = 0
+# Select points signaled 0
+kpproblem,bnproblem = np.where(signal[:,:,1] == 0)
+problemlength = int(kpproblem.size)
+kpb1b2 = np.zeros((problemlength,2),dtype=int)
+for i in range(problemlength):
+  kpb1b2[i,0] = kpproblem[i]
+  kpb1b2[i,1] = bnproblem[i]
+  validneig = np.count_nonzero(neighbors[kpb1b2[i,0],:] != -1)
+  count11 = 0
+  refbnd = -1
+  for neig in range(4):
+    if neighbors[kpb1b2[i,0],neig] != -1:
+      for j in range(nbnd):
+        if connections[kpb1b2[i,0],neig,bnproblem[i],bands[neighbors[kpb1b2[i,0],neig],j,1]] > 0.8 and bands[neighbors[kpb1b2[i,0],neig],j,1] !=-1:
+          print(kpb1b2[i,0],neighbors[kpb1b2[i,0],neig],bnproblem[i],bands[neighbors[kpb1b2[i,0],neig],j,1], \
+               connections[kpb1b2[i,0],neig,bnproblem[i],bands[neighbors[kpb1b2[i,0],neig],j,1]])
+          if refbnd == -1:
+            refbnd = bands[neighbors[kpb1b2[i,0],neig],j,1]
+            count11 +=1
+          elif refbnd == bands[neighbors[kpb1b2[i,0],neig],j,1]:
+            count11 +=1
+          else:
+            count11 = -100
+  if count11 > 0:
+    print(' Found band to attribute!')
+    bands[kpb1b2[i,0],kpb1b2[i,1],1] = refbnd
+    signal[kpb1b2[i,0],kpb1b2[i,1],1] = count11
+    attcount += 1
+
+
+
 
 
 
@@ -496,8 +496,8 @@ for nb in range(nbnd):
 
 print()
 print(' Continuity recovered: ',negcount)
-print(' More relaxed attribution: ',attcount)
 print(' Found by eigenvalue continuity: ',eigcont)
+print(' More relaxed attribution: ',attcount)
 print(' Merged ',merger,' sets')
 print()
 

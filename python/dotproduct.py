@@ -21,22 +21,12 @@ header('DOTPRODUCT',time.asctime())
 starttime = time.time()                         # Starts counting time
 
 # Reading data needed for the run
-berrypath = str(d.berrypath)
-print(' Path to BERRY files:',berrypath)
 
 wfcdirectory = str(d.wfcdirectory)
 print(' Directory where the wfc are:',wfcdirectory)
-nkx = d.nkx
-nky = d.nky
-nkz = d.nkz
-print(' Number of k-points in each direction:',nkx,nky,nkz)
 nks = d.nks
 print(' Total number of k-points:',nks)
 
-nr1 = d.nr1
-nr2 = d.nr2
-nr3 = d.nr3
-print(' Number of points in each direction:',nr1,nr2,nr3)
 nr = d.nr
 print(' Total number of points in real space:',nr)
 npr = d.npr
