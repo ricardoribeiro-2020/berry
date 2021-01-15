@@ -84,7 +84,7 @@ IMPLICIT NONE
     IF (xx0(ii) > -1 .AND. ii .NE. 3) THEN
       x(npontos) = ii
       WRITE(str1,*) xx0(ii)
-      WRITE(str2,*) bx0(ii)
+      WRITE(str2,*) bx0(ii) + 1       ! To convert bands in python program to bands in files
       outfile = trim(wfcdirectory)//'/k0'//trim(adjustl(str1))//'b0'//trim(adjustl(str2))//'.wfc'
       WRITE(*,*) ' Reading file: '//outfile
       OPEN(FILE=outfile,UNIT=3,STATUS='OLD')
@@ -119,7 +119,7 @@ IMPLICIT NONE
     IF (xx1(ii) > -1 .AND. ii .NE. 3) THEN
       x(npontos) = ii
       WRITE(str1,*) xx1(ii)
-      WRITE(str2,*) bx1(ii)
+      WRITE(str2,*) bx1(ii) + 1       ! To convert bands in python program to bands in files
       outfile = trim(wfcdirectory)//'/k0'//trim(adjustl(str1))//'b0'//trim(adjustl(str2))//'.wfc'
       WRITE(*,*) ' Reading file: '//outfile
       OPEN(FILE=outfile,UNIT=3,STATUS='OLD')
@@ -149,7 +149,7 @@ IMPLICIT NONE
   ENDIF
 
   WRITE(str1,*) nk0
-  WRITE(str2,*) nb0
+  WRITE(str2,*) nb0 + 1       ! To convert bands in python program to bands in files
   outfile = trim(wfcdirectory)//'/k0'//trim(adjustl(str1))//'b0'//trim(adjustl(str2))//'.wfc1'
   WRITE(*,*) ' Writing file: '//outfile
   OPEN(FILE=outfile,UNIT=3,STATUS='UNKNOWN')

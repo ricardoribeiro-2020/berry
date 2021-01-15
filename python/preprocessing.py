@@ -191,7 +191,8 @@ print()
 
 nbnd = int(root[3][9][3].text)
 print(' Number of bands in the DFT calculation: ',nbnd)
-nks = int(root[3][9][10].text)
+nks = int(root[3][9][11].text)
+#nks = int(root[3][9][10].text)
 print(' Number of k-points in the DFT calculation: ',nks)
 print()
 

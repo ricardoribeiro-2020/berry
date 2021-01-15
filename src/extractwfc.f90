@@ -60,7 +60,7 @@ IMPLICIT NONE
   DO l = 1, nr3x
     DO j = 1, nr2x
       DO i = 1, nr1x
-        READ(2,*) z
+        READ(2,*) z                   ! Reads data from file: cannot be parallelized
         conta0 = conta0 + 1
         psir(conta0) = REAL(z)
         psii(conta0) = AIMAG(z)
@@ -73,27 +73,29 @@ IMPLICIT NONE
 
 ! Finished reading file
 
-  rpoint = INT(nr1x*nr2x*1.1)
-  deltaphase = phase(rpoint)
-  IF (modulus(rpoint) < 1E-5) THEN    ! If modulus of wfc = 0
-    flag = .FALSE.
+  IF (maq .EQ. 0) THEN
+    rpoint = INT(nr1x*nr2x*1.1)
+    deltaphase = phase(rpoint)
+    IF (modulus(rpoint) < 1E-5) THEN    ! If modulus of wfc = 0
+      flag = .FALSE.
+    ENDIF
+    WRITE(*,'(2i5,2f14.8,L3)') nk,nb,modulus(rpoint),deltaphase,flag
+ 
+    WRITE(str1,*) nk
+    WRITE(str2,*) nb
+    outfile = trim(wfcdirectory)//'/k0'//trim(adjustl(str1))//'b0'//trim(adjustl(str2))//'.wfc'
+
+    OPEN(FILE=outfile,UNIT=3,STATUS='UNKNOWN')
+ 
+    DO i = 1, nr
+      phase(i) = phase(i) - deltaphase
+      psir(i) = modulus(i)*COS(phase(i))
+      psii(i) = modulus(i)*SIN(phase(i))
+      WRITE(3,fmt1) psir(i),psii(i)    ! Writes data to file: cannot be parallelized
+    ENDDO
+ 
+    CLOSE(UNIT=3)
   ENDIF
-  WRITE(*,'(2i5,2f14.8,L3)') nk,nb,modulus(rpoint),deltaphase,flag
-
-  WRITE(str1,*) nk
-  WRITE(str2,*) nb
-  outfile = trim(wfcdirectory)//'/k0'//trim(adjustl(str1))//'b0'//trim(adjustl(str2))//'.wfc'
-
-  OPEN(FILE=outfile,UNIT=3,STATUS='UNKNOWN')
-
-  DO i = 1, nr
-    phase(i) = phase(i) - deltaphase
-    psir(i) = modulus(i)*COS(phase(i))
-    psii(i) = modulus(i)*SIN(phase(i))
-    WRITE(3,fmt1) psir(i),psii(i)
-  ENDDO
-
-  CLOSE(UNIT=3)
 
 !  write(*,*) deltaphase,banda,nr
 
