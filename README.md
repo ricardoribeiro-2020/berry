@@ -1,7 +1,7 @@
 # berry
 This project calculates Berry connections from DFT calculations.
 
-Then the Berry connections can be used to calculate the fisrt order optical conductivity and the second order optical conductivity for second harmonic generation (SHG).
+Then the Berry connections can be used to calculate the first order optical conductivity and the second order optical conductivity for second harmonic generation (SHG).
 
 In practice it retrieves the wavefunctions and their gradients in reciprocal space totally ordered by unentangled bands, where continuity applies.
 Therefore, this suite of programs can be used in other calculations other than Berry connections and related topics, with small adaptations.
