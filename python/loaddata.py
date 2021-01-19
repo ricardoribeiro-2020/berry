@@ -33,6 +33,7 @@ with open('datafile.npy', 'rb') as f:
   nr           = np.load(f)
   nbnd         = np.load(f)
   berrypath    = np.load(f)
+  rpoint       = np.load(f)
 f.close()
 
 
