@@ -7,8 +7,6 @@ import numpy as np
 import os
 import sys
 import subprocess
-# This are the subroutines and functions
-import loaddata as d
 
 # SCF calculation
 def scf(mpi,directory,name_scf):
@@ -87,13 +85,20 @@ def nscf(mpi,directory,name_nscf,nscf,nkps,kpoints,nbands):
 # wfck2r calculation and wavefunctions extraction *********************
 def wfck2r(nk1,nb1):
 #  print(' Extracting wavefunctions; nk = ',nk1,'; nb = ',nb1)
+# This are the subroutines and functions
+  import numexpr as ne
+  import loaddata as d
 
   directories = str(d.dftdirectory)+'run'+str(nk1)+'-'+str(nb1)
   os.system('mkdir -p '+directories)
+  print(directories)
+  if int(d.npr) == 1:
+    mpi = ''
+  else:
+    mpi = 'mpirun -np ' + str(d.npr) + ' '
 
-  mpi = ''
   comando = "&inputpp  prefix = 'bn' ,\
-                       outdir = '../out/' ,\
+                       outdir = '"+str(d.dftdirectory)+"out/' ,\
                       first_k = "+str(nk1+1)+" ,\
                        last_k = "+str(nk1+1)+" ,\
                    first_band = "+str(nb1)+" ,\
@@ -104,7 +109,7 @@ def wfck2r(nk1,nb1):
   # Name of temporary file
   filename = 'wfc'+str(nk1)+'-'+str(nb1)
   cmd0 = 'cd '+directories+';'
-  cmd = cmd0+'echo "'+comando+'"|wfck2r.x > tmp;tail -'+str(d.nr)+' wfck2r.mat'
+  cmd = cmd0+'echo "'+comando+'"|'+mpi+'wfck2r.x > tmp;tail -'+str(d.nr)+' wfck2r.mat'
 
   output = subprocess.check_output(cmd,shell=True)
 
@@ -115,8 +120,9 @@ def wfck2r(nk1,nb1):
 
   psi  = np.fromstring(out3,dtype=complex,sep='\n')
 
-  modulus = np.abs(psi)
-  phase = np.angle(psi)
+  modulus = ne.evaluate('abs(psi).real')
+  phase = ne.evaluate('arctan2(psi.imag,psi.real)')
+#  phase = np.angle(psi)
 
   # Phase that has to be subtracted to all points of the wavefunction
   deltaphase = phase[int(d.rpoint)]
@@ -128,9 +134,12 @@ def wfck2r(nk1,nb1):
   # Log to output
   print(nk1,nb1,modulus[int(d.rpoint)],deltaphase,flag)
 
-  phase = phase - deltaphase
+  phase = ne.evaluate('phase - deltaphase')
 
-  psifinal = modulus*np.vectorize(complex)(np.cos(phase),np.sin(phase))
+  re = ne.evaluate('modulus*cos(phase)')
+  im = ne.evaluate('modulus*sin(phase)')
+  psifinal = ne.evaluate('complex(re,im)')
+#  psifinal = modulus*np.vectorize(complex)(np.cos(phase),np.sin(phase))
 
   # Name of the final wfc file
   outfile = str(d.wfcdirectory)+'k0'+str(nk1)+'b0'+str(nb1)+'.wfc'

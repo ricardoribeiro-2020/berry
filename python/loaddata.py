@@ -34,6 +34,7 @@ with open('datafile.npy', 'rb') as f:
   nbnd         = np.load(f)
   berrypath    = np.load(f)
   rpoint       = np.load(f)
+  workdir      = np.load(f)
 f.close()
 
 

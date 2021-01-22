@@ -45,11 +45,12 @@ print(' Reading from input file:', sys.argv[1])
 
 # Defaults:
 npr = 1
-dftdirectory = './dft/'
+dftdirectory = 'dft/'
 name_scf = 'scf'
 name_nscf = 'nscf'
-wfcdirectory = './wfc/'
+wfcdirectory = 'wfc/'
 point = 1.1
+workdir = os.getcwd()+'/'     # Directory where results will show
 
 # Open input file for the run
 with open(sys.argv[1],'r') as inputfile:
@@ -86,6 +87,10 @@ for i in inputvar:
   if ii[0] == 'point':
     point = float(ii[1])
 
+# create absolute paths for directories
+dftdirectory = workdir + dftdirectory
+wfcdirectory = workdir + wfcdirectory
+
 print(' Number of bands in the nscf calculation nbnd:',str(nbnd))
 print(' Starting k-point of the mesh k0:',str(k0))
 print(' Number of points in the mesh ',str(nkx),str(nky),str(nkz))
@@ -93,9 +98,10 @@ print(' Step of the k-point mesh ',str(step))
 print(' To calculate point in real space where all phases match ',str(point))
 print()
 print(' Will run in',npr,' processors')
+print(' Working directory:',workdir)
 print(' The DFT files will be on:',dftdirectory)
 print(' Name of scf file:',name_scf)
-print(' Name od nscf file:',name_nscf)
+print(' Name of nscf file:',name_nscf)
 print(' Name of directory for wfc:',wfcdirectory)
 print()
 print(' Finished reading input file')
@@ -354,6 +360,7 @@ with open('datafile.npy', 'wb') as f:
   np.save(f,nbnd)           # Number of bands
   np.save(f,berrypath)      # Path of BERRY files
   np.save(f,rpoint)         # Point in real space where all phases match
+  np.save(f,workdir)        # Working directory
 f.close()
 print(' Data saved to file datafile.npy')
 

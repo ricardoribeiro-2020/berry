@@ -80,13 +80,13 @@ if __name__ == '__main__':
     nb = int(sys.argv[2])
     print(' Will run just for k-point',nk,'and band',nb)
   print()
-#  npr=2
-  print(mp.Pool(mp.cpu_count()))
+  npr=2
+#  print(mp.cpu_count())
   # Creates file with wfc of all bands at nk  ** DFT **
   if nk == -1 and nb == -1:                  # Will run for all k-points and bands
     if npr > 1:
       with mp.Pool(processes=npr) as pool:
-        pool.map(extractconvert, range(nks),2)
+        pool.map(extractconvert, range(nks),int(npr))
     else:
       for nk in range(0,nks):
         print(' Calculating wfc for k-point',nk)
