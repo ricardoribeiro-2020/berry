@@ -80,7 +80,7 @@ if __name__ == '__main__':
     nb = int(sys.argv[2])
     print(' Will run just for k-point',nk,'and band',nb)
   print()
-  npr=2
+#  npr=2
 #  print(mp.cpu_count())
   # Creates file with wfc of all bands at nk  ** DFT **
   if nk == -1 and nb == -1:                  # Will run for all k-points and bands
