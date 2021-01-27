@@ -156,7 +156,7 @@ print()
 
 tree = ET.parse(dftdatafile)
 root = tree.getroot()
-
+output = root.find('output')
 #for child in root[3]:
 #  print(child.tag, child.attrib)
 #  for child1 in child:
@@ -166,33 +166,21 @@ root = tree.getroot()
 #  print()
 
 print(' Lattice vectors in units of a0 (bohr)')
-for it in root[3][3][1].iter('a1'):
-  a1 = np.array(list(map(float,it.text.split())))
+a1,a2,a3 = [np.array(list(map(float,it.text.split()))) for it in output.find('atomic_structure').find('cell')]
 print('  a1:',a1)
-for it in root[3][3][1].iter('a2'):
-  a2 = np.array(list(map(float,it.text.split())))
 print('  a2:',a2)
-for it in root[3][3][1].iter('a3'):
-  a3 = np.array(list(map(float,it.text.split())))
 print('  a3:',a3)
 print()
 
 print(' Reciprocal lattice vectors in units of 2pi/a0 (2pi/bohr)')
-for it in root[3][5][9].iter('b1'):
-  b1 = np.array(list(map(float,it.text.split())))
+b1,b2,b3 = [np.array(list(map(float,it.text.split()))) for it in output.find('basis_set').find('reciprocal_lattice')]
 print('  b1:',b1)
-for it in root[3][5][9].iter('b2'):
-  b2 = np.array(list(map(float,it.text.split())))
 print('  b2:',b2)
-for it in root[3][5][9].iter('b3'):
-  b3 = np.array(list(map(float,it.text.split())))
 print('  b3:',b3)
 print()
 
 print(' Number of points in real space in each direction')
-nr1 = int(root[3][5][3].attrib["nr1"])
-nr2 = int(root[3][5][3].attrib["nr2"])
-nr3 = int(root[3][5][3].attrib["nr3"])
+nr1,nr2,nr3 = [int(n) for n in output.find('basis_set').find('fft_grid').attrib.values()]
 nr = nr1*nr2*nr3
 print('  nr1:',nr1)
 print('  nr2:',nr2)
@@ -202,10 +190,9 @@ rpoint = int(point*nr1*nr2)
 print(' Point where phases match: ',str(rpoint))
 print()
 
-nbnd = int(root[3][9][3].text)
+nbnd = int(output.find('band_structure').find('nbnd').text)
 print(' Number of bands in the DFT calculation: ',nbnd)
-nks = int(root[3][9][11].text)
-#nks = int(root[3][9][10].text)
+nks = int(output.find('band_structure').find('nks').text)
 print(' Number of k-points in the DFT calculation: ',nks)
 print()
 
@@ -215,15 +202,11 @@ print()
 #    print(' ',child1.tag,child1.attrib,child1.text)
 
 
-eigenval = []
-for it in root[3][9].iter('eigenvalues'):
-  eigenval.append(list(map(float,it.text.split())))
+eigenval = [list(map(float,it.text.split())) for it in output.find('band_structure').iter('eigenvalues')]
 eigenvalues = 2*np.array(eigenval)
 #print(eigenvalues)
 
-occupat = []
-for it in root[3][9].iter('occupations'):
-  occupat.append(list(map(float,it.text.split())))
+occupat = [list(map(float,it.text.split())) for it in output.find('band_structure').iter('occupations')]
 occupations = np.array(occupat)
 #print(occupations)
 
@@ -244,12 +227,7 @@ for l in range(nr3):
       r[count] = a1*i/nr1 + a2*j/nr2 + a3*l/nr3
       count += 1
 
-phase = np.zeros((nr,nks),dtype=complex)
-for i in range(nr):
-  for nk in range(nks):
-    phase[i,nk] = np.exp(1j*(kpoints[nk,0]*r[i,0]\
-                           + kpoints[nk,1]*r[i,1]\
-                           + kpoints[nk,2]*r[i,2]))
+phase = np.exp(1j*np.dot(r,np.transpose(kpoints)))
 
 with open('phase.npy','wb') as ph:
   np.save(ph,phase)
