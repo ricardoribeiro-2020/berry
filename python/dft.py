@@ -50,6 +50,7 @@ def template(directory,name_scf):
 
 # NSCF calculation ****************************************************
 def nscf(mpi,directory,name_nscf,nscf,nkps,kpoints,nbands):
+
   nscffile = directory + name_nscf
   verifica = os.popen("test -f " + nscffile + ".out;echo $?").read()   #if 1\n does not exist if 0\n exists
   
@@ -83,15 +84,11 @@ def nscf(mpi,directory,name_nscf,nscf,nkps,kpoints,nbands):
 
 
 # wfck2r calculation and wavefunctions extraction *********************
-def wfck2r(nk1,nb1):
-#  print(' Extracting wavefunctions; nk = ',nk1,'; nb = ',nb1)
+def wfck2r(nk1,nb1,total_bands=0):
 # This are the subroutines and functions
-  import numexpr as ne
-  import loaddata as d
-
-  directories = str(d.dftdirectory)+'run'+str(nk1)+'-'+str(nb1)
+  import loaddata as d 
+  directories = str(d.dftdirectory)+'run'+str(nk1)+'-'+str(nb1) 
   os.system('mkdir -p '+directories)
-  print(directories)
   if int(d.npr) == 1:
     mpi = ''
   else:
@@ -101,64 +98,37 @@ def wfck2r(nk1,nb1):
                        outdir = '"+str(d.dftdirectory)+"out/' ,\
                       first_k = "+str(nk1+1)+" ,\
                        last_k = "+str(nk1+1)+" ,\
-                   first_band = "+str(nb1)+" ,\
-                    last_band = "+str(nb1)+" , \
+                   first_band = "+str(nb1+1)+" ,\
+                    last_band = "+str(total_bands+1)+" , \
                       loctave = .true., /"
-  #print(comando)
   sys.stdout.flush()
   # Name of temporary file
   filename = 'wfc'+str(nk1)+'-'+str(nb1)
   cmd0 = 'cd '+directories+';'
-  cmd = cmd0+'echo "'+comando+'"|'+mpi+'wfck2r.x > tmp;tail -'+str(d.nr)+' wfck2r.mat'
+  cmd = cmd0+'echo "'+comando+'"|'+mpi+'wfck2r.x > tmp;tail -'+str(d.nr*((total_bands-nb1)+1))+' wfck2r.mat'
 
   output = subprocess.check_output(cmd,shell=True)
-
-#  os.system('echo "'+comando+'"|wfck2r.x > '+str(d.dftdirectory)+'tmp;tail -'+str(d.nr)+' wfck2r.mat>'+filename)
+     
   out1 = output.decode('utf-8').replace(')','j')
   out2 = out1.replace(', -','-')
   out3 = out2.replace(',  ','+').replace('(','')
-
   psi  = np.fromstring(out3,dtype=complex,sep='\n')
 
-  modulus = ne.evaluate('abs(psi).real')
-  phase = ne.evaluate('arctan2(psi.imag,psi.real)')
-#  phase = np.angle(psi)
-
-  # Phase that has to be subtracted to all points of the wavefunction
-  deltaphase = phase[int(d.rpoint)]
-
-  if modulus[int(d.rpoint)] < 1E-5:
-    flag = False
-  else:
-    flag = True
-  # Log to output
-  print(nk1,nb1,modulus[int(d.rpoint)],deltaphase,flag)
-
-  phase = ne.evaluate('phase - deltaphase')
-
-  re = ne.evaluate('modulus*cos(phase)')
-  im = ne.evaluate('modulus*sin(phase)')
-  psifinal = ne.evaluate('complex(re,im)')
-#  psifinal = modulus*np.vectorize(complex)(np.cos(phase),np.sin(phase))
+  psi_rpoint = np.array([psi[int(d.rpoint)+d.nr*i]for i in range((total_bands-nb1)+1)])
+  deltaphase = np.arctan2(psi_rpoint.imag,psi_rpoint.real)
+  mod_rpoint = np.absolute(psi_rpoint) 
+  psifinal = []
+  for i in range((total_bands-nb1)+1):
+    print(nk1,i+nb1,mod_rpoint[i],deltaphase[i],not mod_rpoint[i] < 1E-5)
+    psifinal += list(psi[i*d.nr:(i+1)*d.nr]*np.exp(-1j*deltaphase[i]))
+  psifinal = np.array(psifinal)
 
   # Name of the final wfc file
-  outfile = str(d.wfcdirectory)+'k0'+str(nk1)+'b0'+str(nb1)+'.wfc'
-
+  outfiles = [str(d.wfcdirectory)+'k0'+str(nk1)+'b0'+str(band)+'.wfc' for band in range(nb1,total_bands+1)] 
   # Save wavefunction to file
-  with open(outfile, 'wb') as f:
-    np.save(f,psifinal)
-  f.close()
-#  print(' Wavefunction saved to file '+outfile)
+  for i,outfile in enumerate(outfiles):
+    with open(outfile, 'wb') as f:
+      np.save(f,psifinal[i*d.nr:(i+1)*d.nr])
+    f.close()
 
-#  for i in range(10):
-#    print(psifinal[i])
   os.system('rm -rf '+directories)
-
-
-  return
-
-
-
-
-
-

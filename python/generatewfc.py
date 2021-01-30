@@ -27,7 +27,7 @@ import loaddata as d
 
 def extractconvert(nk):
   print(' Calculating wfc for k-point',nk)
-  for nb in range(1,d.nbnd+1):
+  for nb in range(d.nbnd):
     dft.wfck2r(nk,nb)
   return
 
@@ -88,13 +88,12 @@ if __name__ == '__main__':
       with mp.Pool(processes=npr) as pool:
         pool.map(extractconvert, range(nks),int(npr))
     else:
-      for nk in range(0,nks):
+      for nk in range(nks):
         print(' Calculating wfc for k-point',nk)
-        for nb in range(1,d.nbnd+1):
-          dft.wfck2r(nk,nb)
+        dft.wfck2r(nk,0,d.nbnd-1)             #Calculate for each k all bands
   
   elif nk != -1 and nb == -1:                # Will run just for k-point nk
-    for nb in range(1,d.nbnd+1):
+    for nb in range(d.nbnd):
       print(' Calculating wfc for k-point',nk,'and band',nb)
       dft.wfck2r(nk,nb)
   
