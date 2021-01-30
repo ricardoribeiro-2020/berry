@@ -17,7 +17,7 @@ import loaddata as d
 
 
 def connection(nk,neighbor,dphase):
-
+# Calculates the dot product  of all combinations of wfc in nk and neighbor
   wfcdirectory = str(d.wfcdirectory)
   tol0 = 0.9
   tol1 = 0.85
@@ -25,14 +25,14 @@ def connection(nk,neighbor,dphase):
   dpc1 = np.zeros((nbnd,nbnd),dtype=complex)
 
   for banda0 in range(nbnd):
-    infile = wfcdirectory+'k0'+str(nk)+'b0'+str(banda0+1)+'.wfc'
+    infile = wfcdirectory+'k0'+str(nk)+'b0'+str(banda0+1)+'.wfc'    #eliminate +1
 #    print(infile)
     with open(infile, 'rb') as f:
       wfc0 = np.load(f)
     f.close()
 #    print(wfc0)
     for banda1 in range(nbnd):
-      infile = wfcdirectory+'k0'+str(neighbor)+'b0'+str(banda1+1)+'.wfc'
+      infile = wfcdirectory+'k0'+str(neighbor)+'b0'+str(banda1+1)+'.wfc'    #eliminate +1
 #      print(infile)
 
       with open(infile, 'rb') as f:
@@ -46,6 +46,7 @@ def connection(nk,neighbor,dphase):
 
   return dpc1
 
+##########################################################
 if __name__ == '__main__':
   header('DOTPRODUCT',time.asctime())
 
@@ -78,10 +79,6 @@ if __name__ == '__main__':
   print()
   ##########################################################
   
-  os.system('rm -f dp.dat dpc.dat')
-  os.system('touch dp.dat dpc.dat')
-  sys.stdout.flush()
-  
   dpc = np.full((nks,4,nbnd,nbnd),0+0j,dtype=complex)
   dp = np.zeros((nks,4,nbnd,nbnd))
   
@@ -89,7 +86,7 @@ if __name__ == '__main__':
     for j in range(4):                     # runs through all neighbors
       neighbor = neighbors[nk,j]
       if neighbor != -1:            # exclude invalid neighbors
-  #      print(nk,j,neighbors[nk,j])
+#        print(nk,j,neighbors[nk,j])
   
         dphase = phase[:,nk]*np.conjugate(phase[:,neighbor])
 #        print(dphase)
