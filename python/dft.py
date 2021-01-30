@@ -103,24 +103,29 @@ def wfck2r(nk1,nb1,total_bands=0):
   sys.stdout.flush()
   # Name of temporary file
   filename = 'wfc'+str(nk1)+'-'+str(nb1)
-
-  cmd = 'echo "'+comando+'"|'+mpi+'wfck2r.x > tmp;tail -'+str(d.nr*((total_bands-nb1)+1))+' wfck2r.mat'
-
+  # comand to send to the shell
+  cmd = 'echo "'+comando+'"|'+mpi+'wfck2r.x > tmp;tail -'+str(d.nr*((total_bands-nb1)+1))+' wfck2r.oct'
+  # Captures the output of the shell command
   output = subprocess.check_output(cmd,shell=True)
-
+  # Strips the output of fortran formating and converts to numpy formating
   out1 = output.decode('utf-8').replace(')','j')
   out2 = out1.replace(', -','-')
   out3 = out2.replace(',  ','+').replace('(','')
-
+  # puts the wavefunctions into a numpy array
   psi  = np.fromstring(out3,dtype=complex,sep='\n')
 
-
+  # For each band, find the value of teh wfc at the specific point rpoint (in real space)
   psi_rpoint = np.array([psi[int(d.rpoint)+d.nr*i]for i in range((total_bands-nb1)+1)])
+  # Calculate the phase at rpoint for all the bands
   deltaphase = np.arctan2(psi_rpoint.imag,psi_rpoint.real)
+  # and the modulus
   mod_rpoint = np.absolute(psi_rpoint) 
   psifinal = []
+  # For each band beeing considered
   for i in range((total_bands-nb1)+1):
+    # Print to the output file for verification
     print(nk1,i+nb1,mod_rpoint[i],deltaphase[i],not mod_rpoint[i] < 1E-5)
+    # Subtract the reference phase for each point
     psifinal += list(psi[i*d.nr:(i+1)*d.nr]*np.exp(-1j*deltaphase[i]))
   psifinal = np.array(psifinal)
 
@@ -131,8 +136,6 @@ def wfck2r(nk1,nb1,total_bands=0):
     with open(outfile, 'wb') as f:
       np.save(f,psifinal[i*d.nr:(i+1)*d.nr])
     f.close()
-
-#  os.system('rm -rf '+directories)
 
 
 
