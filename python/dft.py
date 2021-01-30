@@ -85,10 +85,9 @@ def nscf(mpi,directory,name_nscf,nscf,nkps,kpoints,nbands):
 
 # wfck2r calculation and wavefunctions extraction *********************
 def wfck2r(nk1,nb1,total_bands=0):
-# This are the subroutines and functions
+# These are the subroutines and functions
   import loaddata as d 
-  directories = str(d.dftdirectory)+'run'+str(nk1)+'-'+str(nb1) 
-  os.system('mkdir -p '+directories)
+
   if int(d.npr) == 1:
     mpi = ''
   else:
@@ -104,15 +103,17 @@ def wfck2r(nk1,nb1,total_bands=0):
   sys.stdout.flush()
   # Name of temporary file
   filename = 'wfc'+str(nk1)+'-'+str(nb1)
-  cmd0 = 'cd '+directories+';'
-  cmd = cmd0+'echo "'+comando+'"|'+mpi+'wfck2r.x > tmp;tail -'+str(d.nr*((total_bands-nb1)+1))+' wfck2r.mat'
+
+  cmd = 'echo "'+comando+'"|'+mpi+'wfck2r.x > tmp;tail -'+str(d.nr*((total_bands-nb1)+1))+' wfck2r.mat'
 
   output = subprocess.check_output(cmd,shell=True)
-     
+
   out1 = output.decode('utf-8').replace(')','j')
   out2 = out1.replace(', -','-')
   out3 = out2.replace(',  ','+').replace('(','')
+
   psi  = np.fromstring(out3,dtype=complex,sep='\n')
+
 
   psi_rpoint = np.array([psi[int(d.rpoint)+d.nr*i]for i in range((total_bands-nb1)+1)])
   deltaphase = np.arctan2(psi_rpoint.imag,psi_rpoint.real)
@@ -131,4 +132,7 @@ def wfck2r(nk1,nb1,total_bands=0):
       np.save(f,psifinal[i*d.nr:(i+1)*d.nr])
     f.close()
 
-  os.system('rm -rf '+directories)
+#  os.system('rm -rf '+directories)
+
+
+

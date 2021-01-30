@@ -16,20 +16,12 @@ import os
 import sys
 import time
 
-# This is for parallelism
-import multiprocessing as mp
-
 # This are the subroutines and functions
 import contatempo
 import dft
 from headerfooter import header,footer
 import loaddata as d
 
-def extractconvert(nk):
-  print(' Calculating wfc for k-point',nk)
-  for nb in range(d.nbnd):
-    dft.wfck2r(nk,nb)
-  return
 
 if __name__ == '__main__':
   header('GENERATEWFC',time.asctime())
@@ -80,17 +72,12 @@ if __name__ == '__main__':
     nb = int(sys.argv[2])
     print(' Will run just for k-point',nk,'and band',nb)
   print()
-#  npr=2
-#  print(mp.cpu_count())
+
   # Creates file with wfc of all bands at nk  ** DFT **
   if nk == -1 and nb == -1:                  # Will run for all k-points and bands
-    if npr > 1:
-      with mp.Pool(processes=npr) as pool:
-        pool.map(extractconvert, range(nks),int(npr))
-    else:
-      for nk in range(nks):
-        print(' Calculating wfc for k-point',nk)
-        dft.wfck2r(nk,0,d.nbnd-1)             #Calculate for each k all bands
+    for nk in range(nks):
+      print(' Calculating wfc for k-point',nk)
+      dft.wfck2r(nk,0,d.nbnd-1)             #Calculate for each k all bands
   
   elif nk != -1 and nb == -1:                # Will run just for k-point nk
     for nb in range(d.nbnd):
