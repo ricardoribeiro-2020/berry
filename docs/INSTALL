@@ -2,7 +2,7 @@ This file explains the steps to install the BERRY suite in a linux computer
 
 Requirements:
 - Assuming a Quantum Espresso working instalation has been done, and that it is in the PATH.
-- A fortran compiler has to be installed
+
 - This software uses python3 with the following libraries, that have to be installed:
 	numpy
 	sys
@@ -18,43 +18,28 @@ Requirements:
 (most of these should already be there by default)
 
 Instalation:
+
 - The github packages should be downloaded from
  https://github.com/ricardoribeiro-2020/berry/archive/master.zip
 unziped in the directory where the instalation is to be done and the directory structure kept.
-A directory called bin should be created, where the binaries of the fortran compilation should go.
 
-- In the directory src there are three programs in fortran that have to be compiled.
-One is using a normal compilation, for instance, if you have gfortran:
-
- gfortran -O3 -o extractwfc.x extractwfc.f90
-
-will create the file extractwfc.x that has to be moved to directory bin.
-The other two are compiled as a python library, so the commands are
-
- py -m numpy.f2py -c connections.f90 -m connections
- py -m numpy.f2py -c interpolation.f90 -m interpolat
-
-and the resulting files should be moved to the directory python.
-
-- One last thing is to add the system variable $BERRYPATH:
-
- export BERRYPATH="/home/ricardo/Dropbox/research/programs/berry/"
-
-This should be included in the file .bashrc so that the variable is kept everytime a shell is run.
-With this last step, each python script of the suite should run, giving the full path to the script.
+With this, each python script of the suite should run, giving the full path to the script.
 
 Preparing for running:
+
 - To run, first one has to create a directory where the results will be, and inside it create a directory called dft.
-Inside dft should go the pseudopotential files for the atomic species of the dft calculation and the file scf.in with the details of the scf run.
-This scf.in file has to be a Quantum Espresso scf run file; this is the only one implemented.
-It is important to include the line with the command nbnd in the SYSTEM tag.
-Also, 
- pseudo_dir = './dft/' ,
- outdir = './dft/out/' ,
 
-- Another thing is to create in the direcotry where the run will be performed a file input as described in the file workflow.
+- Inside dft should go the pseudopotential files for the atomic species of the dft calculation and the file scf.in with the details of the scf run.
+ This scf.in file has to be a Quantum Espresso scf run file; this is the only one implemented so far.
 
-- All the scripts should be run from this directory, including full path to the script.
+- It is important to include the line with the command nbnd in the SYSTEM tag of the scf.in file.
+ And also, 
+  pseudo_dir = './dft/' ,
+  outdir = './dft/out/' ,
+
+- Create a file input (as described in the file workflow) in the directory where the run will be performed.
+
+- All the scripts should be run from this directory, including the full path to the python scripts.
 
 
 

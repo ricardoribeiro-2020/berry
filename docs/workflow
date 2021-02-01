@@ -20,11 +20,6 @@
  r2k.py
  shg.py
 
-* The fortran files that are included in the suite BERRY:
- connections.f90
- extractwfc.f90
- interpolation.f90
-
 * The sequence of programs to run should be the following:
  preprocessing.py   inputfile
  generatewfc.py
@@ -48,9 +43,6 @@
  headerfooter.py
  loaddata.py
  parser.py
- connections.f90
- extractwfc.f90
- interpolation.f90
 
 * More detailed explanation
 
@@ -73,7 +65,6 @@
   nbnd 8
 
  - with this data, the program preprocessing.py should prepare and run scf and nscf calculations.
- - the variable $BERRYPATH should have been defined before (export BERRYPATH="/path/to/berry/"); if not, the program will deduce it from the path of preprocessing.py
 
  - After running nscf calculation, the program preprocessing.py reads the main output file and gathers data from the calculation that will be used latter, and saves it to formated files.
 	Data needed to gather and save:
@@ -98,11 +89,14 @@
 		positions.npy
 		kpoints.npy
 		datafile.npy (This is the main data file; see code for what and how data is saved)
+                nktoijl.npy
+                ijltonk.npy
 
  - Generates and saves:
 		list of neighbors of each k-point (which neighbors to consider may be an input parameter)
 		for each (k,r) the phase factor of the Bloch functions
 	This finishes the preparatory phase.
+
 
 
 2) Make wavefunctions coherent (generatewfc.py)
@@ -113,24 +107,21 @@
 
  - simply run generatewfc.py
 	it will use dft.py , which then call QE program wfck2r.x to generate wfc in real space
-	then it runs extractwfc.x to make the phase transformation and save new wfc 
 
 
 
 3) Calculate the dot product of each wavefunction's Bloch factor of a k-point with each wavefunction's Bloch factor of the neighboring k-points.
  - This means wavefunctions have to be multiplied by e^{-ik.r} in each point r.
 
- - The python script dotproduct.py runs through wfc and calls fortran program connections.f90 to do the hard part of the calculations
-	connections.f90 has to be compiled using
-		py -m numpy.f2py -c connections.f90 -m connections
-	in order to become a python subroutine. The resulting compile program has to be copied to a place where python can find it.
-	For instance, the directory berry/python.
+ - The python script dotproduct.py runs through wfc directory where the wavefunctions are stored
 
  - In the end we get two files dpc.dat and dp.dat
 	dpc.dat contains for each pair of k-points and bands the dot product of the wavefunctions
 	dp.dat contains the modulus of dpc.dat
 	The files are formated as:
-		kp	neighbor	band	band1	dot product-complex number (or modulus)
+		kp	neighbor(0-3)	band	band1	dot product-complex number (or modulus)
+
+
 
 4) Find which eigenvalues/eigenfunctions have continuity, by running program compara.py .
  - This program reads the dot product files dp.dat and dpc.dat and uses the first to check continuity.
@@ -140,12 +131,17 @@
 	The second signalfinal[nks,nbnd] equals -1 if there is an inconsistency at that k-point or a number >=0
 		giving the number of times it found a continuity. The larger the value, the better.
 
+- compara.py may need to be run several times until the results are good.
 
 
-5) compara.py may need to be run several times until the results are good.
- - Even so, there may be a few points that are actual discontinuities and so need an interpolation.
+
+
+5) There may be a few points that are actual discontinuities and so need an interpolation.
  - For this, interpolation.py should be run.
  - It will create new interpolated wavefunctions with extension .wfc1
+
+
+
 
 6) With the bands right, now proceeds to calculate the wavefunctions in k-space and their gradients.
  - For that, run r2k.py with one or two arguments
@@ -156,10 +152,14 @@
  - Will save the gradients of each band in a compressed file wfcgra.gz where # = number of band
 
 
+
+
 7) Calculte the Berry connections: berry.py bandwfc gradwfc **************************************************************
 
  Where bandwfc is the first index (band number) and gradwfc is the second index of the bery connection
  To run a set of indices, its better to create a bash script and run in parallel.
+
+
 
 
 8) Calculate the linear condutivity by running condutivity.py .
@@ -172,6 +172,9 @@
  enerstep  0.001         # Energy step (Ry)
  broadning  0.01j        # energy broadning (Ry) 
 (these are the default values, if there is no input file)
+
+
+
 
 9) Calculate the second harmonic condutivity by running shg.py
  - Needs two or three arguments.
