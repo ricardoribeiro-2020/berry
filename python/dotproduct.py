@@ -65,6 +65,7 @@ if __name__ == '__main__':
 
   nr = d.nr
   print(' Total number of points in real space:',nr)
+
   npr = d.npr
   print(' Number of processors to use',npr)
 
@@ -99,7 +100,7 @@ if __name__ == '__main__':
         print("Calculating   nk = "+str(nk)+"  neighbor = "+str(neighbor))
         sys.stdout.flush()
         #dpc[nk,j,:,:] = connection(nk,neighbor,dphase)
-        dpc[nk,j,:,:],dpc[neighbor,jNeighbor,:,:] = connection(nk,neighbor,dphase)
+        dpc[nk,j,:,:],dpc[neighbor,jNeighbor,:,:] = connection(nk,neighbor,dphase)/nr
 #        print(dpc[nk,j,:,:])
 #        sys.exit("Stop")
   
