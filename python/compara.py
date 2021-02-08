@@ -17,7 +17,7 @@ import contatempo
 from headerfooter import header,footer
 import loaddata as d
 
-##########################################################
+###################################################################################
 if __name__ == '__main__':
   header('DOTPRODUCT',time.asctime())
 
@@ -329,14 +329,8 @@ if __name__ == '__main__':
       bands[kpb1b2[i,0],kpb1b2[i,1],1] = refbnd
       signal[kpb1b2[i,0],kpb1b2[i,1],1] = count11
       attcount += 1
-  
-  
-  
-  
 
-
-
-
+ 
 
 
 ##########################################################################
@@ -380,34 +374,13 @@ if __name__ == '__main__':
                 print(' !! Found incompatibility')
   
           break
-  
-  
-  
-  
-  
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
 #sys.exit("Stop")
 
 
+###################################################################################
   print()
   print(' *** Final Report ***')
   print()
@@ -506,14 +479,7 @@ if __name__ == '__main__':
   
   
   
-  
-
-
-
-
-
-
-
+###################################################################################
 # Finished
   endtime = time.time()
   
