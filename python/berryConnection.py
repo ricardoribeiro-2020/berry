@@ -18,34 +18,23 @@ import loaddata as d
 import joblib
 
 ###################################################################################
-if __name__ == '__main__':
-  header('BERRY',time.asctime())
-
-  starttime = time.time()                         # Starts counting time
-
-  if len(sys.argv)!=3:
-    print(' ERROR in number of arguments. Has to have two integers.')
-    sys.exit("Stop")
-
-  bandwfc = int(sys.argv[1])
-  gradwfc = int(sys.argv[2])
+def berryConnect(bandwfc,gradwfc):
 
 # Reading data needed for the run
   nr = d.nr
-  print(' Total number of points in real space:',nr)
   print()
-  print(' Start reading dump files')
+  print(' Reading dump files')
   wfcpos = joblib.load('./wfcpos'+str(bandwfc)+'.gz')
   wfcgra = joblib.load('./wfcgra'+str(gradwfc)+'.gz')
 
   print(' Finished reading data')
   sys.stdout.flush()
 #  sys.exit("Stop")
-################################################## Finished reading data
+
+### Finished reading data
 # Calculation of the Berry connection
   berryConnection = np.zeros(wfcgra[0].shape,dtype=complex)
 
-  sys.exit("Stop")
   for posi in range(nr):
     berryConnection += 1j*wfcpos[posi].conj()*wfcgra[posi] 
 # we are assuming that normalization is \sum |\psi|^2 = 1
@@ -61,13 +50,35 @@ if __name__ == '__main__':
 
   joblib.dump(berryConnection,filename+'.gz', compress=3)
 
+  return
+
+###################################################################################
+if __name__ == '__main__':
+  header('BERRY CONNECTION',time.asctime())
+
+  starttime = time.time()                         # Starts counting time
+
+  if len(sys.argv) == 2:
+    print(' Will calculate all combinations of bands from 0 up to '+str(sys.argv[1]))
+    for bandwfc in range(int(sys.argv[1])+1):
+      for gradwfc in range(int(sys.argv[1])+1):
+        berryConnect(bandwfc,gradwfc)
+
+  elif len(sys.argv) == 3:
+    print(' Will calculate just for band '+str(sys.argv[1])+' and '+str(sys.argv[2]))
+    bandwfc = int(sys.argv[1])
+    gradwfc = int(sys.argv[2])
+    berryConnect(bandwfc,gradwfc)
+
+  else:
+    print(' ERROR in number of arguments. Has to have one or two integers.')
+    print(' Stoping.')
+    print()
 
 ##################################################################################r
 # Finished
   endtime = time.time()
 
   footer(contatempo.tempo(starttime,endtime))
-
-
 
 
