@@ -16,6 +16,7 @@ from headerfooter import header,footer
 import loaddata as d
 
 
+###################################################################################
 def connection(nk,neighbor,dphase):
 # Calculates the dot product  of all combinations of wfc in nk and neighbor
   wfcdirectory = str(d.wfcdirectory)
@@ -24,33 +25,28 @@ def connection(nk,neighbor,dphase):
   nbnd = int(d.nbnd)
   dpc1 = np.zeros((nbnd,nbnd),dtype=complex)
   dpc2 = np.zeros((nbnd,nbnd),dtype=complex)
-  for banda0 in range(nbnd):
 
+  for banda0 in range(nbnd):
+    # reads first file for dot product
     infile = wfcdirectory+'k0'+str(nk)+'b0'+str(banda0)+'.wfc'
-#    print(infile)
     with open(infile, 'rb') as f:
       wfc0 = np.load(f)
     f.close()
-#    print(wfc0)
+
     for banda1 in range(nbnd):
-
+      # reads second file for dot product
       infile = wfcdirectory+'k0'+str(neighbor)+'b0'+str(banda1)+'.wfc'
-
-#      print(infile)
-
       with open(infile, 'rb') as f:
         wfc1 = np.load(f)
       f.close()
-#      print(wfc1)
 
+      # calculates the dot products u_1.u_2* and u_2.u_1*
       dpc1[banda0,banda1] = np.sum(dphase*wfc0*np.conjugate(wfc1))
       dpc2[banda1,banda0] = np.conjugate(dpc1[banda0,banda1] )
 
-#  print(dpc1)
-
   return dpc1,dpc2
 
-##########################################################
+###################################################################################
 if __name__ == '__main__':
   header('DOTPRODUCT',time.asctime())
 
@@ -92,18 +88,15 @@ if __name__ == '__main__':
       neighbor = neighbors[nk,j]
 
       if neighbor != -1 and neighbor > nk:            # exclude invalid neighbors
-  #      print(nk,j,neighbors[nk,j])
         jNeighbor = np.where(neighbors[neighbor]==nk)
-
+        # Calculates the diference in phases to convert \psi to u
         dphase = phase[:,nk]*np.conjugate(phase[:,neighbor])
-#        print(dphase)
+
         print("Calculating   nk = "+str(nk)+"  neighbor = "+str(neighbor))
         sys.stdout.flush()
-        #dpc[nk,j,:,:] = connection(nk,neighbor,dphase)
+
         dpc[nk,j,:,:],dpc[neighbor,jNeighbor,:,:] = connection(nk,neighbor,dphase)/nr
-#        print(dpc[nk,j,:,:])
-#        sys.exit("Stop")
-  
+
   dp = np.abs(dpc)
 
   # Save dot products to file
@@ -119,7 +112,7 @@ if __name__ == '__main__':
   print(' Dot products modulus saved to file dp.npy')
 
 
-
+###################################################################################
   # Finished
   endtime = time.time()
   

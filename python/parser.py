@@ -1,4 +1,4 @@
-# This function receives as input a QE file and a keyword, and extracts the correspondeing value
+# This function receives as input a QE file and a keyword, and extracts the corresponding value
 
 # This is to make operations in the shell
 import os
