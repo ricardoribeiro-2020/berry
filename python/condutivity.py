@@ -4,7 +4,6 @@
 
 # This is to include maths
 import numpy as np
-import ast
 
 # This is to make operations in the shell
 import sys

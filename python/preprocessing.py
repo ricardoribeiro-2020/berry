@@ -30,7 +30,8 @@ if __name__ == '__main__':
     print()
     sys.exit("Stop")
 
-  print(' Reading from input file:', sys.argv[1])
+  print('     Reading from input file:', sys.argv[1])
+  print()
 
 # input file has to have these minimum parameters:
 #     origin of k-points - k0
@@ -38,22 +39,25 @@ if __name__ == '__main__':
 #     step of the k-points - step
 #     number of bands - nbnd
 # and can have these other, that have defaults:
-#     number of processors - np = 1
+#     number of processors - npr = 1
 #     dft directory - dftdirectory = './dft/'
-#     name_scf = 'scf'
-#     name_nscf = 'nscf'
+#     name_scf = 'scf.in'
 #     wfcdirectory = './wfc/' 
-#     used to define the point in real space where all phases match: point = 1.1
+#     used to define the point in real space where all phases match: point = 1.178097
+#     program = 'QE'
+#     prefix = ''
+#     outdir = ''
 
 # Defaults:
   npr = 1
   dftdirectory = 'dft/'
-  name_scf = 'scf'
-  name_nscf = 'nscf'
+  name_scf = 'scf.in'
   wfcdirectory = 'wfc/'
-  point = 1.1
+  point = 1.178097
   workdir = os.getcwd()+'/'     # Directory where results will show
   program = 'QE'                # Default dft program is Quantum Espresso
+  prefix = ''                   # Prefix of the DFT calculation (QE)
+  outdir = ''                   # Output directory of the DFT calculation (QE)
 
 # Open input file for the run
   with open(sys.argv[1],'r') as inputfile:
@@ -83,34 +87,67 @@ if __name__ == '__main__':
       dftdirectory = ii[1]
     if ii[0] == 'name_scf':
       name_scf = ii[1]
-    if ii[0] == 'name_nscf':
-      name_nscf = ii[1]
     if ii[0] == 'wfcdirectory':
       wfcdirectory = ii[1]
     if ii[0] == 'point':
       point = float(ii[1])
     if ii[0] == 'program':
       program = str(ii[1])
+    if ii[0] == 'prefix':
+      prefix = ii[1]
+    if ii[0] == 'outdir':
+      outdir = ii[1]
 
-# create absolute paths for directories
-  dftdirectory = workdir + dftdirectory
-  wfcdirectory = workdir + wfcdirectory
+# create absolute paths for directories and verify values
+  if dftdirectory[:2] == './':
+    dftdirectory = workdir + dftdirectory[2:]
+  elif dftdirectory[:1] != '/':
+    dftdirectory = workdir + dftdirectory
+
+  outdir = parser('outdir',dftdirectory+name_scf)
+  if outdir[:2] == './':
+    outdir = dftdirectory + outdir[2:]
+  elif outdir[:1] !='/':
+    outdir = dftdirectory + outdir
+
+  if wfcdirectory[:2] == './':
+    wfcdirectory = workdir + wfcdirectory[2:]
+  elif wfcdirectory[:1] !='/':
+    wfcdirectory = workdir + wfcdirectory
+
+  pseudodir = parser('pseudo_dir',dftdirectory+name_scf)
+  if pseudodir[:2] == './':
+    pseudodir = dftdirectory + pseudodir[2:]
+  elif pseudodir[:1] !='/':
+    pseudodir = dftdirectory + pseudodir
+
+  name_nscf = 'n'+name_scf
+  if name_nscf[-3:] != '.in':
+    name_nscf = name_nscf + '.in'
+  if prefix == '':
+    prefix = parser('prefix',dftdirectory+name_scf)
+
   
-  print(' Number of bands in the nscf calculation nbnd:',str(nbnd))
-  print(' Starting k-point of the mesh k0:',str(k0))
-  print(' Number of points in the mesh ',str(nkx),str(nky),str(nkz))
-  print(' Step of the k-point mesh ',str(step))
-  print(' To calculate point in real space where all phases match ',str(point))
+  print('     Number of bands in the nscf calculation nbnd:',str(nbnd))
+  print('     Starting k-point of the mesh k0:',str(k0))
+  print('     Number of points in the mesh ',str(nkx),str(nky),str(nkz))
+  print('     Step of the k-point mesh ',str(step))
+  print('     To calculate point in real space where all phases match ',str(point))
   print()
-  print(' Will run in',npr,' processors')
-  print(' Working directory:',workdir)
-  print(' DFT calculations will be done on',program)
-  print(' The DFT files will be on:',dftdirectory)
-  print(' Name of scf file:',name_scf)
-  print(' Name of nscf file:',name_nscf)
-  print(' Name of directory for wfc:',wfcdirectory)
+  print('     Will run in',npr,' processors')
+  print('     Working directory:',workdir)
+  print('     DFT calculations will be done on',program)
+  print('     The DFT files will be on:',dftdirectory)
+  print('     Name of scf file:',name_scf)
+  print('     Name of nscf file:',name_nscf)
+  print('     Name of directory for wfc:',wfcdirectory)
+  print('     DFT prefix:',prefix)
+  print('     DFT outdir:',outdir)
+  dftdatafile = outdir+prefix+'.xml'
+  print('     DFT data file:',dftdatafile)
+  print('     DFT pseudopotential directory:',pseudodir)
   print()
-  print(' Finished reading input file')
+  print('     Finished reading input file')
   print()
   
   sys.stdout.flush()
@@ -121,7 +158,7 @@ if __name__ == '__main__':
     mpi = 'mpirun -np ' + str(npr) + ' '
   
 # Runs scf calculation  ** DFT
-  dft.scf(mpi,dftdirectory,name_scf)                 
+  dft.scf(mpi,dftdirectory,name_scf,outdir,pseudodir)                 
 # Creates template for nscf calculation  ** DFT
   nscf = dft.template(dftdirectory,name_scf)         
 
@@ -151,13 +188,7 @@ if __name__ == '__main__':
   dft.nscf(mpi,dftdirectory,name_nscf,nscf,nks,nscfkpoints,nbnd)  
   sys.stdout.flush()
   
-  print(' Extracting data from DFT calculations')
-  prefix = parser('prefix',dftdirectory+name_nscf+'.in')
-  print('  DFT prefix:',prefix)
-  outdir = parser('outdir',dftdirectory+name_nscf+'.in')
-  print('  DFT outdir:',outdir)
-  dftdatafile = outdir+prefix+'.xml'
-  print('  DFT data file:',dftdatafile)
+  print('     Extracting data from DFT calculations')
   print()
 
   tree = ET.parse(dftdatafile)
@@ -171,49 +202,49 @@ if __name__ == '__main__':
 #        print('   ',child2.tag,child2.attrib)
 #    print()
 
-  print(' Lattice vectors in units of a0 (bohr)')
+  print('     Lattice vectors in units of a0 (bohr)')
   a1,a2,a3 = [np.array(list(map(float,it.text.split()))) for it in output.find('atomic_structure').find('cell')]
-  print('  a1:',a1)
-  print('  a2:',a2)
-  print('  a3:',a3)
+  print('        a1:',a1)
+  print('        a2:',a2)
+  print('        a3:',a3)
   print()
   
-  print(' Reciprocal lattice vectors in units of 2pi/a0 (2pi/bohr)')
+  print('     Reciprocal lattice vectors in units of 2pi/a0 (2pi/bohr)')
   b1,b2,b3 = [np.array(list(map(float,it.text.split()))) for it in output.find('basis_set').find('reciprocal_lattice')]
-  print('  b1:',b1)
-  print('  b2:',b2)
-  print('  b3:',b3)
+  print('        b1:',b1)
+  print('        b2:',b2)
+  print('        b3:',b3)
   print()
   
-  print(' Number of points in real space in each direction')
+  print('     Number of points in real space in each direction')
   nr1,nr2,nr3 = [int(n) for n in output.find('basis_set').find('fft_grid').attrib.values()]
   nr = nr1*nr2*nr3
-  print('  nr1:',nr1)
-  print('  nr2:',nr2)
-  print('  nr3:',nr3)
-  print('  nr:',nr)
+  print('        nr1:',nr1)
+  print('        nr2:',nr2)
+  print('        nr3:',nr3)
+  print('         nr:',nr)
   rpoint = int(point*nr1*nr2)
-  print(' Point where phases match: ',str(rpoint))
+  print('     Point where phases match: ',str(rpoint))
   print()
   
   nbnd = int(output.find('band_structure').find('nbnd').text)
-  print(' Number of bands in the DFT calculation: ',nbnd)
+  print('     Number of bands in the DFT calculation: ',nbnd)
   nelec = float(output.find('band_structure').find('nelec').text)
-  print(' Number of electrons: ',nelec)
+  print('     Number of electrons: ',nelec)
   nks = int(output.find('band_structure').find('nks').text)
-  print(' Number of k-points in the DFT calculation: ',nks)
+  print('     Number of k-points in the DFT calculation: ',nks)
   noncolin0 = str(output.find('band_structure').find('noncolin').text)
   if noncolin0 == 'false':
     noncolin = False
   else:
     noncolin = True
-  print(' Noncolinear calculation: ',noncolin)
+  print('     Noncolinear calculation: ',noncolin)
   lsda0 = str(output.find('band_structure').find('lsda').text)
   if lsda0 == 'false':
     lsda = False
   else:
     lsda = True
-  print(' Spin polarized calculation: ',lsda)
+  print('     Spin polarized calculation: ',lsda)
 
   print()
 
@@ -237,7 +268,7 @@ if __name__ == '__main__':
     berrypath = str(os.path.dirname(os.path.dirname(__file__)))
   if berrypath[-1] != '/':
     berrypath = berrypath + '/'
-  print(' Path of BERRY files',berrypath)
+  print('     Path of BERRY files',berrypath)
   print()
   
   count = 0
@@ -253,7 +284,7 @@ if __name__ == '__main__':
   with open('phase.npy','wb') as ph:
     np.save(ph,phase)
   ph.closed
-  print(' Phases saved to file phase.npy')
+  print('     Phases saved to file phase.npy')
   
   neig = np.full((nks,4),-1,dtype=int)
   nk = -1
@@ -283,11 +314,11 @@ if __name__ == '__main__':
         neig[nk,2] = n2 
         neig[nk,3] = n3 
   nei.closed
-  print(' Neighbors saved to file neighbors.dat')
+  print('     Neighbors saved to file neighbors.dat')
   with open('neighbors.npy','wb') as nnn:
     np.save(nnn,neig)
   nnn.closed
-  print(' Neighbors saved to file neighbors.npy')
+  print('     Neighbors saved to file neighbors.npy')
   
   
   
@@ -295,38 +326,38 @@ if __name__ == '__main__':
   with open('eigenvalues.npy', 'wb') as f:
     np.save(f,eigenvalues)
   f.closed
-  print(' Eigenvalues saved to file eigenvalues.npy (Ry)')
+  print('     Eigenvalues saved to file eigenvalues.npy (Ry)')
   
   
   # Save occupations to file
   with open('occupations.npy', 'wb') as f:
     np.save(f,occupations)
   f.closed
-  print(' Occupations saved to file occupations.npy')
+  print('     Occupations saved to file occupations.npy')
   
   # Save positions to file
   with open('positions.npy', 'wb') as f:
     np.save(f,r)
   f.close()
-  print(' Positions saved to file positions.npy (bohr)')
+  print('     Positions saved to file positions.npy (bohr)')
   
   # Save kpoints to file
   with open('kpoints.npy', 'wb') as f:
     np.save(f,kpoints)
   f.close()
-  print(' kpoints saved to file kpoints.npy (2pi/bohr)')
+  print('     kpoints saved to file kpoints.npy (2pi/bohr)')
   
   # Save nktoijl to file
   with open('nktoijl.npy', 'wb') as f:
     np.save(f,nktoijl)
   f.close()
-  print(' nktoijl saved to file nktoijl.npy, with convertion from nk to ijl')
+  print('     nktoijl saved to file nktoijl.npy, with convertion from nk to ijl')
   
   # Save ijltonk to file
   with open('ijltonk.npy', 'wb') as f:
     np.save(f,ijltonk)
   f.close()
-  print(' ijltonk saved to file ijltonk.npy, with convertion from ijl to nk')
+  print('     ijltonk saved to file ijltonk.npy, with convertion from ijl to nk')
   
   
   
@@ -364,8 +395,10 @@ if __name__ == '__main__':
     np.save(f,program)        # DFT software to be used
     np.save(f,lsda)           # Spin polarized calculation
     np.save(f,nelec)          # Number of electrons
+    np.save(f,prefix)         # prefix of the DFT calculations
+    np.save(f,outdir)         # Output directory for the DFT calculations
   f.close()
-  print(' Data saved to file datafile.npy')
+  print('     Data saved to file datafile.npy')
   
   print()
   nk = -1

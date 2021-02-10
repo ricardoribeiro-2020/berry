@@ -9,18 +9,45 @@ import sys
 import subprocess
 
 # SCF calculation
-def scf(mpi,directory,name_scf):
+def scf(mpi,directory,name_scf,outdir,pseudodir):
 
   scffile = directory + name_scf
-  verifica = os.popen("test -f " + scffile + ".out;echo $?").read()   #if 1\n does not exist if 0\n exists
+  if scffile[-3:] != '.in':
+    verifica = os.popen("test -f " + scffile + ".out;echo $?").read()   #if 1\n does not exist if 0\n exists
+  else:
+    verifica = os.popen("test -f " + scffile[:-3] + ".out;echo $?").read()   #if 1\n does not exist if 0\n exists
   
   if verifica == '1\n':  # If output file does not exist, run the scf calculation
-    print(' Running scf calculation')
-    comando = mpi + "pw.x -i " + scffile +".in" + " > " + scffile + ".out"
-    print(' Command: '+comando+'\n')
+    with open(scffile,'r') as templa:
+      original = templa.read()
+    templa.closed
+
+    # Changes file names to absolute paths: its safer
+    lines = original.split('\n')
+    subst = ''
+    for line in lines:
+      if line.find('outdir') >= 0:
+        subst = subst + line.find('outdir')*" "+"outdir = '" + outdir + "' ,\n"
+      elif line.find('pseudo_dir') >= 0:
+        subst = subst + line.find('pseudo_dir')*" "+"pseudo_dir = '" + pseudodir + "' ,\n"
+      else:
+        subst = subst + line.rstrip() + '\n'
+
+    # Saves file with absolute paths: overides original!
+    with open(scffile,'w') as output:
+      output.write(subst)
+    output.closed
+
+
+    print('     Running scf calculation')
+    if scffile[-3:] != '.in':
+      comando = mpi + "pw.x -i " + scffile + " > " + scffile + ".out"
+    else:
+      comando = mpi + "pw.x -i " + scffile + " > " + scffile[:-3] + ".out"
+    print('     Command: '+comando+'\n')
     os.system(comando)
   return
-
+#    sys.exit("Stop")
 
 
 
@@ -28,7 +55,7 @@ def scf(mpi,directory,name_scf):
 def template(directory,name_scf):
 
   # opens the template file from which it will do nscf calculations
-  scffile = directory + name_scf +".in"
+  scffile = directory + name_scf 
   with open(scffile,'r') as templa:
     original = templa.read()
   templa.closed
@@ -52,30 +79,38 @@ def template(directory,name_scf):
 def nscf(mpi,directory,name_nscf,nscf,nkps,kpoints,nbands):
 
   nscffile = directory + name_nscf
-  verifica = os.popen("test -f " + nscffile + ".out;echo $?").read()   #if 1\n does not exist if 0\n exists
+  verifica = os.popen("test -f " + nscffile[:-3] + ".out;echo $?").read()   #if 1\n does not exist if 0\n exists
   
   if verifica == '1\n':  # If output file does not exist, run the nscf calculation
 
     lines = nscf.split('\n')
     subst = ''
+    flag = 0
     for line in lines:
+      if line.find('SYSTEM') >= 0:
+        flag = 1
       if line.find('nbnd') >= 0:
         rep = line.split()
         subst = subst + line.find('nbnd')*' '+'nbnd = ' + str(nbands) + ' ,\n'
+        flag = 2
+      elif flag == 1 and line.find('/') >= 0:
+        subst = subst + '                        '+'nbnd = ' + str(nbands) + ' ,\n'
+        subst = subst + line.rstrip() + '\n'
+        flag = 2
       else:
         subst = subst + line.rstrip() + '\n'
 
     nscf = subst
 
-    with open(nscffile+'.in','w') as output:
+    with open(nscffile,'w') as output:
       output.write(nscf + str(nkps) + '\n' + kpoints)
     output.closed
 
 #    sys.exit("Stop")
 
-    print(' Running nscf calculation')
-    comando = mpi + "pw.x -i " + nscffile +".in" + " > " + nscffile + ".out"
-    print(' Command: '+comando+'\n')
+    print('     Running nscf calculation')
+    comando = mpi + "pw.x -i " + nscffile + " > " + nscffile[:-3] + ".out"
+    print('     Command: '+comando+'\n')
     os.system(comando)
   return
 
@@ -93,8 +128,8 @@ def wfck2r(nk1,nb1,total_bands=0):
   else:
     mpi = 'mpirun -np ' + str(d.npr) + ' '
 
-  comando = "&inputpp  prefix = 'bn' ,\
-                       outdir = '"+str(d.dftdirectory)+"out/' ,\
+  comando = "&inputpp  prefix = '"+str(d.prefix)+"' ,\
+                       outdir = '"+str(d.outdir)+"' ,\
                       first_k = "+str(nk1+1)+" ,\
                        last_k = "+str(nk1+1)+" ,\
                    first_band = "+str(nb1+1)+" ,\

@@ -39,6 +39,8 @@ with open('datafile.npy', 'rb') as f:
   program      = np.load(f)
   lsda         = np.load(f)
   nelec        = np.load(f)
+  prefix       = np.load(f)
+  outdir       = np.load(f)
 f.close()
 
 
