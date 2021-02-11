@@ -17,7 +17,7 @@ import contatempo
 from headerfooter import header,footer
 import loaddata as d
 
-##########################################################
+###################################################################################
 if __name__ == '__main__':
   header('DOTPRODUCT',time.asctime())
 
@@ -50,30 +50,14 @@ if __name__ == '__main__':
   
   connections = np.load('dp.npy')
   print(' Modulus of direct product loaded')
-  print(connections.shape)
+
   print(' Finished reading data')
   print()
 ##########################################################################
   bands = np.full((nks,nbnd,100),-1,dtype=int)
   for bnd in range(nbnd):
-    bands[:,bnd,0] = bnd
-  #  print(bands[:,bnd,0])
+    bands[:,bnd,0] = bnd                          # Initial attribution of band numbers
 
-# #for nk in range(nks):
-# #  print(eigenvalues[nk,0])
-# connections = np.full((nks,4,nbnd,nbnd),-1.0)
-# 
-# #print(dp.shape[0])
-# for i in range(dp.shape[0]):
-#   nk1 = int(dp[i,0])
-#   nk2 = int(dp[i,1])
-#   b1  = int(dp[i,2]) - 1           # converts bands range from 1->nbdn to 0->nbdn-1
-#   b2 = int(dp[i,3]) - 1
-#   dotp = dp[i,4]
-#   for j in range(4):
-#     if nk2 == neighbors[nk1,j]:
-#       connections[nk1,j,b1,b2] = dotp
-  
 ##########################################################################
   tol = 0.9
   ntentativ = 5                                   # Nr of tentatives (doesn't seem useful in this configuration
@@ -90,6 +74,7 @@ if __name__ == '__main__':
     listk = []
     bands[kp0,:,tentative+1] = bands[kp0,:,0]     # initializes first k-point of the series
     signal[kp0,:,1] = 1                           # First k-point has signal 1
+
     for i in range(4):                            # Calculates the four points around the first
       for b1 in range(nbnd):
         for b2 in range(nbnd):
@@ -101,7 +86,6 @@ if __name__ == '__main__':
   
     while len(listk) > 0:                         # Runs through the list of neighbors not already done
       nk = listk[0]                               # Chooses the first from the list
-  
       for i in range(4):                          # Calculates the four points around
         for b1 in range(nbnd):
           for b2 in range(nbnd):
@@ -122,11 +106,6 @@ if __name__ == '__main__':
   #      print(nk,i,bands[neighbors[nk,i],:,1])
       listk.remove(nk)                            # Remove k-point from the list of todo
       listdone.append(nk)                         # Add k-point to the list of done
-  
-  #  print(tentative+1)
-  #  print(bands[:,:,tentative+1])
-  #  print(signal[:,:,tentative+1])
-  
   
   listdone.sort()
 #print(listdone)
@@ -350,14 +329,8 @@ if __name__ == '__main__':
       bands[kpb1b2[i,0],kpb1b2[i,1],1] = refbnd
       signal[kpb1b2[i,0],kpb1b2[i,1],1] = count11
       attcount += 1
-  
-  
-  
-  
 
-
-
-
+ 
 
 
 ##########################################################################
@@ -401,34 +374,13 @@ if __name__ == '__main__':
                 print(' !! Found incompatibility')
   
           break
-  
-  
-  
-  
-  
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
 #sys.exit("Stop")
 
 
+###################################################################################
   print()
   print(' *** Final Report ***')
   print()
@@ -527,14 +479,7 @@ if __name__ == '__main__':
   
   
   
-  
-
-
-
-
-
-
-
+###################################################################################
 # Finished
   endtime = time.time()
   

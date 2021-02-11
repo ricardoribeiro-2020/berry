@@ -35,6 +35,12 @@ with open('datafile.npy', 'rb') as f:
   berrypath    = np.load(f)
   rpoint       = np.load(f)
   workdir      = np.load(f)
+  noncolin     = np.load(f)
+  program      = np.load(f)
+  lsda         = np.load(f)
+  nelec        = np.load(f)
+  prefix       = np.load(f)
+  outdir       = np.load(f)
 f.close()
 
 
