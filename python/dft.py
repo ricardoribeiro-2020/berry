@@ -60,16 +60,14 @@ def template(directory,name_scf):
     original = templa.read()
   templa.closed
   nscf1 = original.replace('automatic','tpiba').replace('scf','nscf')
-
   nscf2 = nscf1.split('\n')
-  for i in range(1,5):                   # Clean empty lines in the end of the file
-    if nscf2[-1] == '':
-      del nscf2[-1]
+  nscf2 = list(filter(None,nscf2))
 
   del nscf2[-1]                          # Delete SCF k points
 
   nscf = '\n'.join(nscf2)                # Build the template nscf file
 
+#  sys.exit("Stop")
   return nscf
 
 
@@ -159,7 +157,7 @@ def wfck2r(nk1,nb1,total_bands=0):
   # For each band beeing considered
   for i in range((total_bands-nb1)+1):
     # Print to the output file for verification
-    print(nk1,i+nb1,mod_rpoint[i],deltaphase[i],not mod_rpoint[i] < 1E-5)
+    print('    %6d  %4d  %12.8f  %12.8f   %r' % (nk1,i+nb1,mod_rpoint[i],deltaphase[i],not mod_rpoint[i] < 1E-5))
     # Subtract the reference phase for each point
     psifinal += list(psi[i*d.nr:(i+1)*d.nr]*np.exp(-1j*deltaphase[i]))
   psifinal = np.array(psifinal)
