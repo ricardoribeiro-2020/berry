@@ -29,29 +29,30 @@ if __name__ == '__main__':
     firskpoint = -1
 
   wfcdirectory = str(d.wfcdirectory)
-  print(' Directory where the wfc are:',wfcdirectory)
+  print('     Directory where the wfc are:',wfcdirectory)
   nkx = d.nkx
   nky = d.nky
   nkz = d.nkz
-  print(' Number of k-points in each direction:',nkx,nky,nkz)
+  print('     Number of k-points in each direction:',nkx,nky,nkz)
   nks = d.nks
-  print(' Total number of k-points:',nks)
+  print('     Total number of k-points:',nks)
 
   nbnd = d.nbnd
-  print(' Number of bands:',nbnd)
+  print('     Number of bands:',nbnd)
   print()
   
   neighbors = d.neighbors
-  print(' Neighbors loaded')
+  print('     Neighbors loaded')
   
   eigenvalues = d.eigenvalues
-  print(' Eigenvalues loaded')
+  print('     Eigenvalues loaded')
   #print(eigenvalues)
   
   connections = np.load('dp.npy')
-  print(' Modulus of direct product loaded')
+  print('     Modulus of direct product loaded')
 
-  print(' Finished reading data')
+  print()
+  print('     Finished reading data')
   print()
 ##########################################################################
   bands = np.full((nks,nbnd,100),-1,dtype=int)
@@ -69,6 +70,7 @@ if __name__ == '__main__':
       kp0 = firskpoint
     else:
       kp0 = randrange(nks)                        # Chooses a k-point randomly
+    print('     starting k-point:',kp0)
     initialks.append(kp0)                         # Stores the departure k-point for future reference
     listdone = [kp0]                              # List to store the k-points that have been analysed
     listk = []
@@ -114,7 +116,7 @@ if __name__ == '__main__':
 
 ##########################################################################
   print()
-  print(' Correcting problems found')
+  print('     Correcting problems found')
   print()
 ##########################################################
 
@@ -133,7 +135,7 @@ if __name__ == '__main__':
       kpb1b2[i,1] = bnproblem[i*2]
       kpb1b2[i,2] = bnproblem[i*2+1]
    
-      print(' Neighbors of the k-point with problem: ',kpb1b2[i,0],neighbors[kpb1b2[i,0],:])
+      print('     Neighbors of the k-point with problem: ',kpb1b2[i,0],neighbors[kpb1b2[i,0],:])
       print(bands[kpb1b2[i,0],:,1])
       validneig = np.count_nonzero(neighbors[kpb1b2[i,0],:] != -1)
       count11 = count12 = count21 = count22 = 0
@@ -162,22 +164,22 @@ if __name__ == '__main__':
       if count11 == validneig:
         signal[kpb1b2[i,0],bnproblem[i*2],1] = validneig                  # signals problem as solved
         signal[kpb1b2[i,0],bnproblem[i*2+1],1] = validneig                # signals problem as solved
-        print(' Solved.')
+        print('     Solved.')
         negcount += 1
       elif count12 == validneig:
         signal[kpb1b2[i,0],bnproblem[i*2],1] = validneig                  # signals problem as solved
         signal[kpb1b2[i,0],bnproblem[i*2+1],1] = validneig                # signals problem as solved
-        print(' Solved.')
+        print('     Solved.')
         negcount += 1
       elif count21 == validneig:
         signal[kpb1b2[i,0],bnproblem[i*2],1] = validneig                  # signals problem as solved
         signal[kpb1b2[i,0],bnproblem[i*2+1],1] = validneig                # signals problem as solved
-        print(' Solved.')
+        print('     Solved.')
         negcount += 1
       elif count22 == validneig:
         signal[kpb1b2[i,0],bnproblem[i*2],1] = validneig                  # signals problem as solved
         signal[kpb1b2[i,0],bnproblem[i*2+1],1] = validneig                # signals problem as solved
-        print(' Solved.')
+        print('     Solved.')
         negcount += 1
   
   
@@ -298,7 +300,7 @@ if __name__ == '__main__':
 
 ##########################################################################
   print()
-  print(' Try a more relaxed attribution where it failed')
+  print('     Try a more relaxed attribution where it failed')
   print()
   attcount = 0
   # Select points signaled 0
@@ -325,7 +327,7 @@ if __name__ == '__main__':
             else:
               count11 = -100
     if count11 > 0:
-      print(' Found band to attribute!')
+      print('     Found band to attribute!')
       bands[kpb1b2[i,0],kpb1b2[i,1],1] = refbnd
       signal[kpb1b2[i,0],kpb1b2[i,1],1] = count11
       attcount += 1
@@ -357,7 +359,7 @@ if __name__ == '__main__':
         if np.all(bands[j,:,1] == bands[j,:,cont]):
   #        print(j,bands[j,:,cont],bands[j,:,1])
           merger += 1
-          print('***** Found same order! Merge.')
+          print('     ***** Found same order! Merge.')
           for nk in range(nks):
             for nb in range(nbnd):
               if bandsfinal[nk,nb] == bands[nk,nb,cont] or bands[nk,nb,cont] == -1:
@@ -365,13 +367,13 @@ if __name__ == '__main__':
               elif bandsfinal[nk,nb] == -1 and bands[nk,nb,cont] != -1:
                 bandsfinal[nk,nb] = bands[nk,nb,cont]
                 signalfinal[nk,nb] = 1
-                print(' Changed ',nk,nb)
+                print('     Changed ',nk,nb)
               elif signalfinal[nk,nb] == -1:
                 continue
               else:
                 signalfinal[nk,nb] = -2
                 print(nk,nb,bandsfinal[nk,nb],bands[nk,nb,cont])
-                print(' !! Found incompatibility')
+                print('     !! Found incompatibility')
   
           break
 
@@ -382,11 +384,11 @@ if __name__ == '__main__':
 
 ###################################################################################
   print()
-  print(' *** Final Report ***')
+  print('     *** Final Report ***')
   print()
   nrnotattrib = np.full((nbnd),-1,dtype=int) 
   sep = ' '
-  print(' Bands: gives the machine nr that belongs to new band (nk,nb)')
+  print('     Bands: gives the machine nr that belongs to new band (nk,nb)')
   for nb in range(nbnd):
     nk = -1
     nrnotattrib[nb] = np.count_nonzero(bandsfinal[:,nb] == -1)
@@ -450,10 +452,10 @@ if __name__ == '__main__':
     print('  '+str(nb)+'   '+str(nrsignal[nb,:]))
   
   print()
-  print(' Continuity recovered: ',negcount)
-  print(' Found by eigenvalue continuity: ',eigcont)
-  print(' More relaxed attribution: ',attcount)
-  print(' Merged ',merger,' sets')
+  print('     Continuity recovered: ',negcount)
+  print('     Found by eigenvalue continuity: ',eigcont)
+  print('     More relaxed attribution: ',attcount)
+  print('     Merged ',merger,' sets')
   print()
   
   #print(' Saving files apontador and bandas.')
@@ -468,8 +470,8 @@ if __name__ == '__main__':
   #      ba.write('  ' + str(nb) + '  ' + str(nk) + '  ' + str(bandsfinal[nk,nb]) + '\n')
   #ba.closed
   
-  print(' Saving files bandsfinal.npy and signalfinal.npy')
-  print(' bandsfinal.npy gives the machine number for each k-point/band')
+  print('     Saving files bandsfinal.npy and signalfinal.npy')
+  print('     (bandsfinal.npy gives the machine number for each k-point/band)')
   with open('bandsfinal.npy', 'wb') as f:
     np.save(f,bandsfinal)
   f.closed
