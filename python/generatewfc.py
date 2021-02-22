@@ -33,24 +33,24 @@ if __name__ == '__main__':
 
   # Creates directory for wfc
   os.system('mkdir -p '+wfcdirectory)
-  print(' Wavefunctions will be saved in directory',wfcdirectory)
-  print(' DFT files are in directory',dftdirectory)
+  print('     Wavefunctions will be saved in directory',wfcdirectory)
+  print('     DFT files are in directory',dftdirectory)
   npr = d.npr
-  print(' This program will run in '+str(npr)+' processors')
+  print('     This program will run in '+str(npr)+' processors')
   print()
   nks = d.nks
-  print(' Total number of k-points:',nks)
+  print('     Total number of k-points:',nks)
   nr1 = d.nr1
   nr2 = d.nr2
   nr3 = d.nr3
-  print(' Number of r-points in each direction:',nr1,nr2,nr3)
+  print('     Number of r-points in each direction:',nr1,nr2,nr3)
   nr = d.nr
-  print(' Total number of points in real space:',nr)
+  print('     Total number of points in real space:',nr)
   nbnd = d.nbnd
-  print(' Number of bands:',nbnd)
+  print('     Number of bands:',nbnd)
   print()
   rpoint = int(nr1*nr2*1.178097)
-  print(' Point choosen for sincronizing phases: ',rpoint)
+  print('     Point choosen for sincronizing phases: ',rpoint)
   print()
 
   ##########################################################################
@@ -58,23 +58,23 @@ if __name__ == '__main__':
   nk = -1
   nb = -1
   if len(sys.argv)==1:                      # Will run for all k-points and bands
-    print(' Will run for all k-points and bands')
-    print(' There are',nks,'k-points and',nbnd,'bands.')
+    print('     Will run for all k-points and bands')
+    print('     There are',nks,'k-points and',nbnd,'bands.')
     for nk in range(nks):
-      print(' Calculating wfc for k-point',nk)
+      print('     Calculating wfc for k-point',nk)
       dft.wfck2r(nk,0,d.nbnd-1)
   elif len(sys.argv)==2:                    # Will run just for k-point nk
     nk = int(sys.argv[1])
-    print(' Will run just for k-point',nk)
-    print(' There are',nbnd,'bands.')
+    print('     Will run just for k-point',nk)
+    print('     There are',nbnd,'bands.')
     for nb in range(d.nbnd):
-      print(' Calculating wfc for k-point',nk,'and band',nb)
+      print('     Calculating wfc for k-point',nk,'and band',nb)
       dft.wfck2r(nk,nb)
   elif len(sys.argv)==3:                     # Will run just for k-point nk and band nb
     nk = int(sys.argv[1])
     nb = int(sys.argv[2])
-    print(' Will run just for k-point',nk,'and band',nb)
-    print(' Calculating wfc for k-point',nk,'and band',nb)
+    print('     Will run just for k-point',nk,'and band',nb)
+    print('     Calculating wfc for k-point',nk,'and band',nb)
     dft.wfck2r(nk,nb)
   print()
 
@@ -85,5 +85,3 @@ if __name__ == '__main__':
   
   footer(contatempo.tempo(starttime,endtime))
   
-
-

@@ -55,26 +55,26 @@ if __name__ == '__main__':
 # Reading data needed for the run
 
   wfcdirectory = str(d.wfcdirectory)
-  print(' Directory where the wfc are:',wfcdirectory)
+  print('     Directory where the wfc are:',wfcdirectory)
   nks = d.nks
-  print(' Total number of k-points:',nks)
+  print('     Total number of k-points:',nks)
 
   nr = d.nr
-  print(' Total number of points in real space:',nr)
+  print('     Total number of points in real space:',nr)
 
   npr = d.npr
-  print(' Number of processors to use',npr)
+  print('     Number of processors to use',npr)
 
   nbnd = d.nbnd
-  print(' Number of bands:',nbnd)
+  print('     Number of bands:',nbnd)
   print()
   
   phase = d.phase
-  print(' Phases loaded')
+  print('     Phases loaded')
   #print(phase[10000,10]) # phase[nr,nks]
   
   neighbors = d.neighbors
-  print(' Neighbors loaded')
+  print('     Neighbors loaded')
   
   # Finished reading data needed for the run
   print()
@@ -92,7 +92,7 @@ if __name__ == '__main__':
         # Calculates the diference in phases to convert \psi to u
         dphase = phase[:,nk]*np.conjugate(phase[:,neighbor])
 
-        print("Calculating   nk = "+str(nk)+"  neighbor = "+str(neighbor))
+        print("      Calculating   nk = "+str(nk)+"  neighbor = "+str(neighbor))
         sys.stdout.flush()
 
         dpc[nk,j,:,:],dpc[neighbor,jNeighbor,:,:] = connection(nk,neighbor,dphase)/nr
@@ -103,13 +103,13 @@ if __name__ == '__main__':
   with open('dpc.npy', 'wb') as f:
     np.save(f,dpc)
   f.close()
-  print(' Dot products saved to file dpc.npy')
+  print('     Dot products saved to file dpc.npy')
 
   # Save dot products modulus to file
   with open('dp.npy', 'wb') as f:
     np.save(f,dp)
   f.close()
-  print(' Dot products modulus saved to file dp.npy')
+  print('     Dot products modulus saved to file dp.npy')
 
 
 ###################################################################################
