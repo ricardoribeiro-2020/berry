@@ -484,10 +484,17 @@ This program reads the dot product file \emph{dp.dat} and uses it to check conti
 
  For this, \textbf{interpolation.py} should be run, which uses the interpolation method described in that subsection.
 
- The interpolation done by \textbf{interpolation.py} is not a simple mena value but a polinomial interpolation
+ The interpolation done by \textbf{interpolation.py} is not a simple mean value but a polinomial interpolation
  that uses up to six surrounding k points to do the job.
 
  It will create new interpolated wavefunctions with extension \emph{.wfc1}, that will be used in subsequent calculations.
+
+ Since you probably just want to interpolate in the bands that are well determined, and argument with the last band number
+ is needed.
+ \begin{verbatim}
+  python3 interpolate.py [band number]
+ \end{verbatim}
+
 
 \section{Convert wavefunctions to k space}
 
