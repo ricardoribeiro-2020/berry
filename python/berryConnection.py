@@ -23,11 +23,11 @@ def berryConnect(bandwfc,gradwfc):
 # Reading data needed for the run
   nr = d.nr
   print()
-  print(' Reading dump files')
+  print('     Reading files ./wfcpos'+str(bandwfc)+'.gz and ./wfcgra'+str(gradwfc)+'.gz')
   wfcpos = joblib.load('./wfcpos'+str(bandwfc)+'.gz')
   wfcgra = joblib.load('./wfcgra'+str(gradwfc)+'.gz')
 
-  print(' Finished reading data')
+  print('     Finished reading data ',str(bandwfc),' and ',str(gradwfc),'   {:5.2f}'.format((time.time()-starttime)/60.),' min')
   sys.stdout.flush()
 #  sys.exit("Stop")
 
@@ -41,8 +41,8 @@ def berryConnect(bandwfc,gradwfc):
 # if not, needs division by nr
   berryConnection /= nr
 
-  print(' Finished calculating Berry connection for index '+str(bandwfc)+'  '+str(gradwfc)+'.\
-                                  \n Saving results to file')
+  print('     Finished calculating Berry connection for index '+str(bandwfc)+'  '+str(gradwfc)+'  .\
+                                  \n     Saving results to file   {:5.2f}'.format((time.time()-starttime)/60.),' min')
   sys.stdout.flush()
 
   filename = './berryCon'+str(bandwfc)+'-'+str(gradwfc)
@@ -59,20 +59,20 @@ if __name__ == '__main__':
   starttime = time.time()                         # Starts counting time
 
   if len(sys.argv) == 2:
-    print(' Will calculate all combinations of bands from 0 up to '+str(sys.argv[1]))
+    print('     Will calculate all combinations of bands from 0 up to '+str(sys.argv[1]))
     for bandwfc in range(int(sys.argv[1])+1):
       for gradwfc in range(int(sys.argv[1])+1):
         berryConnect(bandwfc,gradwfc)
 
   elif len(sys.argv) == 3:
-    print(' Will calculate just for band '+str(sys.argv[1])+' and '+str(sys.argv[2]))
+    print('     Will calculate just for band '+str(sys.argv[1])+' and '+str(sys.argv[2]))
     bandwfc = int(sys.argv[1])
     gradwfc = int(sys.argv[2])
     berryConnect(bandwfc,gradwfc)
 
   else:
-    print(' ERROR in number of arguments. Has to have one or two integers.')
-    print(' Stoping.')
+    print('     ERROR in number of arguments. Has to have one or two integers.')
+    print('     Stoping.')
     print()
 
 ##################################################################################r
