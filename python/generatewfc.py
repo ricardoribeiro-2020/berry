@@ -49,7 +49,7 @@ if __name__ == '__main__':
   nbnd = d.nbnd
   print('     Number of bands:',nbnd)
   print()
-  rpoint = int(nr1*nr2*1.178097)
+  rpoint = int(d.rpoint)
   print('     Point choosen for sincronizing phases: ',rpoint)
   print()
 
