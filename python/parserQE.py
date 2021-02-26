@@ -2,6 +2,7 @@
 
 # This is to make operations in the shell
 import os
+import re
 
 def parser(keyword, qefile):
 
