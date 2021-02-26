@@ -17,18 +17,15 @@ The calculation is finished.
 """
 
 try:
-  with smtplib.SMTP(host=smtpserver,port=port0) as server:
-    if login != '':
-      server.login(login,password)
-    server.sendmail(sender, receiver, message)         
-    server.quit()
+    with smtplib.SMTP(host=smtpserver,port=port0) as server:
+        if login != '':
+            server.login(login,password)
+        server.sendmail(sender, receiver, message)         
+        server.quit()
 
 except (gaierror,ConnectionRefusedError):
-  print(' Failed to connect to server.')
+    print(' Failed to connect to server.')
 except smtplib.SMTPException as e:
-  print('SMTP error occurred.')
+    print('SMTP error occurred.')
 else:
-  print("Successfully sent email")
-
-
-
+    print("Successfully sent email")

@@ -19,7 +19,7 @@ import loaddata as d
 
 ###################################################################################
 if __name__ == '__main__':
-  header('DOTPRODUCT',time.asctime())
+  header('COMPARA',time.asctime())
 
   starttime = time.time()                         # Starts counting time
 
