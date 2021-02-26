@@ -20,7 +20,7 @@ def scf(mpi, directory, name_scf, outdir, pseudodir):
     if verifica == '1\n':  # If output file does not exist, run the scf calculation
         with open(scffile, 'r') as templa:
             original = templa.read()
-        templa.closed
+        templa.close()
 
         # Changes file names to absolute paths: its safer
         lines = original.split('\n')
@@ -36,7 +36,7 @@ def scf(mpi, directory, name_scf, outdir, pseudodir):
         # Saves file with absolute paths: overides original!
         with open(scffile, 'w') as output:
             output.write(subst)
-        output.closed
+        output.close()
 
 
         print('     Running scf calculation')
@@ -57,7 +57,7 @@ def template(directory, name_scf):
     scffile = directory + name_scf
     with open(scffile, 'r') as templa:
         original = templa.read()
-    templa.closed
+    templa.close()
     nscf1 = original.replace('automatic', 'tpiba').replace('scf', 'nscf')
     nscf2 = nscf1.split('\n')
     nscf2 = list(filter(None, nscf2))
@@ -101,7 +101,7 @@ def nscf(mpi, directory, name_nscf, nscf, nkps, kpoints, nbands):
 
         with open(nscffile, 'w') as output:
             output.write(nscf + str(nkps) + '\n' + kpoints)
-        output.closed
+        output.close()
 
 ##       sys.exit("Stop")
 

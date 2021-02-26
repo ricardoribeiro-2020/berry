@@ -80,14 +80,14 @@ if __name__ == '__main__':
   
   with open('ijltonk.npy', 'rb') as f:
     ijltonk = np.load(f)            # ijltonk converts kx,ky,kz to nk
-  f.closed
+  f.close()
   with open('bandsfinal.npy', 'rb') as f:
     bandsfinal = np.load(f)
-  f.closed
+  f.close()
   print('     bandsfinal.npy loaded')
   with open('signalfinal.npy', 'rb') as f:
     signalfinal = np.load(f)
-  f.closed
+  f.close()
   print('     signalfinal.npy loaded')
   print()
   sys.stdout.flush()

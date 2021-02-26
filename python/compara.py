@@ -474,10 +474,10 @@ if __name__ == '__main__':
   print('     (bandsfinal.npy gives the machine number for each k-point/band)')
   with open('bandsfinal.npy', 'wb') as f:
     np.save(f,bandsfinal)
-  f.closed
+  f.close()
   with open('signalfinal.npy', 'wb') as f:
     np.save(f,signalfinal)
-  f.closed
+  f.close()
   
   
   

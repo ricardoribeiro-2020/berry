@@ -13,7 +13,7 @@ import numpy as np
 import contatempo
 import dft
 from headerfooter import header, footer
-from parser import parser
+from parserQE import parser
 
 ###################################################################################
 if __name__ == '__main__':
@@ -281,7 +281,7 @@ if __name__ == '__main__':
 
     with open('phase.npy', 'wb') as ph:
         np.save(ph, phase)
-    ph.closed
+    ph.close()
     print('     Phases saved to file phase.npy')
 
     neig = np.full((nks, 4), -1, dtype=int)
@@ -311,11 +311,11 @@ if __name__ == '__main__':
                 neig[nk, 1] = n1
                 neig[nk, 2] = n2
                 neig[nk, 3] = n3
-    nei.closed
+    nei.close()
     print('     Neighbors saved to file neighbors.dat')
     with open('neighbors.npy', 'wb') as nnn:
         np.save(nnn, neig)
-    nnn.closed
+    nnn.close()
     print('     Neighbors saved to file neighbors.npy')
 
 
@@ -323,14 +323,14 @@ if __name__ == '__main__':
     # Save eigenvalues to file (in Ha)
     with open('eigenvalues.npy', 'wb') as f:
         np.save(f, eigenvalues)
-    f.closed
+    f.close()
     print('     Eigenvalues saved to file eigenvalues.npy (Ry)')
 
 
     # Save occupations to file
     with open('occupations.npy', 'wb') as f:
         np.save(f, occupations)
-    f.closed
+    f.close()
     print('     Occupations saved to file occupations.npy')
 
     # Save positions to file

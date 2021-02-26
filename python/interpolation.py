@@ -80,10 +80,10 @@ if __name__ == '__main__':
   print('     Reading files bandsfinal.npy and signalfinal.npy')
   with open('bandsfinal.npy', 'rb') as f:
     bandsfinal = np.load(f)
-  f.closed
+  f.close()
   with open('signalfinal.npy', 'rb') as f:
     signalfinal = np.load(f)
-  f.closed
+  f.close()
   
 
 
