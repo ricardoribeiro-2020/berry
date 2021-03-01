@@ -219,7 +219,9 @@ if __name__ == '__main__':
     print()
 
     print('     Number of points in real space in each direction')
-    NR1, NR2, NR3 = [int(n) for n in OUTPUT.find('basis_set').find('fft_grid').attrib.values()]
+    NR1 = int(OUTPUT.find('basis_set').find('fft_grid').attrib['nr1'])
+    NR2 = int(OUTPUT.find('basis_set').find('fft_grid').attrib['nr2'])
+    NR3 = int(OUTPUT.find('basis_set').find('fft_grid').attrib['nr3'])
     NR = NR1*NR2*NR3
     print('        nr1:', NR1)
     print('        nr2:', NR2)
