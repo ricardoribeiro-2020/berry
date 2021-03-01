@@ -58,7 +58,7 @@ print(' K-points loaded')
 
 with open('bandsfinal1.npy', 'rb') as f:
   bandsfinal = np.load(f)
-f.closed
+f.close()
 print(' bandsfinal loaded')
 
 xarray = np.zeros((nkx,nky))
