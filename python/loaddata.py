@@ -39,7 +39,7 @@ with open('datafile.npy', 'rb') as fich:
     lsda         = np.load(fich)
     nelec        = np.load(fich)
     prefix       = np.load(fich)
-    outdir       = np.load(fich)
+    wfck2r       = np.load(fich)
 fich.close()
 
 

@@ -117,6 +117,7 @@ def wfck2r(nk1, nb1, total_bands=0):
 # These are the subroutines and functions
     import loaddata as d
 
+    wfck2rfile = str(d.wfck2r)
     if int(d.npr) == 1:
         mpi = ''
     else:
@@ -133,7 +134,7 @@ def wfck2r(nk1, nb1, total_bands=0):
     # Name of temporary file
     filename = 'wfc' + str(nk1) + '-' + str(nb1)
     # comand to send to the shell
-    cmd = 'echo "' + comando + '"|' + mpi + 'wfck2r.x > tmp;tail -' + str(d.nr*((total_bands-nb1)+1)) + ' wfck2r.oct'
+    cmd = 'echo "' + comando + '"|' + mpi + 'wfck2r.x > tmp;tail -' + str(d.nr*((total_bands-nb1)+1)) + ' ' + wfck2rfile
     # Captures the output of the shell command
     output = subprocess.check_output(cmd, shell=True)
     # Strips the output of fortran formating and converts to numpy formating

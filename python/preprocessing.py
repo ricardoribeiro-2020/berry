@@ -1,7 +1,22 @@
-###################################################################################
-# This program runs a set of dft calculations, and prepares for further processing
-###################################################################################
-#
+"""This program runs a set of dft calculations, and prepares for further processing
+
+    input file has to have these minimum parameters:
+        origin of k-points - k0
+        number of k-points in each direction - nkx, nky, nkz
+        step of the k-points - step
+        number of bands - nbnd
+    and can have these other, that have defaults:
+        number of processors - npr = 1
+        dft directory - DFTDIRECTORY = './dft/'
+        name_scf = 'scf.in'
+        wfcdirectory = './wfc/'
+        used to define the point in real space where all phases match: point = 1.178097
+        program = 'QE'
+        prefix = ''
+        outdir = ''
+"""
+__version__ = '0.2'
+
 import os
 import sys
 import time
@@ -30,22 +45,6 @@ if __name__ == '__main__':
 
     print('     Reading from input file:', sys.argv[1])
     print()
-
-# input file has to have these minimum parameters:
-#     origin of k-points - k0
-#     number of k-points in each direction - nkx, nky, nkz
-#     step of the k-points - step
-#     number of bands - nbnd
-# and can have these other, that have defaults:
-#     number of processors - npr = 1
-#     dft directory - DFTDIRECTORY = './dft/'
-#     name_scf = 'scf.in'
-#     wfcdirectory = './wfc/'
-#     used to define the point in real space where all phases match: point = 1.178097
-#     program = 'QE'
-#     prefix = ''
-#     outdir = ''
-
 # Defaults:
     NPR = 1
     DFTDIRECTORY = 'dft/'
@@ -194,6 +193,7 @@ if __name__ == '__main__':
     TREE = ET.parse(DFTDATAFILE)
     ROOT = TREE.getroot()
     OUTPUT = ROOT.find('output')
+    GENERAL = ROOT.find('general_info')
 #  for child in ROOT[3]:
 #    print(child.tag, child.attrib)
 #    for child1 in child:
@@ -201,7 +201,16 @@ if __name__ == '__main__':
 #      for child2 in child1:
 #        print('   ',child2.tag,child2.attrib)
 #    print()
+    DFTVERSION = str(GENERAL.find('creator').attrib['VERSION'])
+    DFTPROGRAM = str(GENERAL.find('creator').attrib['NAME'])
+    print('     DFT version', DFTPROGRAM, DFTVERSION)
+    EXTRACTVERSION = float(DFTVERSION[0:3])
+    if EXTRACTVERSION >= 6.7:
+        WFCK2R = 'wfck2r.oct'
+    else:
+        WFCK2R = 'wfck2r.mat'
 
+    print()
     print('     Lattice vectors in units of a0 (bohr)')
     A1, A2, A3 = [np.array(list(map(float, it.text.split())))
                   for it in OUTPUT.find('atomic_structure').find('cell')]
@@ -392,12 +401,12 @@ if __name__ == '__main__':
         np.save(fich, BERRYPATH)      # Path of BERRY files
         np.save(fich, REFRPOINT)      # Point in real space where all phases match
         np.save(fich, WORKDIR)        # Working directory
-        np.save(fich, NONCOLINEAR)       # If the calculation is noncolinear
+        np.save(fich, NONCOLINEAR)    # If the calculation is noncolinear
         np.save(fich, PROGRAM)        # DFT software to be used
         np.save(fich, LSDA)           # Spin polarized calculation
         np.save(fich, NELEC)          # Number of electrons
         np.save(fich, PREFIX)         # prefix of the DFT calculations
-        np.save(fich, OUTDIR)         # Output directory for the DFT calculations
+        np.save(fich, WFCK2R)         # File for extracting DFT wfc to real space
     fich.close()
     print('     Data saved to file datafile.npy')
 
