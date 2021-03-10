@@ -1,12 +1,12 @@
 import smtplib
 from socket import gaierror
 
-sender = 'sender@physics.org'
-receiver = 'receiver@physics.org'
-smtpserver = 'localhost'
+sender = "sender@physics.org"
+receiver = "receiver@physics.org"
+smtpserver = "localhost"
 port0 = 1025
-login = ''
-password = ''
+login = ""
+password = ""
 
 message = """\
 From: ricardo.ribeiro@physics.org
@@ -17,15 +17,15 @@ The calculation is finished.
 """
 
 try:
-    with smtplib.SMTP(host=smtpserver,port=port0) as server:
-        if login != '':
-            server.login(login,password)
-        server.sendmail(sender, receiver, message)         
+    with smtplib.SMTP(host=smtpserver, port=port0) as server:
+        if login != "":
+            server.login(login, password)
+        server.sendmail(sender, receiver, message)
         server.quit()
 
-except (gaierror,ConnectionRefusedError):
-    print(' Failed to connect to server.')
+except (gaierror, ConnectionRefusedError):
+    print(" Failed to connect to server.")
 except smtplib.SMTPException as e:
-    print('SMTP error occurred.')
+    print("SMTP error occurred.")
 else:
     print("Successfully sent email")

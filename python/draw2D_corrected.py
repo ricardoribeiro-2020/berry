@@ -11,75 +11,94 @@ import time
 
 # This is to draw graphics
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D,axes3d
+from mpl_toolkits.mplot3d import Axes3D, axes3d
 
 # This are the subroutines and functions
 import contatempo
-from headerfooter import header,footer
+from headerfooter import header, footer
 import loaddata as d
 
-header('DRAWBANDS',time.asctime())
+header("DRAWBANDS", time.asctime())
 
-starttime = time.time()                         # Starts counting time
+starttime = time.time()  # Starts counting time
 
-if len(sys.argv)!=3:
-  print(' ERROR in number of arguments. Has to have two integers.')
-  print(' The first is the first band, the second is last band.')
-  sys.exit("Stop")
+if len(sys.argv) != 3:
+    print(" ERROR in number of arguments. Has to have two integers.")
+    print(" The first is the first band, the second is last band.")
+    sys.exit("Stop")
 
-startband = int(sys.argv[1])                  # Number of the first band
-endband = int(sys.argv[2])                    # Number of the last band
+startband = int(sys.argv[1])  # Number of the first band
+endband = int(sys.argv[2])  # Number of the last band
 
-fig = plt.figure(figsize=(6,6))
+fig = plt.figure(figsize=(6, 6))
 
-cores = ['black','blue','green','red','grey','brown','violet',\
-         'seagreen','dimgray','darkorange','royalblue','darkviolet','maroon',\
-         'yellowgreen','peru','steelblue','crimson','silver','magenta','yellow']
+cores = [
+    "black",
+    "blue",
+    "green",
+    "red",
+    "grey",
+    "brown",
+    "violet",
+    "seagreen",
+    "dimgray",
+    "darkorange",
+    "royalblue",
+    "darkviolet",
+    "maroon",
+    "yellowgreen",
+    "peru",
+    "steelblue",
+    "crimson",
+    "silver",
+    "magenta",
+    "yellow",
+]
 
 # Reading data needed for the run
 berrypath = str(d.berrypath)
-print(' Path to BERRY files:',berrypath)
+print(" Path to BERRY files:", berrypath)
 
 wfcdirectory = str(d.wfcdirectory)
-print(' Directory where the wfc are:',wfcdirectory)
+print(" Directory where the wfc are:", wfcdirectory)
 nkx = d.nkx
 nky = d.nky
 nkz = d.nkz
-print(' Number of k-points in each direction:',nkx,nky,nkz)
+print(" Number of k-points in each direction:", nkx, nky, nkz)
 nks = d.nks
-print(' Total number of k-points:',nks)
+print(" Total number of k-points:", nks)
 nbnd = d.nbnd
-print(' Number of bands:',nbnd)
+print(" Number of bands:", nbnd)
 print()
 eigenvalues = d.eigenvalues
-print(' Eigenvlaues loaded')
+print(" Eigenvlaues loaded")
 kpoints = d.kpoints
-print(' K-points loaded')
+print(" K-points loaded")
 
-with open('bandsfinal1.npy', 'rb') as f:
-  bandsfinal = np.load(f)
+with open("bandsfinal1.npy", "rb") as f:
+    bandsfinal = np.load(f)
 f.close()
-print(' bandsfinal loaded')
+print(" bandsfinal loaded")
 
-xarray = np.zeros((nkx,nky))
-yarray = np.zeros((nkx,nky))
-zarray = np.zeros((nkx,nky))
+xarray = np.zeros((nkx, nky))
+yarray = np.zeros((nkx, nky))
+zarray = np.zeros((nkx, nky))
 count = -1
 for j in range(nky):
-  for i in range(nkx):
-    count = count + 1
-    xarray[i,j] = kpoints[count,0]
-    yarray[i,j] = kpoints[count,1]
-
-ax = fig.gca(projection='3d')
-for banda in range(startband,endband+1):
-  count = -1
-  for j in range(nky):
     for i in range(nkx):
-      count = count + 1
-      zarray[i,j] = eigenvalues[count,bandsfinal[count,banda]]
+        count = count + 1
+        xarray[i, j] = kpoints[count, 0]
+        yarray[i, j] = kpoints[count, 1]
 
-  ax.plot_wireframe(xarray, yarray, zarray, color=cores[banda])
+ax = fig.gca(projection="3d")
+for banda in range(startband, endband + 1):
+    count = -1
+    for j in range(nky):
+        for i in range(nkx):
+            count = count + 1
+            zarray[i, j] = eigenvalues[count, bandsfinal[count, banda]]
+
+    ax.plot_wireframe(xarray, yarray, zarray, color=cores[banda])
 
 # Para desenhar no mathematica!
 #
@@ -98,14 +117,12 @@ for banda in range(startband,endband+1):
 # print('};\n')
 
 
-#fig = plt.figure()
-#ax = fig.add_subplot(111, projection='3d')
+# fig = plt.figure()
+# ax = fig.add_subplot(111, projection='3d')
 
-  #ax.plot_trisurf(xarray, yarray, zarray, linewidth=0.2, antialiased=True)
+# ax.plot_trisurf(xarray, yarray, zarray, linewidth=0.2, antialiased=True)
 
 plt.show()
-
-
 
 
 #    sys.exit("Stop")
@@ -113,5 +130,4 @@ plt.show()
 # Finished
 endtime = time.time()
 
-footer(contatempo.tempo(starttime,endtime))
-
+footer(contatempo.tempo(starttime, endtime))

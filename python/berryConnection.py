@@ -1,84 +1,106 @@
-###################################################################################
-# This program calculates the Berry connections
-###################################################################################
+"""
+ This program calculates the Berry connections
+"""
 
-# This is to include maths
-import numpy as np
-
-# This is to make operations in the shell
 import sys
 import time
 
-# This are the subroutines and functions
-import contatempo
-from headerfooter import header,footer
-import loaddata as d
-
-# This to make parallel processing
+import numpy as np
 import joblib
 
-###################################################################################
-def berryConnect(bandwfc,gradwfc):
-
-# Reading data needed for the run
-  nr = d.nr
-  print()
-  print('     Reading files ./wfcpos'+str(bandwfc)+'.gz and ./wfcgra'+str(gradwfc)+'.gz')
-  wfcpos = joblib.load('./wfcpos'+str(bandwfc)+'.gz')
-  wfcgra = joblib.load('./wfcgra'+str(gradwfc)+'.gz')
-
-  print('     Finished reading data ',str(bandwfc),' and ',str(gradwfc),'   {:5.2f}'.format((time.time()-starttime)/60.),' min')
-  sys.stdout.flush()
-#  sys.exit("Stop")
-
-### Finished reading data
-# Calculation of the Berry connection
-  berryConnection = np.zeros(wfcgra[0].shape,dtype=complex)
-
-  for posi in range(nr):
-    berryConnection += 1j*wfcpos[posi].conj()*wfcgra[posi] 
-# we are assuming that normalization is \sum |\psi|^2 = 1
-# if not, needs division by nr
-  berryConnection /= nr
-
-  print('     Finished calculating Berry connection for index '+str(bandwfc)+'  '+str(gradwfc)+'  .\
-                                  \n     Saving results to file   {:5.2f}'.format((time.time()-starttime)/60.),' min')
-  sys.stdout.flush()
-
-  filename = './berryCon'+str(bandwfc)+'-'+str(gradwfc)
-# output units of Berry connection are bohr
-
-  joblib.dump(berryConnection,filename+'.gz', compress=3)
-
-  return
+# This are the subroutines and functions
+import contatempo
+from headerfooter import header, footer
+import loaddata as d
 
 ###################################################################################
-if __name__ == '__main__':
-  header('BERRY CONNECTION',time.asctime())
+def berry_connect(bandwfc0, gradwfc0):
+    """Calculates the Berry connection."""
 
-  starttime = time.time()                         # Starts counting time
-
-  if len(sys.argv) == 2:
-    print('     Will calculate all combinations of bands from 0 up to '+str(sys.argv[1]))
-    for bandwfc in range(int(sys.argv[1])+1):
-      for gradwfc in range(int(sys.argv[1])+1):
-        berryConnect(bandwfc,gradwfc)
-
-  elif len(sys.argv) == 3:
-    print('     Will calculate just for band '+str(sys.argv[1])+' and '+str(sys.argv[2]))
-    bandwfc = int(sys.argv[1])
-    gradwfc = int(sys.argv[2])
-    berryConnect(bandwfc,gradwfc)
-
-  else:
-    print('     ERROR in number of arguments. Has to have one or two integers.')
-    print('     Stoping.')
+    # Reading data needed for the run
+    NR = d.nr
     print()
+    print(
+        "     Reading files ./wfcpos"
+        + str(bandwfc0)
+        + ".gz and ./wfcgra"
+        + str(gradwfc0)
+        + ".gz"
+    )
+    wfcpos = joblib.load("./wfcpos" + str(bandwfc0) + ".gz")
+    wfcgra = joblib.load("./wfcgra" + str(gradwfc0) + ".gz")
 
-##################################################################################r
-# Finished
-  endtime = time.time()
+    print(
+        "     Finished reading data ",
+        str(bandwfc0),
+        " and ",
+        str(gradwfc0),
+        "   {:5.2f}".format((time.time() - STARTTIME) / 60.0),
+        " min",
+    )
+    sys.stdout.flush()
+    #  sys.exit("Stop")
 
-  footer(contatempo.tempo(starttime,endtime))
+    ### Finished reading data
+    # Calculation of the Berry connection
+    berry_connection = np.zeros(wfcgra[0].shape, dtype=complex)
+
+    for posi in range(NR):
+        berry_connection += 1j * wfcpos[posi].conj() * wfcgra[posi]
+    ##  we are assuming that normalization is \sum |\psi|^2 = 1
+    ##  if not, needs division by NR
+    berry_connection /= NR
+
+    print(
+        "     Finished calculating Berry connection for index "
+        + str(bandwfc0)
+        + "  "
+        + str(gradwfc0)
+        + "  .\
+         \n     Saving results to file   {:5.2f}".format(
+            (time.time() - STARTTIME) / 60.0
+        ),
+        " min",
+    )
+    sys.stdout.flush()
+
+    filename = "./berryCon" + str(bandwfc0) + "-" + str(gradwfc0)
+    # output units of Berry connection are bohr
+
+    joblib.dump(berry_connection, filename + ".gz", compress=3)
 
 
+###################################################################################
+if __name__ == "__main__":
+    header("BERRY CONNECTION", time.asctime())
+
+    STARTTIME = time.time()  # Starts counting time
+
+    if len(sys.argv) == 2:
+        print(
+            "     Will calculate all combinations of bands from 0 up to "
+            + str(sys.argv[1])
+        )
+        for bandwfc in range(int(sys.argv[1]) + 1):
+            for gradwfc in range(int(sys.argv[1]) + 1):
+                berry_connect(bandwfc, gradwfc)
+
+    elif len(sys.argv) == 3:
+        print(
+            "     Will calculate just for band "
+            + str(sys.argv[1])
+            + " and "
+            + str(sys.argv[2])
+        )
+        bandwfc = int(sys.argv[1])
+        gradwfc = int(sys.argv[2])
+        berry_connect(bandwfc, gradwfc)
+
+    else:
+        print("     ERROR in number of arguments. Has to be one or two integers.")
+        print("     Stoping.")
+        print()
+
+    ##################################################################################r
+    # Finished
+    footer(contatempo.tempo(STARTTIME, time.time()))
