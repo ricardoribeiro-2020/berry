@@ -29,7 +29,7 @@ import contatempo
 import dft
 from headerfooter import header, footer
 from parserQE import parser
-
+# pylint: disable=C0103
 ###################################################################################
 if __name__ == "__main__":
     header("PREPROCESSING", time.asctime())
