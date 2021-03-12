@@ -18,7 +18,7 @@ import loaddata as d
 
 ###################################################################################
 if __name__ == "__main__":
-    header("R2K", time.asctime())
+    header("R2K", str(d.version), time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 

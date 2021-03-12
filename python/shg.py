@@ -18,7 +18,7 @@ from comutator import comute, comute3, comutederiv
 
 ###################################################################################
 if __name__ == "__main__":
-    header("SHG", time.asctime())
+    header("SHG", str(d.version), time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 

@@ -18,7 +18,7 @@ import loaddata as d
 
 ###################################################################################
 if __name__ == "__main__":
-    header("GENERATEWFC", time.asctime())
+    header("GENERATEWFC", str(d.version), time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 

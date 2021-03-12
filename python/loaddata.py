@@ -40,6 +40,7 @@ with open("datafile.npy", "rb") as fich:
     nelec = np.load(fich)
     prefix = np.load(fich)
     wfck2r = np.load(fich)
+    version = np.load(fich)
 fich.close()
 
 

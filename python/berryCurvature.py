@@ -75,7 +75,7 @@ def berry_curv(gradwfc00, gradwfc11):
 
 ###################################################################################
 if __name__ == "__main__":
-    header("BERRY CURVATURE", time.asctime())
+    header("BERRY CURVATURE", str(d.version), time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 

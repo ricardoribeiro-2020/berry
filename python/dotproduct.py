@@ -51,7 +51,7 @@ def connection(nkconn, neighborconn, dphaseconn):
 
 ###################################################################################
 if __name__ == "__main__":
-    header("DOTPRODUCT", time.asctime())
+    header("DOTPRODUCT", str(d.version), time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 

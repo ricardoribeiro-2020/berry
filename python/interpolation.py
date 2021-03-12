@@ -12,6 +12,7 @@ import numpy as np
 import contatempo
 from headerfooter import header, footer
 import loaddata as d
+from write_k_points import bands_numbers
 
 
 def polinomial(npontospolinomial, xpol, ypol, xpol0):
@@ -33,7 +34,7 @@ def polinomial(npontospolinomial, xpol, ypol, xpol0):
 ###################################################################################
 
 if __name__ == "__main__":
-    header("INTERPOLATION", time.asctime())
+    header("INTERPOLATION", str(d.version), time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 
@@ -257,24 +258,10 @@ if __name__ == "__main__":
         print(
             "  New band "
             + str(nb)
-            + "      | y  x ->   nr of fails: "
+            + "         nr of fails: "
             + str(nrnotattrib[nb])
         )
-        for j in range(NKY):
-            lin = ""
-            print()
-            for i in range(NKX):
-                nk = nk + 1
-                f = bandsfinal[nk, nb]
-                if f < 0:
-                    lin += SEP + SEP + str(f)
-                elif 0 <= f < 10:
-                    lin += SEP + SEP + SEP + str(f)
-                elif 9 < f < 100:
-                    lin += SEP + SEP + str(f)
-                elif 99 < f < 1000:
-                    lin += SEP + str(f)
-            print(lin)
+        bands_numbers(NKX, NKY, bandsfinal[:, nb])
     print()
     print(" Signaling")
     nrsignal = np.full((nbnd, 7), -2, dtype=int)
@@ -291,26 +278,12 @@ if __name__ == "__main__":
         print(
             "     "
             + str(nb)
-            + "      | y  x ->   -1: "
+            + "        -1: "
             + str(nrsignal[nb, 0])
             + "     0: "
             + str(nrsignal[nb, 1])
         )
-        for j in range(NKY):
-            lin = ""
-            print()
-            for i in range(NKX):
-                nk = nk + 1
-                f = signalfinal[nk, nb]
-                if f < 0:
-                    lin += SEP + SEP + str(f)
-                elif 0 >= f < 10:
-                    lin += SEP + SEP + SEP + str(f)
-                elif 9 < nk < 100:
-                    lin += SEP + SEP + str(f)
-                elif 99 < nk < 1000:
-                    lin += SEP + str(f)
-            print(lin)
+        bands_numbers(NKX, NKY, signalfinal[:, nb])
 
     print()
     print(" Resume of results")

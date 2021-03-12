@@ -18,7 +18,7 @@ import contatempo
 from headerfooter import header, footer
 import loaddata as d
 
-header("DRAWBANDS", time.asctime())
+header("DRAWBANDS", str(d.version), time.asctime())
 
 starttime = time.time()  # Starts counting time
 

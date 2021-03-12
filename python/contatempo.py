@@ -1,7 +1,7 @@
-# This function returns a string with the time elapsed between starttime,endtime
-
+""" This function returns a string with the time elapsed between starttime,endtime """
 
 def tempo(starttime, endtime):
+    """ Returns a string with the time elapsed between starttime,endtime """
 
     dif = round(endtime - starttime, 2)
     d = int(dif / 86400)

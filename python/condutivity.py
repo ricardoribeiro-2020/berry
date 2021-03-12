@@ -15,7 +15,7 @@ import loaddata as d
 
 ###################################################################################
 if __name__ == "__main__":
-    header("CONDUTIVITY", time.asctime())
+    header("CONDUTIVITY", str(d.version), time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 

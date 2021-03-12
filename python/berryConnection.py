@@ -72,7 +72,7 @@ def berry_connect(bandwfc0, gradwfc0):
 
 ###################################################################################
 if __name__ == "__main__":
-    header("BERRY CONNECTION", time.asctime())
+    header("BERRY CONNECTION", str(d.version), time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 
