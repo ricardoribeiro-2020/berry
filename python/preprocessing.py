@@ -47,7 +47,13 @@ if __name__ == "__main__":
     print()
 
     # Check python version
-    python_version = str(sys.version_info[0])+'.'+str(sys.version_info[1])+'.'+str(sys.version_info[2])
+    python_version = (
+                   str(sys.version_info[0])
+                   + '.'
+                   + str(sys.version_info[1])
+                   + '.'
+                   + str(sys.version_info[2])
+    )
     if not sys.version_info > (2, 7):
         print(" *!*!*!*!*!*!*!*!*!*!*!")
         print(" ERROR: this runs in python3. You are using python2.")
@@ -459,6 +465,12 @@ if __name__ == "__main__":
         np.save(fich, PREFIX)  # prefix of the DFT calculations
         np.save(fich, WFCK2R)  # File for extracting DFT wfc to real space
         np.save(fich, __version__)  # Version of berry where data was created
+        np.save(fich, "dummy")  # Saving space for future values and compatibility
+        np.save(fich, "dummy")  # Saving space for future values and compatibility
+        np.save(fich, "dummy")  # Saving space for future values and compatibility
+        np.save(fich, "dummy")  # Saving space for future values and compatibility
+        np.save(fich, "dummy")  # Saving space for future values and compatibility
+        np.save(fich, "dummy")  # Saving space for future values and compatibility
     fich.close()
     print("     Data saved to file datafile.npy")
 

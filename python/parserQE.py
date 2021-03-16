@@ -3,6 +3,8 @@
 import os
 import re
 
+# pylint: disable=C0103
+###################################################################################
 
 def parser(keyword, qefile):
     """

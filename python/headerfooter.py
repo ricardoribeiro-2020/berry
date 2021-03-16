@@ -1,5 +1,6 @@
 """ Module with the header and footer that appears in the output of the programas."""
 
+# pylint: disable=C0103
 
 def header(title, version, time):
     """ Header that appears in the output of the programas."""

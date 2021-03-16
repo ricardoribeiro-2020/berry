@@ -9,16 +9,16 @@ import numpy as np
 import joblib
 
 # This are the subroutines and functions
-import contatempo
+from contatempo import tempo, inter_time
 from headerfooter import header, footer
 import loaddata as d
 
+# pylint: disable=C0103
 ###################################################################################
 def berry_curv(gradwfc00, gradwfc11):
     """Calculates the Berry curvature."""
 
     # Reading data needed for the run
-    NR = d.nr
     print()
     print(
         "     Reading files ./wfcpos"
@@ -35,8 +35,8 @@ def berry_curv(gradwfc00, gradwfc11):
         str(gradwfc00),
         " and ",
         str(gradwfc11),
-        "   {:5.2f}".format((time.time() - STARTTIME) / 60.0),
-        " min",
+        "         "
+        + inter_time(time.time() - STARTTIME)
     )
     sys.stdout.flush()
     #  sys.exit("Stop")
@@ -45,14 +45,14 @@ def berry_curv(gradwfc00, gradwfc11):
     # Calculation of the Berry curvature
     berry_curvature = np.zeros(wfcgra0[0].shape, dtype=complex)
 
-    for posi in range(NR):
+    for posi in range(d.nr):
         berry_curvature += (
             1j * wfcgra0[posi][0] * wfcgra1[posi][1].conj()
             - 1j * wfcgra0[posi][1] * wfcgra1[posi][0].conj()
         )
     ##  we are assuming that normalization is \sum |\psi|^2 = 1
-    ##  if not, needs division by NR
-    berry_curvature /= NR
+    ##  if not, needs division by d.nr
+    berry_curvature /= d.nr
 
     print(
         "     Finished calculating Berry curvature for index "
@@ -60,10 +60,8 @@ def berry_curv(gradwfc00, gradwfc11):
         + "  "
         + str(gradwfc11)
         + ".\
-           \n     Saving results to file   {:5.2f}".format(
-            (time.time() - STARTTIME) / 60.0
-        ),
-        " min",
+           \n     Saving results to file   "
+        + inter_time(time.time() - STARTTIME)
     )
     sys.stdout.flush()
 
@@ -75,7 +73,7 @@ def berry_curv(gradwfc00, gradwfc11):
 
 ###################################################################################
 if __name__ == "__main__":
-    header("BERRY CURVATURE", str(d.version), time.asctime())
+    header("BERRY CURVATURE", d.version, time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 
@@ -106,4 +104,4 @@ if __name__ == "__main__":
 
     ##################################################################################r
     # Finished
-    footer(contatempo.tempo(STARTTIME, time.time()))
+    footer(tempo(STARTTIME, time.time()))

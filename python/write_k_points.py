@@ -2,16 +2,19 @@
     This moldule writes in stdout the k-points in a useful layout
 """
 
+# pylint: disable=C0103
+###################################################################################
+
 def list_kpoints(nkx, nky):
     """Output the list of k-points in a convenient way."""
     print()
     nk = -1
     SEP = " "
     print("         | y  x ->")
-    for j in range(nky):
+    for _ in range(nky):
         lin = ""
         print()
-        for i in range(nkx):
+        for _ in range(nkx):
             nk = nk + 1
             if nk < 10:
                 lin += SEP + SEP + SEP + SEP + str(nk)
@@ -29,10 +32,10 @@ def bands_numbers(nkx, nky, valuesarray):
     nk = -1
     SEP = " "
     print("         | y  x ->")
-    for j in range(nky):
+    for _ in range(nky):
         lin = ""
         print()
-        for i in range(nkx):
+        for _ in range(nkx):
             nk = nk + 1
             if valuesarray[nk] < 0:
                 lin += SEP + str(valuesarray[nk])

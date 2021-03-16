@@ -12,13 +12,14 @@ from findiff import Gradient
 import joblib
 
 # These are the subroutines and functions
-import contatempo
+from contatempo import tempo, inter_time
 from headerfooter import header, footer
 import loaddata as d
 
+# pylint: disable=C0103
 ###################################################################################
 if __name__ == "__main__":
-    header("R2K", str(d.version), time.asctime())
+    header("R2K", d.version, time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 
@@ -44,45 +45,20 @@ if __name__ == "__main__":
 
     # Reading data needed for the run
 
-    WFCDIRECTORY = str(d.wfcdirectory)
-    print("     Directory where the wfc are:", WFCDIRECTORY)
-    NKX = d.nkx
-    NKY = d.nky
-    NKZ = d.nkz
-    print("     Number of k-points in each direction:", NKX, NKY, NKZ)
-    NKS = d.nks
-    print("     Total number of k-points:", NKS)
-
-    NR = d.nr
-    print("     Total number of points in real space:", NR)
-    NPR = d.npr
-    print("     Number of processors to use", NPR)
-
-    NBND = d.nbnd
-    print("     Number of bands:", NBND)
-
-    DK = float(d.step)  # Defines the step for gradient calculation DK
-    print("     k-points step, DK", DK)
+    print("     Directory where the wfc are:", d.wfcdirectory)
+    print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
+    print("     Total number of k-points:", d.nks)
+    print("     Total number of points in real space:", d.nr)
+    print("     Number of processors to use", d.npr)
+    print("     Number of bands:", d.nbnd)
+    print("     k-points step, dk", d.step)  # Defines the step for gradient calculation
     print()
+    print("     kpoints loaded")  # d.kpoints = np.zeros((d.nks,3), dtype=float)
+    print("     rpoints loaded")  # d.r = np.zeros((d.nr,3), dtype=float)
+    print("     Occupations loaded")  # d.occupations = np.array(occupat)
+    print("     Eigenvalues loaded")  # d.eigenvalues = np.array(eigenval)
+    print("     Phases loaded")  # d.phase = np.zeros((d.nr,d.nks),dtype=complex)
 
-    KPOINTS = d.kpoints
-    print("     kpoints loaded")  # KPOINTS = np.zeros((NKS,3), dtype=float)
-
-    R = d.r
-    print("     rpoints loaded")  # R = np.zeros((NR,3), dtype=float)
-
-    occupations = d.occupations
-    print("     Occupations loaded")  # occupations = np.array(occupat)
-
-    eigenvalues = d.eigenvalues
-    print("     Eigenvalues loaded")  # eigenvalues = np.array(eigenval)
-
-    PHASE = d.phase
-    print("     Phases loaded")  # PHASE = np.zeros((NR,NKS),dtype=complex)
-
-    with open("ijltonk.npy", "rb") as fich:
-        ijltonk = np.load(fich)  # ijltonk converts kx,ky,kz to nk
-    fich.close()
     with open("bandsfinal.npy", "rb") as fich:
         bandsfinal = np.load(fich)
     fich.close()
@@ -97,20 +73,20 @@ if __name__ == "__main__":
 
     ################################################## Finished reading data
 
-    grad = Gradient(h=[DK, DK], acc=2)  # Defines gradient function in 2D
+    grad = Gradient(h=[d.step, d.step], acc=2)  # Defines gradient function in 2D
     ##################################################
 
     BANDSR = {}  # Dictionary with wfc for all points and bands
     BANDSG = {}  # Dictionary with wfc gradients for all points and bands
 
     for banda in range(NBNDMIN, NBNDMAX):  # For each band
-        wfct_k = np.zeros((NR, NKS), dtype=complex)
-        for kp in range(NKS):
+        wfct_k = np.zeros((d.nr, d.nks), dtype=complex)
+        for kp in range(d.nks):
             if (
                 signalfinal[kp, banda] == -1
             ):  # if its a signaled wfc, choose interpolated
                 infile = (
-                    WFCDIRECTORY
+                    d.wfcdirectory
                     + "/k0"
                     + str(kp)
                     + "b0"
@@ -119,7 +95,7 @@ if __name__ == "__main__":
                 )
             else:  # else choose original
                 infile = (
-                    WFCDIRECTORY
+                    d.wfcdirectory
                     + "/k0"
                     + str(kp)
                     + "b0"
@@ -130,8 +106,8 @@ if __name__ == "__main__":
         print(
             "     Finished reading wfcs of band ",
             str(banda),
-            "from files.   {:5.2f}".format((time.time() - STARTTIME) / 60.0),
-            " min",
+            "from files.   ",
+            inter_time(time.time() - STARTTIME)
         )
         sys.stdout.flush()
 
@@ -139,12 +115,12 @@ if __name__ == "__main__":
         wfcgra = {}  # Dictionary with wfc gradients for all points
 
         wfcpos = {
-            posi: PHASE[posi, ijltonk[:, :, 0]] * wfct_k[posi, ijltonk[:, :, 0]]
-            for posi in range(NR)
+            posi: d.phase[posi, d.ijltonk[:, :, 0]] * wfct_k[posi, d.ijltonk[:, :, 0]]
+            for posi in range(d.nr)
         }
-        wfcgra = {posi: grad(wfcpos[posi]) for posi in range(NR)}
-        #    for posi in range(NR):
-        #      wfcpos[posi] = PHASE[posi,ijltonk[:,:,0]]*wfct_k[posi,ijltonk[:,:,0]]
+        wfcgra = {posi: grad(wfcpos[posi]) for posi in range(d.nr)}
+        #    for posi in range(d.nr):
+        #      wfcpos[posi] = d.phase[posi,d.ijltonk[:,:,0]]*wfct_k[posi,d.ijltonk[:,:,0]]
 
         #      wfcgra[posi] = grad(wfcpos[posi])                  # Complex gradient
 
@@ -153,8 +129,8 @@ if __name__ == "__main__":
         print(
             "     Finished band ",
             str(banda),
-            "   {:5.2f}".format((time.time() - STARTTIME) / 60.0),
-            " min",
+            "        ",
+            inter_time(time.time() - STARTTIME)
         )
         sys.stdout.flush()
 
@@ -168,4 +144,4 @@ if __name__ == "__main__":
 
     ###################################################################################
     # Finished
-    footer(contatempo.tempo(STARTTIME, time.time()))
+    footer(tempo(STARTTIME, time.time()))

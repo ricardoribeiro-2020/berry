@@ -1,17 +1,14 @@
-# This program is to read and draw wfc and grad wfc
+""" This program is to read and draw wfc and grad wfc."""
 
-# This is to include maths
-import numpy as np
-
-# This is to draw
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D, axes3d
-
-# This is to make operations in the shell
 import sys
 
-# This to make parallel processing
+import numpy as np
 import joblib
+import matplotlib.pyplot as plt
+
+
+# pylint: disable=C0103
+###################################################################################
 
 bandwfc = int(sys.argv[1])
 gradwfc = int(sys.argv[2])
@@ -35,7 +32,7 @@ Q = np.hypot(
     np.imag(berryConnection[0]), np.imag(berryConnection[1])
 )  # Colors for imag part
 
-if tipo == "a" or tipo == "r":
+if tipo in ('a', 'r'):
     ax1.quiver(
         np.real(berryConnection[0]),
         np.real(berryConnection[1]),
@@ -44,7 +41,7 @@ if tipo == "a" or tipo == "r":
         width=0.042,
         scale=20 / 1,
     )
-if tipo == "a" or tipo == "i":
+if tipo in ('a', 'i'):
     ax1.quiver(
         np.imag(berryConnection[0]),
         np.imag(berryConnection[1]),
@@ -53,7 +50,7 @@ if tipo == "a" or tipo == "i":
         width=0.042,
         scale=20 / 1,
     )
-if tipo == "a" or tipo == "c":
+if tipo in ('a', 'c'):
     ax1.quiver(berryConnection[0], berryConnection[1], color="b")
 # ax.plot_wireframe(X,Y,np.real(wfcpos[ponto]))
 

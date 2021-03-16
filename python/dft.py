@@ -8,6 +8,8 @@ import subprocess
 
 import numpy as np
 
+# pylint: disable=C0103
+###################################################################################
 # SCF calculation
 def scf(mpi, directory, name_scf, outdir, pseudodir):
     """Run the scf calculation of QE."""
