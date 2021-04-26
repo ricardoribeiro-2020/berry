@@ -7,6 +7,7 @@ import time
 
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 import contatempo
 from headerfooter import header, footer
@@ -71,7 +72,7 @@ print(" Eigenvlaues loaded")
 kpoints = d.kpoints
 print(" K-points loaded")
 
-with open("bandsfinal1.npy", "rb") as f:
+with open("bandsfinal.npy", "rb") as f:
     bandsfinal = np.load(f)
 f.close()
 print(" bandsfinal loaded")

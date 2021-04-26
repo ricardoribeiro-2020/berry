@@ -48,49 +48,71 @@ fich.close()
 
 
 # Read eigenvalues from file   eigenvalues = np.array(nks,nbnd)
-with open("eigenvalues.npy", "rb") as fich:
-    eigenvalues = np.load(fich)
-fich.close()
-
+try:
+    with open("eigenvalues.npy", "rb") as fich:
+        eigenvalues = np.load(fich)
+    fich.close()
+except IOError:
+    print("  WARNING: No eigenvalues.npy file.")
 
 # Read occupations from file   occupations = np.array(nks,nbnd)
-with open("occupations.npy", "rb") as fich:
-    occupations = np.load(fich)
-fich.close()
+try:
+    with open("occupations.npy", "rb") as fich:
+        occupations = np.load(fich)
+    fich.close()
+except IOError:
+    print("  WARNING: No occupations.npy file.")
 
 
 # Read phase from file         phase = np.zeros((nr,nks),dtype=complex)
-with open("phase.npy", "rb") as fich:
-    phase = np.load(fich)
-fich.close()
-
+try:
+    with open("phase.npy", "rb") as fich:
+        phase = np.load(fich)
+    fich.close()
+except IOError:
+    print("  WARNING: No phase.npy file.")
 
 # Read neighbors from file     neig = np.full((nks,4),-1,dtype=int)
-with open("neighbors.npy", "rb") as fich:
-    neighbors = np.load(fich)
-fich.close()
+try:
+    with open("neighbors.npy", "rb") as fich:
+        neighbors = np.load(fich)
+    fich.close()
+except IOError:
+    print("  WARNING: No neighbors.npy file.")
 
 
 # Read kpoints from file       kpoints = np.zeros((nks,3), dtype=float)
-with open("kpoints.npy", "rb") as fich:
-    kpoints = np.load(fich)
-fich.close()
+try:
+    with open("kpoints.npy", "rb") as fich:
+        kpoints = np.load(fich)
+    fich.close()
+except IOError:
+    print("  WARNING: No kpoints.npy file.")
 
 # Read nktoijl from file       nktoijl = np.zeros((nks,3),dtype=int)
-with open("nktoijl.npy", "rb") as fich:
-    nktoijl = np.load(fich)
-fich.close()
+try:
+    with open("nktoijl.npy", "rb") as fich:
+        nktoijl = np.load(fich)
+    fich.close()
+except IOError:
+    print("  WARNING: No nktoijl.npy file.")
 
 # Read ijltonk from file       ijltonk = np.zeros((nkx,nky,nkz),dtype=int)
-with open("ijltonk.npy", "rb") as fich:
-    ijltonk = np.load(fich)
-fich.close()
+try:
+    with open("ijltonk.npy", "rb") as fich:
+        ijltonk = np.load(fich)
+    fich.close()
+except IOError:
+    print("  WARNING: No ijltonk.npy file.")
 
 
 # Read positions from file     r = np.zeros((nr,3), dtype=float)
-with open("positions.npy", "rb") as fich:
-    r = np.load(fich)
-fich.close()
+try:
+    with open("positions.npy", "rb") as fich:
+        r = np.load(fich)
+    fich.close()
+except IOError:
+    print("  WARNING: No positions.npy file.")
 
 
 # To call these variables from another program:
