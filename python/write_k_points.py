@@ -44,3 +44,23 @@ def bands_numbers(nkx, nky, valuesarray):
             elif 9 < valuesarray[nk] < 100:
                 lin += SEP + str(valuesarray[nk])
         print(lin)
+
+
+def float_numbers(nkx, nky, valuesarray, precision):
+    """Outputs the valuesarray float numbers with the precision number of decimal places."""
+    nk = -1
+    SEP = " "
+    print("         | y  x ->")
+    for _ in range(nky):
+        lin = ""
+        print()
+        for _ in range(nkx):
+            val = '{0:.{1}f}'.format(valuesarray[nk], precision)
+            nk = nk + 1
+            if valuesarray[nk] < 0:
+                lin += SEP + str(val)
+            elif 0 <= valuesarray[nk] < 10:
+                lin += SEP + SEP + str(val)
+            elif 9 < valuesarray[nk] < 100:
+                lin += SEP + str(val)
+        print(lin)
