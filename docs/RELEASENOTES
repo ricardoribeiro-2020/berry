@@ -1,4 +1,12 @@
-RELEASE NOTES for berry v.0.2
+RELEASE NOTES for berry v.0.2.1
+
+New in 0.2.1 version:
+
+- Added drawcurvature.py for drawing Berry curvatures
+
+- Fixed serious bugs on compara.py and dotproduct.py
+
+
 
 New in 0.2 version:
 
