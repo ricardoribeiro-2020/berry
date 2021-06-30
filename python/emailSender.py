@@ -1,5 +1,14 @@
+"""
+   Script to send an email warning the end of a calculation
+
+   Should be edited to conform to the users specifications
+"""
+
 import smtplib
 from socket import gaierror
+
+# pylint: disable=C0103
+###################################################################################
 
 sender = "sender@physics.org"
 receiver = "receiver@physics.org"

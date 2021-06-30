@@ -1,24 +1,21 @@
-###################################################################################
+"""
 # This program draws the bands
-###################################################################################
+"""
 
-# This is to include maths
-import numpy as np
-
-# This is to make operations in the shell
 import sys
 import time
 
-# This is to draw graphics
+import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D, axes3d
+from mpl_toolkits.mplot3d import Axes3D
 
-# This are the subroutines and functions
 import contatempo
 from headerfooter import header, footer
 import loaddata as d
 
-header("DRAWBANDS", time.asctime())
+# pylint: disable=C0103
+###################################################################################
+header("DRAWBANDS", d.version, time.asctime())
 
 starttime = time.time()  # Starts counting time
 
@@ -75,7 +72,7 @@ print(" Eigenvlaues loaded")
 kpoints = d.kpoints
 print(" K-points loaded")
 
-with open("bandsfinal1.npy", "rb") as f:
+with open("bandsfinal.npy", "rb") as f:
     bandsfinal = np.load(f)
 f.close()
 print(" bandsfinal loaded")

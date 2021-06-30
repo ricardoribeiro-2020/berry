@@ -1,10 +1,11 @@
-# This is to include maths
-import numpy as np
+""" Module to include some commutators for condutivity calculations """
+
 from findiff import Gradient
+# pylint: disable=C0103
 
 
 def comute(berryConnection, sprime, s, beta, alpha):
-
+    """ Commute two Berry connections."""
     s_sprime = str(s) + " " + str(sprime)
     sprime_s = str(sprime) + " " + str(s)
     e = (
@@ -16,7 +17,7 @@ def comute(berryConnection, sprime, s, beta, alpha):
 
 
 def comute3(berryConnection, sprime, s, r, beta, alpha2, alpha1):
-
+    """ Commute three Berry connections."""
     s_sprime = str(s) + " " + str(sprime)
     sprime_s = str(sprime) + " " + str(s)
     r_s = str(r) + " " + str(s)
@@ -37,7 +38,7 @@ def comute3(berryConnection, sprime, s, r, beta, alpha2, alpha1):
 
 
 def deriv(berryConnection, s, sprime, alpha1, alpha2, dk):
-
+    """ Derivative of the Berry connection."""
     grad = Gradient(h=[dk, dk], acc=3)  # Defines gradient function in 2D
     s_sprime = str(s) + " " + str(sprime)
     #    sprime_s = str(sprime) + ' ' + str(s)
@@ -57,7 +58,7 @@ def deriv(berryConnection, s, sprime, alpha1, alpha2, dk):
 
 
 def comutederiv(berryConnection, s, sprime, beta, alpha1, alpha2, dk):
-
+    """ Commute Berry connection and a derivative."""
     s_sprime = str(s) + " " + str(sprime)
     sprime_s = str(sprime) + " " + str(s)
 

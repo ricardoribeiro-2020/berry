@@ -1,11 +1,12 @@
 """ Module with the header and footer that appears in the output of the programas."""
 
+# pylint: disable=C0103
 
-def header(title, time):
+def header(title, version, time):
     """ Header that appears in the output of the programas."""
 
     print()
-    print("     Program " + title + " v.0.2 starts on " + time)
+    print("     Program " + title + " " + version + " starts on " + time)
     print()
     print("     This program is part of the open-source BERRY suite.")
     print("         https://ricardoribeiro-2020.github.io/berry/")

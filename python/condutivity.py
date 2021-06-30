@@ -13,9 +13,10 @@ import contatempo
 from headerfooter import header, footer
 import loaddata as d
 
+# pylint: disable=C0103
 ###################################################################################
 if __name__ == "__main__":
-    header("CONDUTIVITY", time.asctime())
+    header("CONDUTIVITY", d.version, time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 
@@ -79,20 +80,12 @@ if __name__ == "__main__":
     print("     Start reading data")
 
     # Reading data needed for the run
-
-    NKX = d.nkx
-    NKY = d.nky
-    NKZ = d.nkz
-    print("     Number of k-points in each direction:", NKX, NKY, NKZ)
-    NBND = d.nbnd
-    print("     Number of bands:", NBND)
-    dk = float(d.step)  # Defines the step for gradient calculation dk
-    print("     k-points step, dk", dk)
+    print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
+    print("     Number of bands:", d.nbnd)
+    print("     k-points step, dk", d.step)  # Defines the step for gradient calculation dk
     print()
-    occupations = d.occupations
-    print("     Occupations loaded")  # occupations = np.array(nks,NBND)
-    eigenvalues = d.eigenvalues
-    print("     Eigenvalues loaded")  # eigenvalues = np.array(nks,NBND)
+    print("     Occupations loaded")  # d.occupations = np.array(nks,d.nbnd)
+    print("     Eigenvalues loaded")  # d.eigenvalues = np.array(nks,d.nbnd)
     with open("bandsfinal.npy", "rb") as fich:
         bandsfinal = np.load(fich)
     fich.close()
@@ -114,13 +107,13 @@ if __name__ == "__main__":
             berry_connection[index] = joblib.load(filename + ".gz")  # Berry connection
 
     # sys.exit("Stop")
-    Earray = np.zeros((NKX, NKY, NBND))  # Eigenvalues corrected for the new bands
+    Earray = np.zeros((d.nkx, d.nky, d.nbnd))  # Eigenvalues corrected for the new bands
 
     kp = 0
-    for j in range(NKY):  # Energy in Ry
-        for i in range(NKX):
-            for banda in range(NBND):
-                Earray[i, j, banda] = eigenvalues[kp, bandsfinal[kp, banda]]
+    for j in range(d.nky):  # Energy in Ry
+        for i in range(d.nkx):
+            for banda in range(d.nbnd):
+                Earray[i, j, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
             kp += 1
     #      print(Earray[i,j,banda] )
 
@@ -131,7 +124,7 @@ if __name__ == "__main__":
 
     CONST = 4 * 2j / (2 * np.pi) ** 2  # = i2e^2/hslash 1/(2pi)^2     in Rydberg units
     # the '4' comes from spin degeneracy, that is summed in s and s'
-    VK = dk * dk / (2 * np.pi) ** 2  # element of volume in k-space in units of bohr^-1
+    VK = d.step * d.step / (2 * np.pi) ** 2  # element of volume in k-space in units of bohr^-1
 
     print("     Maximum energy (Ry): " + str(enermax))
     print("     Energy step (Ry): " + str(enerstep))
@@ -143,8 +136,8 @@ if __name__ == "__main__":
     print("     Volume (area) in k space: " + str(VK))
 
     sigma = {}  # Dictionary where the conductivity will be stored
-    FERMI = np.zeros((NKX, NKY, bandempty + 1, bandempty + 1))
-    dE = np.zeros((NKX, NKY, bandempty + 1, bandempty + 1))
+    FERMI = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1))
+    dE = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1))
 
     for s in bandlist:
         for sprime in bandlist:
@@ -158,7 +151,7 @@ if __name__ == "__main__":
     # sys.exit("Stop")
     for omega in np.arange(0, enermax + enerstep, enerstep):
         omegaarray = np.full(
-            (NKX, NKY, bandempty + 1, bandempty + 1), omega + broadning
+            (d.nkx, d.nky, bandempty + 1, bandempty + 1), omega + broadning
         )  # in Ry
         sig = np.full((2, 2), 0.0 + 0j)  # matrix sig_xx,sig_xy,sig_yy,sig_yx
 

@@ -16,9 +16,10 @@ from headerfooter import header, footer
 import loaddata as d
 from comutator import comute, comute3, comutederiv
 
+# pylint: disable=C0103
 ###################################################################################
 if __name__ == "__main__":
-    header("SHG", time.asctime())
+    header("SHG", d.version, time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 
@@ -83,19 +84,12 @@ if __name__ == "__main__":
 
     # Reading data needed for the run
 
-    NKX = d.nkx
-    NKY = d.nky
-    NKZ = d.nkz
-    print("     Number of k-points in each direction:", NKX, NKY, NKZ)
-    NBND = d.nbnd
-    print("     Number of bands:", NBND)
-    dk = float(d.step)  # Defines the step for gradient calculation dk
-    print("     k-points step, dk", dk)
+    print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
+    print("     Number of bands:", d.nbnd)
+    print("     k-points step, dk", d.step)  # Defines the step for gradient calculation
     print()
-    occupations = d.occupations
-    print("     Occupations loaded")  # occupations = np.array(nks,NBND)
-    eigenvalues = d.eigenvalues
-    print("     Eigenvalues loaded")  # eigenvalues = np.array(nks,NBND)
+    print("     Occupations loaded")  # d.occupations = np.array(nks,d.nbnd)
+    print("     Eigenvalues loaded")  # d.eigenvalues = np.array(nks,d.nbnd)
     with open("bandsfinal.npy", "rb") as f:
         bandsfinal = np.load(f)
     f.close()
@@ -117,13 +111,13 @@ if __name__ == "__main__":
         berryConnection[index] = joblib.load(filename + ".gz")  # Berry connection
 
     # sys.exit("Stop")
-    Earray = np.zeros((NKX, NKY, NBND))  # Eigenvalues corrected for the new bands
+    Earray = np.zeros((d.nkx, d.nky, d.nbnd))  # Eigenvalues corrected for the new bands
 
     kp = 0
-    for j in range(NKY):  # Energy in Ry
-        for i in range(NKX):
-            for banda in range(NBND):
-                Earray[i, j, banda] = eigenvalues[kp, bandsfinal[kp, banda]]
+    for j in range(d.nky):  # Energy in Ry
+        for i in range(d.nkx):
+            for banda in range(d.nbnd):
+                Earray[i, j, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
             kp += 1
     #        print(Earray[i,j,banda] )
 
@@ -132,7 +126,7 @@ if __name__ == "__main__":
 
     ################################################## Finished reading data
 
-    grad = Gradient(h=[dk, dk], acc=3)  # Defines gradient function in 2D
+    grad = Gradient(h=[d.step, d.step], acc=3)  # Defines gradient function in 2D
     ##################################################
 
     CONST = (
@@ -140,7 +134,7 @@ if __name__ == "__main__":
     )  # = -2e^3/hslash 1/(2pi)^2     in Rydberg units
     # the 2e comes from having two electrons per band
     # another minus comes from the negative charge
-    vk = dk * dk / (2 * np.pi) ** 2  # element of volume in k-space in units of bohr^-1
+    vk = d.step * d.step / (2 * np.pi) ** 2  # element of volume in k-space in units of bohr^-1
     # it is actually an area, because we have a 2D crystal
     print("     Maximum energy (Ry): " + str(enermax))
     print("     Energy step (Ry): " + str(enerstep))
@@ -152,14 +146,14 @@ if __name__ == "__main__":
     print("     Volume (area) in k space: " + str(vk))
 
     sigma = {}  # Dictionary where the conductivity will be stored
-    fermi = np.zeros((NKX, NKY, bandempty + 1, bandempty + 1))
-    dE = np.zeros((NKX, NKY, bandempty + 1, bandempty + 1))
-    graddE = np.zeros((2, NKX, NKY, bandempty + 1, bandempty + 1), dtype=complex)
-    gamma1 = np.zeros((NKX, NKY, bandempty + 1, bandempty + 1), dtype=complex)
-    gamma2 = np.zeros((NKX, NKY, bandempty + 1, bandempty + 1), dtype=complex)
-    gamma3 = np.zeros((NKX, NKY, bandempty + 1, bandempty + 1), dtype=complex)
-    gamma12 = np.zeros((NKX, NKY, bandempty + 1, bandempty + 1), dtype=complex)
-    gamma13 = np.zeros((NKX, NKY, bandempty + 1, bandempty + 1), dtype=complex)
+    fermi = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1))
+    dE = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1))
+    graddE = np.zeros((2, d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
+    gamma1 = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
+    gamma2 = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
+    gamma3 = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
+    gamma12 = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
+    gamma13 = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
 
     for s, sprime in itertools.product(bandlist, bandlist):
         dE[:, :, s, sprime] = Earray[:, :, s] - Earray[:, :, sprime]
@@ -175,10 +169,10 @@ if __name__ == "__main__":
 
     for omega in np.arange(0, enermax + enerstep, enerstep):
         omegaarray = np.full(
-            (NKX, NKY, bandempty + 1, bandempty + 1), omega + broadning
+            (d.nkx, d.nky, bandempty + 1, bandempty + 1), omega + broadning
         )  # in Ry
         # matrix sig_xxx,sig_xxy,...,sig_yyx,sig_yyy
-        sig = np.full((NKX, NKY, 2, 2, 2), 0.0 + 0j, dtype=complex)
+        sig = np.full((d.nkx, d.nky, 2, 2, 2), 0.0 + 0j, dtype=complex)
 
         # factor called dE/g in paper times leading constant
         gamma1 = CONST * dE / (2 * omegaarray - dE)
@@ -211,7 +205,7 @@ if __name__ == "__main__":
                 )
 
                 sig[:, :, beta, alpha1, alpha2] += (
-                    comutederiv(berryConnection, s, sprime, beta, alpha1, alpha2, dk)
+                    comutederiv(berryConnection, s, sprime, beta, alpha1, alpha2, d.step)
                 ) * gamma13[:, :, s, sprime]
 
                 for r in bandlist:  # runs through index r

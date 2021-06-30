@@ -12,7 +12,10 @@ import numpy as np
 import contatempo
 from headerfooter import header, footer
 import loaddata as d
+from write_k_points import bands_numbers
 
+# pylint: disable=C0103
+###################################################################################
 
 def polinomial(npontospolinomial, xpol, ypol, xpol0):
     """Makes the polinomial approximation."""
@@ -33,7 +36,7 @@ def polinomial(npontospolinomial, xpol, ypol, xpol0):
 ###################################################################################
 
 if __name__ == "__main__":
-    header("INTERPOLATION", time.asctime())
+    header("INTERPOLATION", d.version, time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 
@@ -47,31 +50,16 @@ if __name__ == "__main__":
     lastband = int(sys.argv[1])
 
     # Reading data needed for the run
-    berrypath = str(d.berrypath)
+    berrypath = d.berrypath
     print("     Path to BERRY files:", berrypath)
-
-    wfcdirectory = str(d.wfcdirectory)
-    print("     Directory where the wfc are:", wfcdirectory)
-    NKX = d.nkx
-    NKY = d.nky
-    NKZ = d.nkz
-    print("     Number of k-points in each direction:", NKX, NKY, NKZ)
-    NKS = d.nks
-    print("     Total number of k-points:", NKS)
-
-    NR = d.nr
-    print("     Total number of points in real space:", NR)
-    NPR = d.npr
-    print("     Number of processors to use", NPR)
-
-    nbnd = d.nbnd
-    print("     Number of bands:", nbnd)
+    print("     Directory where the wfc are:", d.wfcdirectory)
+    print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
+    print("     Total number of k-points:", d.nks)
+    print("     Total number of points in real space:", d.nr)
+    print("     Number of processors to use", d.npr)
+    print("     Number of bands:", d.nbnd)
     print()
-
-    neighbors = d.neighbors
     print("     Neighbors loaded")
-
-    eigenvalues = d.eigenvalues
     print("     Eigenvalues loaded")
 
     connections = np.load("dp.npy")
@@ -104,7 +92,7 @@ if __name__ == "__main__":
             xx1 = np.full((7), -1, dtype=int)  # k-points in another direction
             print("     k = ", nk0, "  band = ", nb0)
             for j in range(4):  # Find the neigbhors of the k-point to be used
-                nk = neighbors[nk0, j]  # on interpolation
+                nk = d.neighbors[nk0, j]  # on interpolation
                 if nk != -1 and nb0 <= lastband:
                     if j == 0:
                         xx0[2] = nk
@@ -115,26 +103,26 @@ if __name__ == "__main__":
                     elif j == 3:
                         xx1[4] = nk
                     for jj in range(4):
-                        nk1 = neighbors[nk, jj]
+                        nk1 = d.neighbors[nk, jj]
                         if nk1 != -1:
                             if j == jj and j == 0:
                                 xx0[1] = nk1
-                                nk2 = neighbors[nk1, 0]
+                                nk2 = d.neighbors[nk1, 0]
                                 if nk2 != -1:
                                     xx0[0] = nk2
                             elif j == jj and j == 1:
                                 xx1[1] = nk1
-                                nk2 = neighbors[nk1, 1]
+                                nk2 = d.neighbors[nk1, 1]
                                 if nk2 != -1:
                                     xx1[0] = nk2
                             elif j == jj and j == 2:
                                 xx0[5] = nk1
-                                nk2 = neighbors[nk1, 2]
+                                nk2 = d.neighbors[nk1, 2]
                                 if nk2 != -1:
                                     xx0[6] = nk2
                             elif j == jj and j == 3:
                                 xx1[5] = nk1
-                                nk2 = neighbors[nk1, 3]
+                                nk2 = d.neighbors[nk1, 3]
                                 if nk2 != -1:
                                     xx1[6] = nk2
 
@@ -171,7 +159,7 @@ if __name__ == "__main__":
                 ):  # if the k-point is valid and is not the point itself=3
                     x[npontos] = ii  # add to the list of points the order ii
                     infile = (
-                        str(d.wfcdirectory)
+                        d.wfcdirectory
                         + "k0"
                         + str(xx0[ii])
                         + "b0"
@@ -200,7 +188,7 @@ if __name__ == "__main__":
                 if xx1[ii] > -1 and ii != 3:
                     x[npontos] = ii
                     infile = (
-                        str(d.wfcdirectory)
+                        d.wfcdirectory
                         + "k0"
                         + str(xx1[ii])
                         + "b0"
@@ -222,7 +210,7 @@ if __name__ == "__main__":
             # Save new file
             print()
             outfile = (
-                str(d.wfcdirectory)
+                d.wfcdirectory
                 + "k0"
                 + str(nk0)
                 + "b0"
@@ -247,38 +235,24 @@ if __name__ == "__main__":
     print()
     print(" *** Final Report ***")
     print()
-    nrnotattrib = np.full((nbnd), -1, dtype=int)
+    nrnotattrib = np.full((d.nbnd), -1, dtype=int)
     SEP = " "
     print("     Bands: gives the original band that belongs to new band (nk,nb)")
-    for nb in range(nbnd):
+    for nb in range(d.nbnd):
         nk = -1
         nrnotattrib[nb] = np.count_nonzero(bandsfinal[:, nb] == -1)
         print()
         print(
             "  New band "
             + str(nb)
-            + "      | y  x ->   nr of fails: "
+            + "         nr of fails: "
             + str(nrnotattrib[nb])
         )
-        for j in range(NKY):
-            lin = ""
-            print()
-            for i in range(NKX):
-                nk = nk + 1
-                f = bandsfinal[nk, nb]
-                if f < 0:
-                    lin += SEP + SEP + str(f)
-                elif 0 <= f < 10:
-                    lin += SEP + SEP + SEP + str(f)
-                elif 9 < f < 100:
-                    lin += SEP + SEP + str(f)
-                elif 99 < f < 1000:
-                    lin += SEP + str(f)
-            print(lin)
+        bands_numbers(d.nkx, d.nky, bandsfinal[:, nb])
     print()
     print(" Signaling")
-    nrsignal = np.full((nbnd, 7), -2, dtype=int)
-    for nb in range(nbnd):
+    nrsignal = np.full((d.nbnd, 7), -2, dtype=int)
+    for nb in range(d.nbnd):
         nk = -1
         nrsignal[nb, 0] = str(np.count_nonzero(signalfinal[:, nb] == -1))
         nrsignal[nb, 1] = str(np.count_nonzero(signalfinal[:, nb] == 0))
@@ -291,45 +265,31 @@ if __name__ == "__main__":
         print(
             "     "
             + str(nb)
-            + "      | y  x ->   -1: "
+            + "        -1: "
             + str(nrsignal[nb, 0])
             + "     0: "
             + str(nrsignal[nb, 1])
         )
-        for j in range(NKY):
-            lin = ""
-            print()
-            for i in range(NKX):
-                nk = nk + 1
-                f = signalfinal[nk, nb]
-                if f < 0:
-                    lin += SEP + SEP + str(f)
-                elif 0 >= f < 10:
-                    lin += SEP + SEP + SEP + str(f)
-                elif 9 < nk < 100:
-                    lin += SEP + SEP + str(f)
-                elif 99 < nk < 1000:
-                    lin += SEP + str(f)
-            print(lin)
+        bands_numbers(d.nkx, d.nky, signalfinal[:, nb])
 
     print()
     print(" Resume of results")
     print()
     print(" nr k-points not attributed to a band")
     print(" Band       nr k-points")
-    for nb in range(nbnd):
+    for nb in range(d.nbnd):
         print(" ", nb, "         ", nrnotattrib[nb])
 
     print()
     print(" Signaling")
     print(" Band  -1  0  1  2  3  4  5")
-    for nb in range(nbnd):
+    for nb in range(d.nbnd):
         print("  " + str(nb) + "   " + str(nrsignal[nb, :]))
 
     print()
 
     print(" Bands not usable (not completed)")
-    for nb in range(nbnd):
+    for nb in range(d.nbnd):
         if nrsignal[nb, 1] != 0:
             print(
                 "  band ", nb, "  failed attribution of ", nrsignal[nb, 1], " k-points"

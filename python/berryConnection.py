@@ -9,16 +9,16 @@ import numpy as np
 import joblib
 
 # This are the subroutines and functions
-import contatempo
+from contatempo import tempo, inter_time
 from headerfooter import header, footer
 import loaddata as d
 
+# pylint: disable=C0103
 ###################################################################################
 def berry_connect(bandwfc0, gradwfc0):
     """Calculates the Berry connection."""
 
     # Reading data needed for the run
-    NR = d.nr
     print()
     print(
         "     Reading files ./wfcpos"
@@ -35,8 +35,8 @@ def berry_connect(bandwfc0, gradwfc0):
         str(bandwfc0),
         " and ",
         str(gradwfc0),
-        "   {:5.2f}".format((time.time() - STARTTIME) / 60.0),
-        " min",
+        "         "
+        + inter_time(time.time() - STARTTIME)
     )
     sys.stdout.flush()
     #  sys.exit("Stop")
@@ -45,22 +45,20 @@ def berry_connect(bandwfc0, gradwfc0):
     # Calculation of the Berry connection
     berry_connection = np.zeros(wfcgra[0].shape, dtype=complex)
 
-    for posi in range(NR):
+    for posi in range(d.nr):
         berry_connection += 1j * wfcpos[posi].conj() * wfcgra[posi]
     ##  we are assuming that normalization is \sum |\psi|^2 = 1
-    ##  if not, needs division by NR
-    berry_connection /= NR
+    ##  if not, needs division by d.nr
+    berry_connection /= d.nr
 
     print(
         "     Finished calculating Berry connection for index "
         + str(bandwfc0)
         + "  "
         + str(gradwfc0)
-        + "  .\
-         \n     Saving results to file   {:5.2f}".format(
-            (time.time() - STARTTIME) / 60.0
-        ),
-        " min",
+        + "  \
+         \n     Saving results to file  "
+        + inter_time(time.time() - STARTTIME)
     )
     sys.stdout.flush()
 
@@ -72,7 +70,7 @@ def berry_connect(bandwfc0, gradwfc0):
 
 ###################################################################################
 if __name__ == "__main__":
-    header("BERRY CONNECTION", time.asctime())
+    header("BERRY CONNECTION", d.version, time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 
@@ -103,4 +101,4 @@ if __name__ == "__main__":
 
     ##################################################################################r
     # Finished
-    footer(contatempo.tempo(STARTTIME, time.time()))
+    footer(tempo(STARTTIME, time.time()))

@@ -1,4 +1,13 @@
-RELEASE NOTES for berry v.0.2
+RELEASE NOTES for berry v.0.2.1
+
+New in 0.2.1 version:
+
+- Added drawcurvature.py for drawing Berry curvatures
+
+- Fixed serious bugs on compara.py
+
+- Added flow chart to the documentation
+
 
 New in 0.2 version:
 
@@ -15,10 +24,6 @@ New in 0.2 version:
 - Output from programs more readable, and more information
 
 - Conformity to PEP8 was achieved
-
-Fixed in 0.2 version:
-
-- Some small bugs were fixed
 
 
 Incompatible changes in 0.2 version:

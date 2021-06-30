@@ -15,24 +15,24 @@
         prefix = ''
         outdir = ''
 """
-__version__ = "0.2"
+__version__ = "v0.2.1"
 
 import os
 import sys
 import time
 import xml.etree.ElementTree as ET
-
 import numpy as np
 
-# This are the subroutines and functions
 import contatempo
 import dft
 from headerfooter import header, footer
 from parserQE import parser
+from write_k_points import list_kpoints
+
 # pylint: disable=C0103
 ###################################################################################
 if __name__ == "__main__":
-    header("PREPROCESSING", time.asctime())
+    header("PREPROCESSING", __version__, time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 
@@ -45,6 +45,28 @@ if __name__ == "__main__":
 
     print("     Reading from input file:", sys.argv[1])
     print()
+
+    # Check python version
+    python_version = (
+                   str(sys.version_info[0])
+                   + '.'
+                   + str(sys.version_info[1])
+                   + '.'
+                   + str(sys.version_info[2])
+    )
+    if not sys.version_info > (2, 7):
+        print(" *!*!*!*!*!*!*!*!*!*!*!")
+        print(" ERROR: this runs in python3. You are using python2.")
+        print(" *!*!*!*!*!*!*!*!*!*!*!")
+        print()
+        sys.exit("Stop")
+    elif not sys.version_info >= (3, 8):
+        print("     This program was tested in python 3.8")
+        print("     You are using version", python_version, "but it should work")
+    else:
+        print("     Using python", python_version)
+    print()
+
     # Defaults:
     NPR = 1
     DFTDIRECTORY = "dft/"
@@ -124,24 +146,32 @@ if __name__ == "__main__":
     if PREFIX == "":
         PREFIX = parser("prefix", DFTDIRECTORY + NAMESCF)
 
-    print("     Number of bands in the nscf calculation nbnd:", str(NBND))
     print("     Starting k-point of the mesh K0:", str(K0))
     print("     Number of points in the mesh ", str(nkx), str(nky), str(nkz))
     print("     Step of the k-point mesh ", str(step))
     print("     To calculate point in real space where all phases match ", str(POINT))
+    print("     Number of bands in the nscf calculation nbnd:", str(NBND))
     print()
     print("     Will run in", NPR, " processors")
     print("     Working directory:", WORKDIR)
+    print("     Name of directory for wfc:", WFCDIRECTORY)
+    try:
+        BERRYPATH = str(os.environ["BERRYPATH"])
+    except KeyError:
+        BERRYPATH = str(os.path.dirname(os.path.dirname(__file__)))
+    if BERRYPATH[-1] != "/":
+        BERRYPATH = BERRYPATH + "/"
+    print("     Path of BERRY files", BERRYPATH)
+    print()
     print("     DFT calculations will be done on", PROGRAM)
     print("     The DFT files will be on:", DFTDIRECTORY)
+    print("     DFT pseudopotential directory:", PSEUDODIR)
     print("     Name of scf file:", NAMESCF)
     print("     Name of nscf file:", NAMENSCF)
-    print("     Name of directory for wfc:", WFCDIRECTORY)
     print("     DFT prefix:", PREFIX)
     print("     DFT outdir:", OUTDIR)
     DFTDATAFILE = OUTDIR + PREFIX + ".xml"
     print("     DFT data file:", DFTDATAFILE)
-    print("     DFT pseudopotential directory:", PSEUDODIR)
     print()
     print("     Finished reading input file")
     print()
@@ -153,18 +183,14 @@ if __name__ == "__main__":
     else:
         MPI = "mpirun -np " + str(NPR) + " "
 
-    # Runs scf calculation  ** DFT
-    dft.scf(MPI, DFTDIRECTORY, NAMESCF, OUTDIR, PSEUDODIR)
-    # Creates template for nscf calculation  ** DFT
-    NSCF = dft.template(DFTDIRECTORY, NAMESCF)
-
+    # Calculates the k-points of the nscf mesh using data from the input file
     NSCFKPOINTS = ""  # to append to nscf file
     NKS = nkx * nky * nkz  # total number of k-points
-    nk = 0  # count the k-points
     KPOINTS = np.zeros((NKS, 3), dtype=float)
     NKTOIJL = np.zeros((NKS, 3), dtype=int)  # Converts index nk to indices i,j,l
     IJLTONK = np.zeros((nkx, nky, nkz), dtype=int)  # Converts indices i,j,l to index nk
 
+    nk = 0  # count the k-points
     for l in range(nkz):
         for j in range(nky):
             for i in range(nkx):
@@ -192,6 +218,13 @@ if __name__ == "__main__":
                 IJLTONK[i, j, l] = nk
                 nk = nk + 1
 
+    # Starts DFT calculations ##############################
+    # Runs scf calculation  ** DFT
+    dft.scf(MPI, DFTDIRECTORY, NAMESCF, OUTDIR, PSEUDODIR)
+
+    # Creates template for nscf calculation  ** DFT
+    NSCF = dft.template(DFTDIRECTORY, NAMESCF)
+
     # Runs nscf calculations for all k-points  ** DFT **
     dft.nscf(MPI, DFTDIRECTORY, NAMENSCF, NSCF, NKS, NSCFKPOINTS, NBND)
     sys.stdout.flush()
@@ -199,16 +232,17 @@ if __name__ == "__main__":
     print("     Extracting data from DFT calculations")
     print()
 
+    # Reading DFT data from file ###########################
     TREE = ET.parse(DFTDATAFILE)
     ROOT = TREE.getroot()
     OUTPUT = ROOT.find("output")
     GENERAL = ROOT.find("general_info")
-    #  for child in ROOT[3]:
+    #for child in ROOT[3]:
     #    print(child.tag, child.attrib)
     #    for child1 in child:
-    #      print(' ',child1.tag,child1.attrib)
-    #      for child2 in child1:
-    #        print('   ',child2.tag,child2.attrib)
+    #        print(' ',child1.tag,child1.attrib)
+    #        for child2 in child1:
+    #            print('   ',child2.tag,child2.attrib)
     #    print()
     DFTVERSION = str(GENERAL.find("creator").attrib["VERSION"])
     DFTPROGRAM = str(GENERAL.find("creator").attrib["NAME"])
@@ -292,14 +326,9 @@ if __name__ == "__main__":
         ]
     )
     # print(OCCUPATIONS)
+    # Finished reading data from DFT files
 
-    try:
-        BERRYPATH = str(os.environ["BERRYPATH"])
-    except KeyError:
-        BERRYPATH = str(os.path.dirname(os.path.dirname(__file__)))
-    if BERRYPATH[-1] != "/":
-        BERRYPATH = BERRYPATH + "/"
-    print("     Path of BERRY files", BERRYPATH)
+    # Final calculations #########################################
     print()
 
     COUNT = 0
@@ -312,9 +341,10 @@ if __name__ == "__main__":
 
     PHASE = np.exp(1j * np.dot(RPOINT, np.transpose(KPOINTS)))
 
-    with open("phase.npy", "wb") as ph:
-        np.save(ph, PHASE)
-    ph.close()
+    # Start saving data to files ##################################
+    with open("phase.npy", "wb") as fich:
+        np.save(fich, PHASE)
+    fich.close()
     print("     PHASE saved to file phase.npy")
 
     NEIG = np.full((NKS, 4), -1, dtype=int)
@@ -434,28 +464,17 @@ if __name__ == "__main__":
         np.save(fich, NELEC)  # Number of electrons
         np.save(fich, PREFIX)  # prefix of the DFT calculations
         np.save(fich, WFCK2R)  # File for extracting DFT wfc to real space
+        np.save(fich, __version__)  # Version of berry where data was created
+        np.save(fich, "dummy")  # Saving space for future values and compatibility
+        np.save(fich, "dummy")  # Saving space for future values and compatibility
+        np.save(fich, "dummy")  # Saving space for future values and compatibility
+        np.save(fich, "dummy")  # Saving space for future values and compatibility
+        np.save(fich, "dummy")  # Saving space for future values and compatibility
+        np.save(fich, "dummy")  # Saving space for future values and compatibility
     fich.close()
     print("     Data saved to file datafile.npy")
 
-    print()
-    nk = -1
-    SEP = " "
-    # Output the list of k-points in a convenient way
-    print("         | y  x ->")
-    for j in range(nky):
-        lin = ""
-        print()
-        for i in range(nkx):
-            nk = nk + 1
-            if nk < 10:
-                lin += SEP + SEP + SEP + SEP + str(nk)
-            elif 9 < nk < 100:
-                lin += SEP + SEP + SEP + str(nk)
-            elif 99 < nk < 1000:
-                lin += SEP + SEP + str(nk)
-            elif 999 < nk < 10000:
-                lin += SEP + str(nk)
-        print(lin)
+    list_kpoints(nkx, nky)
 
     ###################################################################################
     # Finished
