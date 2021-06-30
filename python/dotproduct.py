@@ -45,7 +45,7 @@ def connection(nkconn, neighborconn, dphaseconn):
 
             # calculates the dot products u_1.u_2* and u_2.u_1*
             dpc1[banda0, banda1] = np.sum(dphaseconn * wfc0 * np.conjugate(wfc1))/d.nr
-            dpc2[banda1, banda0] = np.conjugate(dpc1[banda0, banda1])/d.nr
+            dpc2[banda1, banda0] = np.conjugate(dpc1[banda0, banda1])
 
     return dpc1, dpc2
 
