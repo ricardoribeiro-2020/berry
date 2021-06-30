@@ -54,8 +54,8 @@ if __name__ == "__main__":
     # signal = nr of matches, -1 if contradictory matches, band = real band
     signal = np.zeros((d.nks, d.nbnd, ntentative), dtype=int)
     # Create arrays of tentatives
-    for tentative in range(1,ntentative):
-        print('     Tentative:',tentative)
+    for tentative in range(1, ntentative):
+        print("     Tentative:", tentative)
         if 0 <= firskpoint < d.nks and tentative == 1:  # If initial k-point is given
             kp0 = firskpoint
         else:
@@ -78,12 +78,14 @@ if __name__ == "__main__":
                             if bands[nk, bb, tentative] == b1:
                                 if bands[d.neighbors[nk, i], bb, tentative] == -2:
                                     bands[d.neighbors[nk, i], bb, tentative] = b2
-                                    signal[d.neighbors[nk, i], bb, tentative] += 1  # Signal a connection
+                                    signal[
+                                        d.neighbors[nk, i], bb, tentative
+                                    ] += 1  # Signal a connection
                                 elif bands[d.neighbors[nk, i], bb, tentative] == b2:
                                     signal[d.neighbors[nk, i], bb, tentative] += 1
                                 else:  # Signal a contradiction
                                     signal[d.neighbors[nk, i], bb, tentative] = -1
-                                    print(d.neighbors[nk, i], b2, '  signal = -1')
+                                    print(d.neighbors[nk, i], b2, "  signal = -1")
                                 break
 
                 if (
@@ -96,28 +98,27 @@ if __name__ == "__main__":
             listk.remove(nk)  # Remove k-point from the list of todo
             listdone.append(nk)  # Add k-point to the list of done
 
-
-#   SEP = " "
-#   print("     Bands: gives the machine nr that belongs to new band (nk,nb)")
-#   for nb in range(6):
-#       nk = -1
-#       print()
-#       print("  New band " + str(nb))
-#       bands_numbers(d.nkx, d.nky, bands[:, nb, 1])
-#   print()
-#   for nb in range(6):
-#       nk = -1
-#       print()
-#       print("  Signal " + str(nb))
-#       bands_numbers(d.nkx, d.nky, signal[:, nb, 1])
-#   print()
-#   with open("bandsfinal.npy", "wb") as f:
-#       np.save(f, bands[:,:,1])
-#   f.close()
-#   with open("signalfinal.npy", "wb") as f:
-#       np.save(f, signal[:,:,1])
-#   f.close()
-#   sys.exit("Stop")
+    #   SEP = " "
+    #   print("     Bands: gives the machine nr that belongs to new band (nk,nb)")
+    #   for nb in range(6):
+    #       nk = -1
+    #       print()
+    #       print("  New band " + str(nb))
+    #       bands_numbers(d.nkx, d.nky, bands[:, nb, 1])
+    #   print()
+    #   for nb in range(6):
+    #       nk = -1
+    #       print()
+    #       print("  Signal " + str(nb))
+    #       bands_numbers(d.nkx, d.nky, signal[:, nb, 1])
+    #   print()
+    #   with open("bandsfinal.npy", "wb") as f:
+    #       np.save(f, bands[:,:,1])
+    #   f.close()
+    #   with open("signalfinal.npy", "wb") as f:
+    #       np.save(f, signal[:,:,1])
+    #   f.close()
+    #   sys.exit("Stop")
     ##########################################################################
     print()
     print("     Correcting problems found using more relaxed condition.")
@@ -141,10 +142,12 @@ if __name__ == "__main__":
                         if bands[nk, bb, tentative] == b1:
                             if bands[d.neighbors[nk, i], bb, tentative] == -2:
                                 bands[d.neighbors[nk, i], bb, tentative] = b2
-                                signal[d.neighbors[nk, i], bb, tentative] += 1  # Signal a connection
+                                signal[
+                                    d.neighbors[nk, i], bb, tentative
+                                ] += 1  # Signal a connection
                                 attcount += 1
                             break
-                                                                                                      
+
             if (
                 d.neighbors[nk, i] not in listk
                 and d.neighbors[nk, i] not in listdone
@@ -154,17 +157,6 @@ if __name__ == "__main__":
         ##           print(nk,i,bands[d.neighbors[nk,i],:,1])
         listk.remove(nk)  # Remove k-point from the list of todo
         listdone.append(nk)  # Add k-point to the list of done
-
-
-
-
-
-
-
-
-
-
-
 
     ##########################################################################
     print()
@@ -322,7 +314,9 @@ if __name__ == "__main__":
                         and connections[nk0, neig, nb0, nb1] > 0.6
                     ):
                         if math.isclose(
-                            d.eigenvalues[nk0, nb0], d.eigenvalues[nk1, nb1], abs_tol=0.01
+                            d.eigenvalues[nk0, nb0],
+                            d.eigenvalues[nk1, nb1],
+                            abs_tol=0.01,
                         ):
                             if np.all(bands[nk0, :, 1] != bands[nk1, nb1, 1]):
                                 bands[nk0, nb0, 1] = bands[nk1, nb1, 1]
@@ -342,7 +336,9 @@ if __name__ == "__main__":
                         and connections[nk0, neig, nb0, nb1] > 0.6
                     ):
                         if math.isclose(
-                            d.eigenvalues[nk0, nb0], d.eigenvalues[nk1, nb1], abs_tol=0.01
+                            d.eigenvalues[nk0, nb0],
+                            d.eigenvalues[nk1, nb1],
+                            abs_tol=0.01,
                         ):
                             if np.all(bands[nk0, :, 1] != bands[nk1, nb1, 1]):
                                 bands[nk0, nb0, 1] = bands[nk1, nb1, 1]
@@ -351,7 +347,9 @@ if __name__ == "__main__":
                                 eigcont += 1
                                 break
                         elif math.isclose(
-                            d.eigenvalues[nk0, nb0], d.eigenvalues[nk1, nb1], abs_tol=0.02
+                            d.eigenvalues[nk0, nb0],
+                            d.eigenvalues[nk1, nb1],
+                            abs_tol=0.02,
                         ):
                             if np.all(bands[nk0, :, 1] != bands[nk1, nb1, 1]):
                                 bands[nk0, nb0, 1] = bands[nk1, nb1, 1]
@@ -371,7 +369,9 @@ if __name__ == "__main__":
                         and connections[nk0, neig, nb0, nb1] > 0.6
                     ):
                         if math.isclose(
-                            d.eigenvalues[nk0, nb0], d.eigenvalues[nk1, nb1], abs_tol=0.01
+                            d.eigenvalues[nk0, nb0],
+                            d.eigenvalues[nk1, nb1],
+                            abs_tol=0.01,
                         ):
                             if np.all(bands[nk0, :, 1] != bands[nk1, nb1, 1]):
                                 bands[nk0, nb0, 1] = bands[nk1, nb1, 1]
@@ -380,7 +380,9 @@ if __name__ == "__main__":
                                 eigcont += 1
                                 break
                         elif math.isclose(
-                            d.eigenvalues[nk0, nb0], d.eigenvalues[nk1, nb1], abs_tol=0.02
+                            d.eigenvalues[nk0, nb0],
+                            d.eigenvalues[nk1, nb1],
+                            abs_tol=0.02,
                         ):
                             if np.all(bands[nk0, :, 1] != bands[nk1, nb1, 1]):
                                 bands[nk0, nb0, 1] = bands[nk1, nb1, 1]
@@ -389,7 +391,9 @@ if __name__ == "__main__":
                                 eigcont += 1
                                 break
                         elif math.isclose(
-                            d.eigenvalues[nk0, nb0], d.eigenvalues[nk1, nb1], abs_tol=0.03
+                            d.eigenvalues[nk0, nb0],
+                            d.eigenvalues[nk1, nb1],
+                            abs_tol=0.03,
                         ):
                             if np.all(bands[nk0, :, 1] != bands[nk1, nb1, 1]):
                                 bands[nk0, nb0, 1] = bands[nk1, nb1, 1]
@@ -409,7 +413,9 @@ if __name__ == "__main__":
                         and connections[nk0, neig, nb0, nb1] > 0.6
                     ):
                         if math.isclose(
-                            d.eigenvalues[nk0, nb0], d.eigenvalues[nk1, nb1], abs_tol=0.01
+                            d.eigenvalues[nk0, nb0],
+                            d.eigenvalues[nk1, nb1],
+                            abs_tol=0.01,
                         ):
                             if np.all(bands[nk0, :, 1] != bands[nk1, nb1, 1]):
                                 bands[nk0, nb0, 1] = bands[nk1, nb1, 1]
@@ -418,7 +424,9 @@ if __name__ == "__main__":
                                 eigcont += 1
                                 break
                         elif math.isclose(
-                            d.eigenvalues[nk0, nb0], d.eigenvalues[nk1, nb1], abs_tol=0.02
+                            d.eigenvalues[nk0, nb0],
+                            d.eigenvalues[nk1, nb1],
+                            abs_tol=0.02,
                         ):
                             if np.all(bands[nk0, :, 1] != bands[nk1, nb1, 1]):
                                 bands[nk0, nb0, 1] = bands[nk1, nb1, 1]
@@ -427,7 +435,9 @@ if __name__ == "__main__":
                                 eigcont += 1
                                 break
                         elif math.isclose(
-                            d.eigenvalues[nk0, nb0], d.eigenvalues[nk1, nb1], abs_tol=0.04
+                            d.eigenvalues[nk0, nb0],
+                            d.eigenvalues[nk1, nb1],
+                            abs_tol=0.04,
                         ):
                             if np.all(bands[nk0, :, 1] != bands[nk1, nb1, 1]):
                                 bands[nk0, nb0, 1] = bands[nk1, nb1, 1]
@@ -436,7 +446,9 @@ if __name__ == "__main__":
                                 eigcont += 1
                                 break
                         elif math.isclose(
-                            d.eigenvalues[nk0, nb0], d.eigenvalues[nk1, nb1], abs_tol=0.08
+                            d.eigenvalues[nk0, nb0],
+                            d.eigenvalues[nk1, nb1],
+                            abs_tol=0.08,
                         ):
                             if np.all(bands[nk0, :, 1] != bands[nk1, nb1, 1]):
                                 bands[nk0, nb0, 1] = bands[nk1, nb1, 1]
@@ -444,7 +456,6 @@ if __name__ == "__main__":
                                     signal[nk0, nb0, 1] = 1
                                 eigcont += 1
                                 break
-
 
     ##########################################################################
     bandsfinal = np.full((d.nks, d.nbnd), -1, dtype=int)  # Array for the final results
@@ -506,12 +517,7 @@ if __name__ == "__main__":
         nk = -1
         nrnotattrib[nb] = np.count_nonzero(bandsfinal[:, nb] == -2)
         print()
-        print(
-            "  New band "
-            + str(nb)
-            + "       nr of fails: "
-            + str(nrnotattrib[nb])
-        )
+        print("  New band " + str(nb) + "       nr of fails: " + str(nrnotattrib[nb]))
         bands_numbers(d.nkx, d.nky, bandsfinal[:, nb])
     print()
     print(" Signaling: how many events in each band signaled.")

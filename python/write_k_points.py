@@ -5,6 +5,7 @@
 # pylint: disable=C0103
 ###################################################################################
 
+
 def list_kpoints(nkx, nky):
     """Output the list of k-points in a convenient way."""
     print()
@@ -55,7 +56,7 @@ def float_numbers(nkx, nky, valuesarray, precision):
         lin = ""
         print()
         for _ in range(nkx):
-            val = '{0:.{1}f}'.format(valuesarray[nk], precision)
+            val = "{0:.{1}f}".format(valuesarray[nk], precision)
             nk = nk + 1
             if valuesarray[nk] < 0:
                 lin += SEP + str(val)
