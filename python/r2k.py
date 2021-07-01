@@ -1,149 +1,147 @@
-###################################################################################
-# This program reads a set of wavefunctions of for different k and bands and translates that
-# to another set for different points in real space, the functions become a function of k instead of r
-###################################################################################
+"""
+ This program reads a set of wavefunctions for different k and bands and translates that
+ to another set for different points in real space,
+ the functions become a function of k instead of r
+"""
 
-# This is to include maths
-import numpy as np
-from findiff import FinDiff, Gradient
-
-# This is to make operations in the shell
 import sys
 import time
+import numpy as np
+from findiff import Gradient
 
-# These are the subroutines and functions
-import contatempo
-from headerfooter import header,footer
-import loaddata as d
-
-# This to save compressed files
 import joblib
 
-header('R2K',time.asctime())
+# These are the subroutines and functions
+from contatempo import tempo, inter_time
+from headerfooter import header, footer
+import loaddata as d
 
-starttime = time.time()                         # Starts counting time
+# pylint: disable=C0103
+###################################################################################
+if __name__ == "__main__":
+    header("R2K", d.version, time.asctime())
 
-if len(sys.argv)<2:
-  print(' ERROR in number of arguments.')
-  print(' Have to give the number of bands that will be considered.')
-  print(' One number and calculates from 0 to that number.')
-  print(' Two numbers and calculates from first to second.')
-  sys.exit("Stop")
-elif len(sys.argv)==2:
-  nbndmin = 0
-  nbndmax = int(sys.argv[1]) + 1              # Number of bands to be considered
-  print(' Will calculate bands and their gradient for bands 0 to',nbndmax)
-elif len(sys.argv)==3:
-  nbndmin = int(sys.argv[1])                  # Number of lower band to be considered
-  nbndmax = int(sys.argv[2]) + 1              # Number of higher band to be considered
-  print(' Will calculate bands and their gradient for bands ',nbndmin,' to',nbndmax-1)
+    STARTTIME = time.time()  # Starts counting time
 
-# Reading data needed for the run
+    if len(sys.argv) < 2:
+        print("     ERROR in number of arguments.")
+        print("     Have to give the number of bands that will be considered.")
+        print("     One number and calculates from 0 to that number.")
+        print("     Two numbers and calculates from first to second.")
+        sys.exit("Stop")
+    elif len(sys.argv) == 2:
+        NBNDMIN = 0
+        NBNDMAX = int(sys.argv[1]) + 1  # Number of bands to be considered
+        print("     Will calculate bands and their gradient for bands 0 to", NBNDMAX)
+    elif len(sys.argv) == 3:
+        NBNDMIN = int(sys.argv[1])  # Number of lower band to be considered
+        NBNDMAX = int(sys.argv[2]) + 1  # Number of higher band to be considered
+        print(
+            "     Will calculate bands and their gradient for bands ",
+            NBNDMIN,
+            " to",
+            NBNDMAX - 1,
+        )
 
-wfcdirectory = str(d.wfcdirectory)
-print(' Directory where the wfc are:',wfcdirectory)
-nkx = d.nkx
-nky = d.nky
-nkz = d.nkz
-print(' Number of k-points in each direction:',nkx,nky,nkz)
-nks = d.nks
-print(' Total number of k-points:',nks)
+    # Reading data needed for the run
 
-nr = d.nr
-print(' Total number of points in real space:',nr)
-npr = d.npr
-print(' Number of processors to use',npr)
+    print("     Directory where the wfc are:", d.wfcdirectory)
+    print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
+    print("     Total number of k-points:", d.nks)
+    print("     Total number of points in real space:", d.nr)
+    print("     Number of processors to use", d.npr)
+    print("     Number of bands:", d.nbnd)
+    print("     k-points step, dk", d.step)  # Defines the step for gradient calculation
+    print()
+    print("     kpoints loaded")  # d.kpoints = np.zeros((d.nks,3), dtype=float)
+    print("     rpoints loaded")  # d.r = np.zeros((d.nr,3), dtype=float)
+    print("     Occupations loaded")  # d.occupations = np.array(occupat)
+    print("     Eigenvalues loaded")  # d.eigenvalues = np.array(eigenval)
+    print("     Phases loaded")  # d.phase = np.zeros((d.nr,d.nks),dtype=complex)
 
-nbnd = d.nbnd
-print(' Number of bands:',nbnd)
+    with open("bandsfinal.npy", "rb") as fich:
+        bandsfinal = np.load(fich)
+    fich.close()
+    print("     bandsfinal.npy loaded")
+    with open("signalfinal.npy", "rb") as fich:
+        signalfinal = np.load(fich)
+    fich.close()
+    print("     signalfinal.npy loaded")
+    print()
+    sys.stdout.flush()
+    # sys.exit("Stop")
 
-dk = float(d.step)            # Defines the step for gradient calculation dk
-print(' k-points step, dk',dk)
-print()
+    ################################################## Finished reading data
 
-kpoints = d.kpoints
-print(' kpoints loaded')      # kpoints = np.zeros((nks,3), dtype=float)
+    grad = Gradient(h=[d.step, d.step], acc=2)  # Defines gradient function in 2D
+    ##################################################
 
-r = d.r
-print(' rpoints loaded')      # r = np.zeros((nr,3), dtype=float)
+    BANDSR = {}  # Dictionary with wfc for all points and bands
+    BANDSG = {}  # Dictionary with wfc gradients for all points and bands
 
-occupations = d.occupations
-print(' occupations loaded')  # occupations = np.array(occupat)
+    for banda in range(NBNDMIN, NBNDMAX):  # For each band
+        wfct_k = np.zeros((d.nr, d.nks), dtype=complex)
+        for kp in range(d.nks):
+            if (
+                signalfinal[kp, banda] == -1
+            ):  # if its a signaled wfc, choose interpolated
+                infile = (
+                    d.wfcdirectory
+                    + "/k0"
+                    + str(kp)
+                    + "b0"
+                    + str(bandsfinal[kp, banda])
+                    + ".wfc1"
+                )
+            else:  # else choose original
+                infile = (
+                    d.wfcdirectory
+                    + "/k0"
+                    + str(kp)
+                    + "b0"
+                    + str(bandsfinal[kp, banda])
+                    + ".wfc"
+                )
+            wfct_k[:, kp] = np.load(infile)
+        print(
+            "     Finished reading wfcs of band ",
+            str(banda),
+            "from files.   ",
+            inter_time(time.time() - STARTTIME)
+        )
+        sys.stdout.flush()
 
-eigenvalues = d.eigenvalues
-print(' eigenvalues loaded')  # eigenvalues = np.array(eigenval)
+        wfcpos = {}  # Dictionary with wfc for all points
+        wfcgra = {}  # Dictionary with wfc gradients for all points
 
-phase = d.phase
-print(' Phases loaded')       # phase = np.zeros((nr,nks),dtype=complex)
+        wfcpos = {
+            posi: d.phase[posi, d.ijltonk[:, :, 0]] * wfct_k[posi, d.ijltonk[:, :, 0]]
+            for posi in range(d.nr)
+        }
+        wfcgra = {posi: grad(wfcpos[posi]) for posi in range(d.nr)}
+        #    for posi in range(d.nr):
+        #      wfcpos[posi] = d.phase[posi,d.ijltonk[:,:,0]]*wfct_k[posi,d.ijltonk[:,:,0]]
 
-with open('bandsfinal.npy', 'rb') as f:
-  bandsfinal = np.load(f)
-f.closed
-print(' bandsfinal.npy loaded')
-with open('signalfinal.npy', 'rb') as f:
-  signalfinal = np.load(f)
-f.closed
-print(' signalfinal.npy loaded')
-print()
-sys.stdout.flush()
-#sys.exit("Stop")
+        #      wfcgra[posi] = grad(wfcpos[posi])                  # Complex gradient
 
-################################################## Finished reading data
+        BANDSR[banda] = wfcpos  # add to dictionary
+        BANDSG[banda] = wfcgra
+        print(
+            "     Finished band ",
+            str(banda),
+            "        ",
+            inter_time(time.time() - STARTTIME)
+        )
+        sys.stdout.flush()
 
-grad = Gradient(h=[dk, dk],acc=2)            # Defines gradient function in 2D
-################################################## 
+        # Saving files
+        joblib.dump(wfcpos, "./wfcpos" + str(banda) + ".gz", compress=3)
+        joblib.dump(wfcgra, "./wfcgra" + str(banda) + ".gz", compress=3)
 
-bandasr = {}                           # Dictionary with wfc for all points and bands
-bandasg = {}                           # Dictionary with wfc gradients for all points and bands
+    sys.stdout.flush()
 
-for banda in range(nbndmin,nbndmax):   # For each band
-  wfct_k = {}                          # wfct_k is a dictionary that, for each k (i,j,l) gives a list 
-  for kp in range(nks):
-    banda0 = bandsfinal[kp,banda] + 1         # Chooses the machine nr for reading the wfc
-    if signalfinal[kp,banda] == -1:           # if its a signaled wfc, choose interpolated
-      fich = wfcdirectory+"/k0"+str(kp)+"b0"+str(banda0)+".wfc1"
-    else:                                     # else choose original
-      fich = wfcdirectory+"/k0"+str(kp)+"b0"+str(banda0)+".wfc"
-    wfct_k[kp] = np.loadtxt(fich)
+    # sys.exit("Stop")
 
-  print(' Finished reading wfcs of band ',banda,' from files.')
-  sys.stdout.flush()
-
-  wfcpos = {}                           # Dictionary with wfc for all points
-  wfcgra = {}                           # Dictionary with wfc gradients for all points
-
-  for posi in range(nr):
-    wfcpos[posi] = np.zeros((nkx,nky),dtype=complex)   # Arrays represent the u in kspace
-    kp = 0
-    for j in range(nky):
-      for i in range(nkx):                             # for each kpoint
-        wfcpos[posi][i,j] = phase[posi,kp]*(float(wfct_k[kp][posi,0]) + 1j*float(wfct_k[kp][posi,1]))
-        kp += 1
-
-    wfcgra[posi] = grad(wfcpos[posi])                  # Complex gradient
-
-  bandasr[banda] = wfcpos
-  bandasg[banda] = wfcgra
-  print(' Finished band ',str(banda),'   {:5.2f}'.format((time.time()-starttime)/60.),' min')
-  sys.stdout.flush()
-
-  joblib.dump(wfcpos,'./wfcpos'+str(banda)+'.gz', compress=3)
-  joblib.dump(wfcgra,'./wfcgra'+str(banda)+'.gz', compress=3)
-
-
-sys.stdout.flush()
-
-#sys.exit("Stop")
-
-
-# Finished
-endtime = time.time()
-
-footer(contatempo.tempo(starttime,endtime))
-
-
-
-       
-
-
-
+    ###################################################################################
+    # Finished
+    footer(tempo(STARTTIME, time.time()))

@@ -1,0 +1,37 @@
+RELEASE NOTES for berry v.0.2.1
+
+New in 0.2.1 version:
+
+- Added drawcurvature.py for drawing Berry curvatures
+
+- Fixed serious bugs on compara.py
+
+- Added flow chart to the documentation
+
+
+New in 0.2 version:
+
+- Improved velocity up to 10x in generate.py and other programs
+
+- More reliable preprocessing.py and resilient to QE changes
+
+- Calculates the Berry curvature
+
+- Uses less disk space
+
+- All programs are now written in python
+
+- Output from programs more readable, and more information
+
+- Conformity to PEP8 was achieved
+
+
+Incompatible changes in 0.2 version:
+
+- Since most of the files are now saved in a different format, the new version cannot read the old data files in general
+
+- The numbering of the bands is now from 0 to n-1 while in the previous version it was from 1 to n.
+
+- The some extensions of the output files are different
+
+
