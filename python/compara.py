@@ -27,6 +27,7 @@ if __name__ == "__main__":
     else:
         firskpoint = -1
 
+    print("     Unique reference of run:", d.refname)
     print("     Directory where the wfc are:", d.wfcdirectory)
     print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
     print("     Total number of k-points:", d.nks)

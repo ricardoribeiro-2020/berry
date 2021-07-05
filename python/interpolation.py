@@ -51,6 +51,7 @@ if __name__ == "__main__":
 
     # Reading data needed for the run
     berrypath = d.berrypath
+    print("     Unique reference of run:", d.refname)
     print("     Path to BERRY files:", berrypath)
     print("     Directory where the wfc are:", d.wfcdirectory)
     print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
