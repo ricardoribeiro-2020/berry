@@ -14,7 +14,7 @@
 % Title Page
 \title{{\bf berry} suite of programs\\
 \large Documentation \\
-v.0.2.1}
+v.0.3}
 \author{Ricardo Mendes Ribeiro}
 \date{\today}
 \makeindex
@@ -38,6 +38,7 @@ The package contains the python scripts:
  \item dotproduct.py
  \item compara.py
  \item interpolation.py
+ \item minimization.py
  \item r2k.py
  \item berryConnection.py
  \item berryCurvature.py
@@ -320,7 +321,7 @@ the script \textbf{preprocessing.py} to change the default (see section \nameref
  generatewfc.py
  dotproduct.py
  compara.py [k-point]
- interpolation.py
+ interpolation.py [band] or minimization.py [band]
  r2k.py  band1 [band2]
  berryConnection.py  band1 [band2]
  berryCurvature.py   band1 [band2]
@@ -357,7 +358,10 @@ The minimum parameters needed are:
 
 An example of the minimum input file is shown in figure \ref{code:inputfile}.
 A full list of the parameters that are accepted with the respective defaults (if any)
-is shown in table \ref{tab:variables_preprocessing}
+is shown in table \ref{tab:variables_preprocessing}.
+There is a unique reference number that is attributed when running \textbf{preprocessing.py},
+that can be changed in the input file, but it not recomendable, because it is too easy to forget
+to change that variable in the input file and attribute the same value for different runs.
 
 \begin{figure}[h]
  \centering\caption{Example of input file for \textbf{preprocessing.py}.}
@@ -392,6 +396,7 @@ is shown in table \ref{tab:variables_preprocessing}
  directory where wavefunctions will be saved  &     wfcdirectory = 'wfc/' \\
  point in real space where all phases match  & point = 1.178097 \\
  software for DFT  &  program = 'QE' \\
+ Unique reference of run & refname = date and time \\
 %  DFT prefix  & prefix = '' \\
 %  DFT output directory & outdir = ''\\
  \hline

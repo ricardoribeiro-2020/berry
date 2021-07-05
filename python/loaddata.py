@@ -44,6 +44,7 @@ with open("datafile.npy", "rb") as fich:
     prefix = str(np.load(fich))
     wfck2r = str(np.load(fich))
     version = str(np.load(fich))
+    refname = str(np.load(fich))
 fich.close()
 
 

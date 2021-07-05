@@ -546,18 +546,18 @@ if __name__ == "__main__":
         bands_numbers(d.nkx, d.nky, signalfinal[:, nb])
 
     print()
-    print(" Resume of results")
+    print("     Resume of results")
     print()
-    print(" nr k-points not attributed to a band (bandfinal=-2)")
-    print(" Band       nr k-points")
+    print("     nr k-points not attributed to a band (bandfinal=-2)")
+    print("     Band       nr k-points")
     for nb in range(d.nbnd):
-        print(" ", nb, "         ", nrnotattrib[nb])
+        print("     ", nb, "         ", nrnotattrib[nb])
 
     print()
-    print(" Signaling: how many events in each band signaled.")
-    print(" Band    -2   -1    0    1    2    3    4    5")
+    print("     Signaling: how many events in each band signaled.")
+    print("     Band    -2   -1    0    1    2    3    4    5")
     for nb in range(d.nbnd):
-        print("  " + str(nb) + "   " + str(nrsignal[nb, :]))
+        print("      " + str(nb) + "   " + str(nrsignal[nb, :]))
 
     print()
     print("     Continuity recovered: ", negcount)
@@ -565,6 +565,23 @@ if __name__ == "__main__":
     print("     More relaxed attribution: ", attcount)
     print("     Merged ", merger, " sets")
     print()
+
+    print("     Bands not usable (not completed) as they are")
+    for nb in range(d.nbnd):
+        if nrsignal[nb, 0] != 0: 
+            print(
+                "      band ", nb, "  failed attribution of ", nrsignal[nb, 0], " k-points"
+            )
+        if nrsignal[nb, 1] != 0: 
+            print(
+                "      band ", nb, "  has incongruences in ", nrsignal[nb, 1], " k-points"
+            )
+        if nrsignal[nb, 2] != 0:
+            print(
+                "      band ", nb, "  signals 0 in", nrsignal[nb, 2], " k-points"
+            )
+    print()
+
 
     print("     Saving files bandsfinal.npy and signalfinal.npy")
     print("     (bandsfinal.npy gives the machine number for each k-point/band)")
