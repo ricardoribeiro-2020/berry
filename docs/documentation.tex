@@ -38,7 +38,7 @@ The package contains the python scripts:
  \item dotproduct.py
  \item compara.py
  \item interpolation.py
- \item minimization.py
+ \item basisrotation.py
  \item r2k.py
  \item berryConnection.py
  \item berryCurvature.py
@@ -321,7 +321,7 @@ the script \textbf{preprocessing.py} to change the default (see section \nameref
  generatewfc.py
  dotproduct.py
  compara.py [k-point]
- interpolation.py [band] or minimization.py [band]
+ interpolation.py [band] or basisrotation.py [band]
  r2k.py  band1 [band2]
  berryConnection.py  band1 [band2]
  berryCurvature.py   band1 [band2]
@@ -502,6 +502,47 @@ This program reads the dot product file \emph{dp.dat} and uses it to check conti
   python3 interpolate.py [band number]
  \end{verbatim}
 
+\section{Basis rotation}
+ Instead of the interpolation suggested in the last section, it is more frequent that a basis rotation
+ is applied to the wavefunctions in such a way as to maximize continuity.
+
+ For this, \textbf{basisrotation.py} can be run.
+ It works like this:
+ Consider a point in k-space and two wavefunctions $|\Psi_1\rangle$ and $|\Psi_2\rangle$
+ that have been signaled as not continuous to the neighboring wavefunctions $|\Psi_A\rangle$ and $|\Psi_B\rangle$
+ that belong to band $A$ and band $B$, respectively.
+
+ We will apply an unitary transformation
+ \begin{align*}
+  |\Psi_A'\rangle &= a_1|\Psi_1\rangle + a2|\Psi_2\rangle \\
+  |\Psi_B'\rangle &= b_1|\Psi_1\rangle + b2|\Psi_2\rangle
+ \end{align*}
+ where we have the restrictions due to orthonormalization:
+ \begin{align*}
+  a_1a_1^* + a_2a_2^* &= 1\\
+  b_1b_1^* + b_2b_2^* &= 1\\
+  a_1^*b_1 + a_2^*b_2 &= 0
+ \end{align*}
+
+ Then we want this transformation to be such that maximizes continuity to bands $A$ and $B$, so we want
+ the dot products $\langle \Psi_A|\Psi_A'\rangle $ and $\langle \Psi_B|\Psi_B'\rangle $ to be close to $1$,
+ which is the maximum they can be.
+
+ We look for the set $a_1, a_2, b_1, b_2$ that give
+ \begin{align*}
+  \max \langle \Psi_A|\Psi_A'\rangle &= \max \left( \langle \Psi_A|\Psi_1\rangle a_1 + \langle \Psi_A|\Psi_2\rangle a_2\right) \\
+  \max \langle \Psi_B|\Psi_B'\rangle &= \max \left( \langle \Psi_B|\Psi_1\rangle b_1 + \langle \Psi_B|\Psi_2\rangle b_2\right)
+ \end{align*}
+
+
+
+ It will create new wavefunctions with extension \emph{.wfc1}, that will be used in subsequent calculations.
+
+ Since you probably just want to interpolate in the bands that are well determined, and argument with the last band number
+ is needed.
+ \begin{verbatim}
+  python3 basisrotation.py [band number]
+ \end{verbatim}
 
 \section{Convert wavefunctions to k space}
 
