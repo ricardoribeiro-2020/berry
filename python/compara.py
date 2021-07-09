@@ -79,16 +79,64 @@ if __name__ == "__main__":
                             if bands[nk, bb, tentative] == b1:
                                 if bands[d.neighbors[nk, i], bb, tentative] == -2:
                                     bands[d.neighbors[nk, i], bb, tentative] = b2
-                                    signal[
-                                        d.neighbors[nk, i], bb, tentative
-                                    ] += 1  # Signal a connection
-                                elif bands[d.neighbors[nk, i], bb, tentative] == b2:
+                                    signal[d.neighbors[nk, i], bb, tentative] += 1  # Signal a connection
+                                elif bands[d.neighbors[nk, i], bb, tentative] == b2 and signal[d.neighbors[nk, i], bb, tentative] != -1:
                                     signal[d.neighbors[nk, i], bb, tentative] += 1
                                 else:  # Signal a contradiction
                                     signal[d.neighbors[nk, i], bb, tentative] = -1
-                                    print(d.neighbors[nk, i], b2, "  signal = -1")
+                                    print(d.neighbors[nk, i], b2, "  signal = -1", bands[d.neighbors[nk, i], bb, tentative], b1, signal[d.neighbors[nk, i], bb, tentative])
                                 break
 
+                if (
+                    d.neighbors[nk, i] not in listk
+                    and d.neighbors[nk, i] not in listdone
+                    and d.neighbors[nk, i] != -1
+                ):
+                    listk.append(d.neighbors[nk, i])
+#            print(np.where(signal[:,2:3,1] == 0)[0])
+            ##           print(nk,i,bands[d.neighbors[nk,i],:,1])
+            listk.remove(nk)  # Remove k-point from the list of todo
+            listdone.append(nk)  # Add k-point to the list of done
+
+        print()
+        print("     Report after first loop")
+        for nb in range(d.nbnd):
+            print("     Band " + str(nb) + " with " + str(np.count_nonzero(signal[:, nb, tentative] == 0)) 
+                  + " not attributed and " + str(np.count_nonzero(signal[:, nb, tentative] == -1)) + " contradictions.")
+
+#        bands_numbers(d.nkx, d.nky, signal[:, nb, tentative])
+
+
+
+#        sys.exit("Stop")
+        ##########################################################################
+        print()
+        print("     Correcting problems found using more relaxed condition.")
+        print()
+        ##########################################################################
+ 
+        kp0 = randrange(d.nks)  # Chooses a k-point randomly
+        print("     Starting k-point for the relaxed condition:", kp0)
+        initialks.append(kp0)  # Stores the departure k-point for future reference
+        listdone = []  # List to store the k-points that have been analysed
+        listk = [kp0]
+        attcount = 0
+ 
+        while len(listk) > 0:  # Runs through the list of neighbors not already done
+            nk = listk[0]  # Chooses the first from the list
+            for i in range(4):  # Calculates the four points around
+                for b1, b2 in itertools.product(range(d.nbnd), range(d.nbnd)):
+                    # Finds connections between k-points/bands
+                    if connections[nk, i, b1, b2] > 0.8:
+                        for bb in range(d.nbnd):
+                            if bands[nk, bb, tentative] == b1:
+                                if bands[d.neighbors[nk, i], bb, tentative] == -2:
+                                    print(" signal  ", signal[d.neighbors[nk, i], bb, tentative])
+                                    bands[d.neighbors[nk, i], bb, tentative] = b2
+                                    signal[d.neighbors[nk, i], bb, tentative] += 1  # Signal a connection
+                                    attcount += 1
+                                break
+ 
                 if (
                     d.neighbors[nk, i] not in listk
                     and d.neighbors[nk, i] not in listdone
@@ -98,72 +146,20 @@ if __name__ == "__main__":
             ##           print(nk,i,bands[d.neighbors[nk,i],:,1])
             listk.remove(nk)  # Remove k-point from the list of todo
             listdone.append(nk)  # Add k-point to the list of done
+ 
+        print()
+        print("     Report after more relaxed conditions")
+        for nb in range(d.nbnd):
+            print("     Band " + str(nb) + " with " + str(np.count_nonzero(signal[:, nb, tentative] == -2)) 
+                  + " not attributed and " + str(np.count_nonzero(signal[:, nb, tentative] == -1)) + " contradictions.")
 
-    #   SEP = " "
-    #   print("     Bands: gives the machine nr that belongs to new band (nk,nb)")
-    #   for nb in range(6):
-    #       nk = -1
-    #       print()
-    #       print("  New band " + str(nb))
-    #       bands_numbers(d.nkx, d.nky, bands[:, nb, 1])
-    #   print()
-    #   for nb in range(6):
-    #       nk = -1
-    #       print()
-    #       print("  Signal " + str(nb))
-    #       bands_numbers(d.nkx, d.nky, signal[:, nb, 1])
-    #   print()
-    #   with open("bandsfinal.npy", "wb") as f:
-    #       np.save(f, bands[:,:,1])
-    #   f.close()
-    #   with open("signalfinal.npy", "wb") as f:
-    #       np.save(f, signal[:,:,1])
-    #   f.close()
-    #   sys.exit("Stop")
-    ##########################################################################
     print()
-    print("     Correcting problems found using more relaxed condition.")
-    print()
-    ##########################################################################
-
-    kp0 = randrange(d.nks)  # Chooses a k-point randomly
-    print("     Starting k-point for the relaxed condition:", kp0)
-    initialks.append(kp0)  # Stores the departure k-point for future reference
-    listdone = []  # List to store the k-points that have been analysed
-    listk = [kp0]
-    attcount = 0
-
-    while len(listk) > 0:  # Runs through the list of neighbors not already done
-        nk = listk[0]  # Chooses the first from the list
-        for i in range(4):  # Calculates the four points around
-            for b1, b2 in itertools.product(range(d.nbnd), range(d.nbnd)):
-                # Finds connections between k-points/bands
-                if connections[nk, i, b1, b2] > 0.8:
-                    for bb in range(d.nbnd):
-                        if bands[nk, bb, tentative] == b1:
-                            if bands[d.neighbors[nk, i], bb, tentative] == -2:
-                                bands[d.neighbors[nk, i], bb, tentative] = b2
-                                signal[
-                                    d.neighbors[nk, i], bb, tentative
-                                ] += 1  # Signal a connection
-                                attcount += 1
-                            break
-
-            if (
-                d.neighbors[nk, i] not in listk
-                and d.neighbors[nk, i] not in listdone
-                and d.neighbors[nk, i] != -1
-            ):
-                listk.append(d.neighbors[nk, i])
-        ##           print(nk,i,bands[d.neighbors[nk,i],:,1])
-        listk.remove(nk)  # Remove k-point from the list of todo
-        listdone.append(nk)  # Add k-point to the list of done
 
     ##########################################################################
     print()
     print("     Correcting problems found")
     print()
-    ##########################################################
+    ##########################################################################
 
     negcount = 0
     for c in range(1):
@@ -181,8 +177,7 @@ if __name__ == "__main__":
             kpb1b2[i, 2] = bnproblem[i * 2 + 1]
 
             print(
-                "     Neighbors of the k-point with problem: ",
-                kpb1b2[i, 0],
+                "     Neighbors of the k-point " + str(kpb1b2[i, 0]) + " with problem: ",
                 d.neighbors[kpb1b2[i, 0], :],
             )
             print(bands[kpb1b2[i, 0], :, 1])
@@ -522,27 +517,24 @@ if __name__ == "__main__":
         bands_numbers(d.nkx, d.nky, bandsfinal[:, nb])
     print()
     print(" Signaling: how many events in each band signaled.")
-    nrsignal = np.full((d.nbnd, 8), -2, dtype=int)
+    nrsignal = np.full((d.nbnd, 7), -2, dtype=int)
     for nb in range(d.nbnd):
         nk = -1
-        nrsignal[nb, 0] = str(np.count_nonzero(signalfinal[:, nb] == -2))
-        nrsignal[nb, 1] = str(np.count_nonzero(signalfinal[:, nb] == -1))
-        nrsignal[nb, 2] = str(np.count_nonzero(signalfinal[:, nb] == 0))
-        nrsignal[nb, 3] = str(np.count_nonzero(signalfinal[:, nb] == 1))
-        nrsignal[nb, 4] = str(np.count_nonzero(signalfinal[:, nb] == 2))
-        nrsignal[nb, 5] = str(np.count_nonzero(signalfinal[:, nb] == 3))
-        nrsignal[nb, 6] = str(np.count_nonzero(signalfinal[:, nb] == 4))
-        nrsignal[nb, 7] = str(np.count_nonzero(signalfinal[:, nb] == 5))
+        nrsignal[nb, 0] = str(np.count_nonzero(signalfinal[:, nb] == -1))
+        nrsignal[nb, 1] = str(np.count_nonzero(signalfinal[:, nb] == 0))
+        nrsignal[nb, 2] = str(np.count_nonzero(signalfinal[:, nb] == 1))
+        nrsignal[nb, 3] = str(np.count_nonzero(signalfinal[:, nb] == 2))
+        nrsignal[nb, 4] = str(np.count_nonzero(signalfinal[:, nb] == 3))
+        nrsignal[nb, 5] = str(np.count_nonzero(signalfinal[:, nb] == 4))
+        nrsignal[nb, 6] = str(np.count_nonzero(signalfinal[:, nb] == 5))
         print()
         print(
             "     "
             + str(nb)
-            + "         -2: "
-            + str(nrsignal[nb, 0])
             + "         -1: "
-            + str(nrsignal[nb, 1])
+            + str(nrsignal[nb, 0])
             + "     0: "
-            + str(nrsignal[nb, 2])
+            + str(nrsignal[nb, 1])
         )
         bands_numbers(d.nkx, d.nky, signalfinal[:, nb])
 
@@ -556,7 +548,7 @@ if __name__ == "__main__":
 
     print()
     print("     Signaling: how many events in each band signaled.")
-    print("     Band    -2   -1    0    1    2    3    4    5")
+    print("     Band    -1    0    1    2    3    4    5")
     for nb in range(d.nbnd):
         print("      " + str(nb) + "   " + str(nrsignal[nb, :]))
 
