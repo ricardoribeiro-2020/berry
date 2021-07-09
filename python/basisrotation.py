@@ -221,24 +221,21 @@ if __name__ == "__main__":
     nrsignal = np.full((d.nbnd, 7), -2, dtype=int)
     for nb in range(lastband + 1):
         nk = -1
-        nrsignal[nb, 0] = str(np.count_nonzero(signalfinal[:, nb] == -2))
-        nrsignal[nb, 1] = str(np.count_nonzero(signalfinal[:, nb] == -1))
-        nrsignal[nb, 2] = str(np.count_nonzero(signalfinal[:, nb] == 0))
-        nrsignal[nb, 3] = str(np.count_nonzero(signalfinal[:, nb] == 1))
-        nrsignal[nb, 4] = str(np.count_nonzero(signalfinal[:, nb] == 2))
-        nrsignal[nb, 5] = str(np.count_nonzero(signalfinal[:, nb] == 3))
-        nrsignal[nb, 6] = str(np.count_nonzero(signalfinal[:, nb] == 4))
+        nrsignal[nb, 0] = str(np.count_nonzero(signalfinal[:, nb] == -1))
+        nrsignal[nb, 1] = str(np.count_nonzero(signalfinal[:, nb] == 0))
+        nrsignal[nb, 2] = str(np.count_nonzero(signalfinal[:, nb] == 1))
+        nrsignal[nb, 3] = str(np.count_nonzero(signalfinal[:, nb] == 2))
+        nrsignal[nb, 4] = str(np.count_nonzero(signalfinal[:, nb] == 3))
+        nrsignal[nb, 5] = str(np.count_nonzero(signalfinal[:, nb] == 4))
         nrsignal[nb, 6] = str(np.count_nonzero(signalfinal[:, nb] == 5))
         print()
         print(
             "     "
             + str(nb)
-            + "         -2: "
-            + str(nrsignal[nb, 0])
             + "         -1: "
-            + str(nrsignal[nb, 1])
+            + str(nrsignal[nb, 0])
             + "     0: "
-            + str(nrsignal[nb, 2])
+            + str(nrsignal[nb, 1])
         )
         bands_numbers(d.nkx, d.nky, signalfinal[:, nb])
 
@@ -252,7 +249,7 @@ if __name__ == "__main__":
 
     print()
     print("     Signaling")
-    print("     Band    -2   -1    0    1    2    3    4    5")
+    print("     Band    -1    0    1    2    3    4    5")
     for nb in range(lastband + 1):
         print("      " + str(nb) + "   " + str(nrsignal[nb, :]))
 
