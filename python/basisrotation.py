@@ -68,11 +68,15 @@ if __name__ == "__main__":
     print("     **********************")
     print("     Problems not solved")
     kpproblem, bnproblem = np.where(signalfinal == -1)
-    while bnproblem[-1] > lastband:  # Consider just the ones below last band wanted
-        bnproblem = bnproblem[:-1]
-        kpproblem = kpproblem[:-1]
+    machbandproblem = bandsfinal[kpproblem, bnproblem]
+    if bnproblem.size > 0:
+        while bnproblem[-1] > lastband:  # Consider just the ones below last band wanted
+            bnproblem = bnproblem[:-1]
+            kpproblem = kpproblem[:-1]
+    machbandproblem = bandsfinal[kpproblem, bnproblem]
     print("      k-points", kpproblem)
     print("      in bands", bnproblem)
+    print("      mach  bands", machbandproblem)
 
     karray = [np.where(kpproblem == element)[0].tolist() for element in np.unique(kpproblem)]
 
@@ -89,8 +93,8 @@ if __name__ == "__main__":
             nk = d.neighbors[nk0, j]  # on interpolation
 #            print(j, nk, bnproblem[karray[i][0]])
             if nk != -1 and signalfinal[nk,bnproblem[karray[i][0]]] > 0 and signalfinal[nk,bnproblem[karray[i][1]]] > 0:
-                nb1 = bnproblem[karray[i][0]]
-                nb2 = bnproblem[karray[i][1]]
+                nb1 = machbandproblem[karray[i][0]]
+                nb2 = machbandproblem[karray[i][1]]
                 nkj = j
                 break
 
@@ -176,7 +180,7 @@ if __name__ == "__main__":
             + "k0"
             + str(nk0)
             + "b0"
-            + str(bandsfinal[nk0, nb1])
+            + str(nb1)
             + ".wfc1"
         )
         print("     Writing file: ", outfile)
@@ -188,7 +192,7 @@ if __name__ == "__main__":
             + "k0"
             + str(nk0)
             + "b0"
-            + str(bandsfinal[nk0, nb2])
+            + str(nb2)
             + ".wfc1"
         )
         print("     Writing file: ", outfile)
