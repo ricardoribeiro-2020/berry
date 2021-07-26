@@ -563,15 +563,11 @@ if __name__ == "__main__":
     for nb in range(d.nbnd):
         if nrsignal[nb, 0] != 0: 
             print(
-                "      band ", nb, "  failed attribution of ", nrsignal[nb, 0], " k-points"
+                "      band ", nb, "  signals -1: has incongruences in ", nrsignal[nb, 0], " k-points"
             )
         if nrsignal[nb, 1] != 0: 
             print(
-                "      band ", nb, "  has incongruences in ", nrsignal[nb, 1], " k-points"
-            )
-        if nrsignal[nb, 2] != 0:
-            print(
-                "      band ", nb, "  signals 0 in", nrsignal[nb, 2], " k-points"
+                "      band ", nb, "  signals 0: failed attribution of bands on ", nrsignal[nb, 1], " k-points"
             )
     print()
 
