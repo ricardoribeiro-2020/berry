@@ -79,12 +79,24 @@ if __name__ == "__main__":
                             if bands[nk, bb, tentative] == b1:
                                 if bands[d.neighbors[nk, i], bb, tentative] == -2:
                                     bands[d.neighbors[nk, i], bb, tentative] = b2
-                                    signal[d.neighbors[nk, i], bb, tentative] += 1  # Signal a connection
-                                elif bands[d.neighbors[nk, i], bb, tentative] == b2 and signal[d.neighbors[nk, i], bb, tentative] != -1:
+                                    signal[
+                                        d.neighbors[nk, i], bb, tentative
+                                    ] += 1  # Signal a connection
+                                elif (
+                                    bands[d.neighbors[nk, i], bb, tentative] == b2
+                                    and signal[d.neighbors[nk, i], bb, tentative] != -1
+                                ):
                                     signal[d.neighbors[nk, i], bb, tentative] += 1
                                 else:  # Signal a contradiction
                                     signal[d.neighbors[nk, i], bb, tentative] = -1
-                                    print(d.neighbors[nk, i], b2, "  signal = -1", bands[d.neighbors[nk, i], bb, tentative], b1, signal[d.neighbors[nk, i], bb, tentative])
+                                    print(
+                                        d.neighbors[nk, i],
+                                        b2,
+                                        "  signal = -1",
+                                        bands[d.neighbors[nk, i], bb, tentative],
+                                        b1,
+                                        signal[d.neighbors[nk, i], bb, tentative],
+                                    )
                                 break
 
                 if (
@@ -93,7 +105,7 @@ if __name__ == "__main__":
                     and d.neighbors[nk, i] != -1
                 ):
                     listk.append(d.neighbors[nk, i])
-#            print(np.where(signal[:,2:3,1] == 0)[0])
+            #            print(np.where(signal[:,2:3,1] == 0)[0])
             ##           print(nk,i,bands[d.neighbors[nk,i],:,1])
             listk.remove(nk)  # Remove k-point from the list of todo
             listdone.append(nk)  # Add k-point to the list of done
@@ -101,27 +113,32 @@ if __name__ == "__main__":
         print()
         print("     Report after first loop")
         for nb in range(d.nbnd):
-            print("     Band " + str(nb) + " with " + str(np.count_nonzero(signal[:, nb, tentative] == 0)) 
-                  + " not attributed and " + str(np.count_nonzero(signal[:, nb, tentative] == -1)) + " contradictions.")
+            print(
+                "     Band "
+                + str(nb)
+                + " with "
+                + str(np.count_nonzero(signal[:, nb, tentative] == 0))
+                + " not attributed and "
+                + str(np.count_nonzero(signal[:, nb, tentative] == -1))
+                + " contradictions."
+            )
 
-#        bands_numbers(d.nkx, d.nky, signal[:, nb, tentative])
+        #        bands_numbers(d.nkx, d.nky, signal[:, nb, tentative])
 
-
-
-#        sys.exit("Stop")
+        #        sys.exit("Stop")
         ##########################################################################
         print()
         print("     Correcting problems found using more relaxed condition.")
         print()
         ##########################################################################
- 
+
         kp0 = randrange(d.nks)  # Chooses a k-point randomly
         print("     Starting k-point for the relaxed condition:", kp0)
         initialks.append(kp0)  # Stores the departure k-point for future reference
         listdone = []  # List to store the k-points that have been analysed
         listk = [kp0]
         attcount = 0
- 
+
         while len(listk) > 0:  # Runs through the list of neighbors not already done
             nk = listk[0]  # Chooses the first from the list
             for i in range(4):  # Calculates the four points around
@@ -131,12 +148,17 @@ if __name__ == "__main__":
                         for bb in range(d.nbnd):
                             if bands[nk, bb, tentative] == b1:
                                 if bands[d.neighbors[nk, i], bb, tentative] == -2:
-                                    print(" signal  ", signal[d.neighbors[nk, i], bb, tentative])
+                                    print(
+                                        " signal  ",
+                                        signal[d.neighbors[nk, i], bb, tentative],
+                                    )
                                     bands[d.neighbors[nk, i], bb, tentative] = b2
-                                    signal[d.neighbors[nk, i], bb, tentative] += 1  # Signal a connection
+                                    signal[
+                                        d.neighbors[nk, i], bb, tentative
+                                    ] += 1  # Signal a connection
                                     attcount += 1
                                 break
- 
+
                 if (
                     d.neighbors[nk, i] not in listk
                     and d.neighbors[nk, i] not in listdone
@@ -146,12 +168,19 @@ if __name__ == "__main__":
             ##           print(nk,i,bands[d.neighbors[nk,i],:,1])
             listk.remove(nk)  # Remove k-point from the list of todo
             listdone.append(nk)  # Add k-point to the list of done
- 
+
         print()
         print("     Report after more relaxed conditions")
         for nb in range(d.nbnd):
-            print("     Band " + str(nb) + " with " + str(np.count_nonzero(signal[:, nb, tentative] == -2)) 
-                  + " not attributed and " + str(np.count_nonzero(signal[:, nb, tentative] == -1)) + " contradictions.")
+            print(
+                "     Band "
+                + str(nb)
+                + " with "
+                + str(np.count_nonzero(signal[:, nb, tentative] == -2))
+                + " not attributed and "
+                + str(np.count_nonzero(signal[:, nb, tentative] == -1))
+                + " contradictions."
+            )
 
     print()
 
@@ -177,7 +206,9 @@ if __name__ == "__main__":
             kpb1b2[i, 2] = bnproblem[i * 2 + 1]
 
             print(
-                "     Neighbors of the k-point " + str(kpb1b2[i, 0]) + " with problem: ",
+                "     Neighbors of the k-point "
+                + str(kpb1b2[i, 0])
+                + " with problem: ",
                 d.neighbors[kpb1b2[i, 0], :],
             )
             print(bands[kpb1b2[i, 0], :, 1])
@@ -561,16 +592,23 @@ if __name__ == "__main__":
 
     print("     Bands not usable (not completed) as they are")
     for nb in range(d.nbnd):
-        if nrsignal[nb, 0] != 0: 
+        if nrsignal[nb, 0] != 0:
             print(
-                "      band ", nb, "  signals -1: has incongruences in ", nrsignal[nb, 0], " k-points"
+                "      band ",
+                nb,
+                "  signals -1: has incongruences in ",
+                nrsignal[nb, 0],
+                " k-points",
             )
-        if nrsignal[nb, 1] != 0: 
+        if nrsignal[nb, 1] != 0:
             print(
-                "      band ", nb, "  signals 0: failed attribution of bands on ", nrsignal[nb, 1], " k-points"
+                "      band ",
+                nb,
+                "  signals 0: failed attribution of bands on ",
+                nrsignal[nb, 1],
+                " k-points",
             )
     print()
-
 
     print("     Saving files bandsfinal.npy and signalfinal.npy")
     print("     (bandsfinal.npy gives the machine number for each k-point/band)")
