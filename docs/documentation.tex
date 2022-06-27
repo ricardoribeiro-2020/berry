@@ -21,7 +21,26 @@ v.0.3}
 
 
 \begin{document}
-\maketitle
+\begin{titlepage}
+ \begin{center}
+ \includegraphics[scale=0.3,keepaspectratio=true]{figures/BerryLogo.png}
+% BerryLogo.png: 2310x2310 px, 300dpi, 19.56x19.56 cm, bb=0 0 554 554
+\vspace*{2cm}
+
+  \begin{Huge}{\bf berry} suite of programs  \end{Huge}
+  \vspace*{1cm}
+
+ \begin{LARGE}Documentation              \end{LARGE}
+  \vspace*{1cm}
+
+\begin{Huge}v.0.3\end{Huge}
+  \vspace*{0.5cm}
+
+\today
+
+ \end{center}
+\end{titlepage}
+
 \tableofcontents
 
 \chapter{Introduction}\label{ch:introduction}
@@ -46,13 +65,20 @@ The package contains the python scripts:
  \item shg.py
 \end{itemize}\medskip
 
-and the auxiliary scripts:
+and the auxiliary and visualization scripts:
 \begin{itemize}
  \item draw2D\_machine.py
  \item draw2D\_corrected.py
  \item drawberry.py
  \item drawcurvature.py
  \item emailSender.py
+ \item viewdata.py
+ \item viewdot1.py
+ \item viewdot.py
+ \item vieweigenvalues.py
+ \item viewneighbors.py
+ \item viewoccupations.py
+ \item viewr.py
 \end{itemize}\medskip
 
 Also with some subroutines (depend on the other scripts):
@@ -84,7 +110,8 @@ Other contributors include
  \item Ícaro Jael Moura (Fortaleza, Brasil) for the exploratory work and testing;
  \item Irving Leander Reascos Valencia (Braga, Portugal) for improving the performance and AI work;
  \item Nuno Castro (LIP-Minho, Braga, Portugal) for coordinating AI work;
- \item Gonçalo Ventura (Porto, Portugal) for the equations for non-linear optical properties calculated from the Berry connections.
+ \item Gonçalo Ventura (Porto, Portugal) for the equations for non-linear optical properties calculated from the Berry connections;
+ \item Afonso Duarte Ribeiro, author of the logo.
 \end{itemize}
 
 

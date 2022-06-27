@@ -1,4 +1,15 @@
-RELEASE NOTES for berry v.0.2.1
+RELEASE NOTES for berry v.0.3
+
+New in 0.3 version:
+
+- Added a directory to store all scripts to view and analise data
+
+- Added an alternative to the interpolation, to rotate locally the basis
+
+- Added a unique run number, for consistency
+
+- Added a logo to the project
+
 
 New in 0.2.1 version:
 
