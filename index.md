@@ -8,7 +8,7 @@ In particular, it calculates the Berry connections and curvatures from DFT calcu
 
 The Berry connections can be used to calculate the first order optical conductivity and the second order optical conductivity for second harmonic generation (SHG).
 
-This version 0.2.1 is a nice step forward in the development of the code, but it still has many things to improve. 
+This version 0.3 is a nice step forward in the development of the code, but it still has many things to improve. 
 So far it can only be used with 2D materials and with DFT suite Quantum Espresso, on spinless calculations.
 
 It is expected that this software will evolve with more possibilities in the near future.
