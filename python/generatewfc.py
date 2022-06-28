@@ -28,6 +28,7 @@ if __name__ == "__main__":
 
     # Creates directory for wfc
     os.system("mkdir -p " + WFCDIRECTORY)
+    print("     Unique reference of run:", d.refname)
     print("     Wavefunctions will be saved in directory", WFCDIRECTORY)
     print("     DFT files are in directory", DFTDIRECTORY)
     print("     This program will run in " + str(d.npr) + " processors")

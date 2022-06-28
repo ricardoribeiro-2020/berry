@@ -14,14 +14,33 @@
 % Title Page
 \title{{\bf berry} suite of programs\\
 \large Documentation \\
-v.0.2.1}
+v.0.3}
 \author{Ricardo Mendes Ribeiro}
 \date{\today}
 \makeindex
 
 
 \begin{document}
-\maketitle
+\begin{titlepage}
+ \begin{center}
+ \includegraphics[scale=0.3,keepaspectratio=true]{figures/BerryLogo.png}
+% BerryLogo.png: 2310x2310 px, 300dpi, 19.56x19.56 cm, bb=0 0 554 554
+\vspace*{2cm}
+
+  \begin{Huge}{\bf berry} suite of programs  \end{Huge}
+  \vspace*{1cm}
+
+ \begin{LARGE}Documentation              \end{LARGE}
+  \vspace*{1cm}
+
+\begin{Huge}v.0.3\end{Huge}
+  \vspace*{0.5cm}
+
+\today
+
+ \end{center}
+\end{titlepage}
+
 \tableofcontents
 
 \chapter{Introduction}\label{ch:introduction}
@@ -38,6 +57,7 @@ The package contains the python scripts:
  \item dotproduct.py
  \item compara.py
  \item interpolation.py
+ \item basisrotation.py
  \item r2k.py
  \item berryConnection.py
  \item berryCurvature.py
@@ -45,13 +65,20 @@ The package contains the python scripts:
  \item shg.py
 \end{itemize}\medskip
 
-and the auxiliary scripts:
+and the auxiliary and visualization scripts:
 \begin{itemize}
  \item draw2D\_machine.py
  \item draw2D\_corrected.py
  \item drawberry.py
  \item drawcurvature.py
  \item emailSender.py
+ \item viewdata.py
+ \item viewdot1.py
+ \item viewdot.py
+ \item vieweigenvalues.py
+ \item viewneighbors.py
+ \item viewoccupations.py
+ \item viewr.py
 \end{itemize}\medskip
 
 Also with some subroutines (depend on the other scripts):
@@ -83,7 +110,8 @@ Other contributors include
  \item Ícaro Jael Moura (Fortaleza, Brasil) for the exploratory work and testing;
  \item Irving Leander Reascos Valencia (Braga, Portugal) for improving the performance and AI work;
  \item Nuno Castro (LIP-Minho, Braga, Portugal) for coordinating AI work;
- \item Gonçalo Ventura (Porto, Portugal) for the equations for non-linear optical properties calculated from the Berry connections.
+ \item Gonçalo Ventura (Porto, Portugal) for the equations for non-linear optical properties calculated from the Berry connections;
+ \item Afonso Duarte Ribeiro, author of the logo.
 \end{itemize}
 
 
@@ -320,7 +348,7 @@ the script \textbf{preprocessing.py} to change the default (see section \nameref
  generatewfc.py
  dotproduct.py
  compara.py [k-point]
- interpolation.py
+ interpolation.py [band] or basisrotation.py [band]
  r2k.py  band1 [band2]
  berryConnection.py  band1 [band2]
  berryCurvature.py   band1 [band2]
@@ -340,7 +368,7 @@ In brackets are optional parameters.
  \begin{enumerate}
   \item Reads file with the description of the run wanted.
   \item Runs the scf calculation using {\sc Quantum Espresso}, if it has not ran before.
-  \item Generates an nscf input file according to the input data of the run and runs an nscf calculation.
+  \item Generates an nscf input file according to the input data of the run and runs an nscf calculation,
   using {\sc Quantum Espresso}, if it has not ran before.
   \item Reads data from the nscf calculation and saves to a file.
   \item Makes several simple calculations that will be used afterwards in other scripts, and save them to several files.
@@ -357,7 +385,10 @@ The minimum parameters needed are:
 
 An example of the minimum input file is shown in figure \ref{code:inputfile}.
 A full list of the parameters that are accepted with the respective defaults (if any)
-is shown in table \ref{tab:variables_preprocessing}
+is shown in table \ref{tab:variables_preprocessing}.
+There is a unique reference number that is attributed when running \textbf{preprocessing.py},
+that can be changed in the input file, but it not recomendable, because it is too easy to forget
+to change that variable in the input file and attribute the same value for different runs.
 
 \begin{figure}[h]
  \centering\caption{Example of input file for \textbf{preprocessing.py}.}
@@ -392,6 +423,7 @@ is shown in table \ref{tab:variables_preprocessing}
  directory where wavefunctions will be saved  &     wfcdirectory = 'wfc/' \\
  point in real space where all phases match  & point = 1.178097 \\
  software for DFT  &  program = 'QE' \\
+ Unique reference of run & refname = date and time \\
 %  DFT prefix  & prefix = '' \\
 %  DFT output directory & outdir = ''\\
  \hline
@@ -497,6 +529,47 @@ This program reads the dot product file \emph{dp.dat} and uses it to check conti
   python3 interpolate.py [band number]
  \end{verbatim}
 
+\section{Basis rotation}
+ Instead of the interpolation suggested in the last section, it is more frequent that a basis rotation
+ is applied to the wavefunctions in such a way as to maximize continuity.
+
+ For this, \textbf{basisrotation.py} can be run.
+ It works like this:
+ Consider a point in k-space and two wavefunctions $|\Psi_1\rangle$ and $|\Psi_2\rangle$
+ that have been signaled as not continuous to the neighboring wavefunctions $|\Psi_A\rangle$ and $|\Psi_B\rangle$
+ that belong to band $A$ and band $B$, respectively.
+
+ We will apply an unitary transformation
+ \begin{align*}
+  |\Psi_A'\rangle &= a_1|\Psi_1\rangle + a2|\Psi_2\rangle \\
+  |\Psi_B'\rangle &= b_1|\Psi_1\rangle + b2|\Psi_2\rangle
+ \end{align*}
+ where we have the restrictions due to orthonormalization:
+ \begin{align*}
+  a_1a_1^* + a_2a_2^* &= 1\\
+  b_1b_1^* + b_2b_2^* &= 1\\
+  a_1^*b_1 + a_2^*b_2 &= 0
+ \end{align*}
+
+ Then we want this transformation to be such that maximizes continuity to bands $A$ and $B$, so we want
+ the dot products $\langle \Psi_A|\Psi_A'\rangle $ and $\langle \Psi_B|\Psi_B'\rangle $ to be close to $1$,
+ which is the maximum they can be.
+
+ We look for the set $a_1, a_2, b_1, b_2$ that give
+ \begin{align*}
+  \max \langle \Psi_A|\Psi_A'\rangle &= \max \left( \langle \Psi_A|\Psi_1\rangle a_1 + \langle \Psi_A|\Psi_2\rangle a_2\right) \\
+  \max \langle \Psi_B|\Psi_B'\rangle &= \max \left( \langle \Psi_B|\Psi_1\rangle b_1 + \langle \Psi_B|\Psi_2\rangle b_2\right)
+ \end{align*}
+
+
+
+ It will create new wavefunctions with extension \emph{.wfc1}, that will be used in subsequent calculations.
+
+ Since you probably just want to interpolate in the bands that are well determined, and argument with the last band number
+ is needed.
+ \begin{verbatim}
+  python3 basisrotation.py [band number]
+ \end{verbatim}
 
 \section{Convert wavefunctions to k space}
 

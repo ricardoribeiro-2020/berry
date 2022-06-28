@@ -53,6 +53,7 @@ if __name__ == "__main__":
 
     # Reading data needed for the run
 
+    print("     Unique reference of run:", d.refname)
     print("     Directory where the wfc are:", d.wfcdirectory)
     print("     Total number of k-points:", d.nks)
     print("     Total number of points in real space:", d.nr)

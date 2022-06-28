@@ -5,7 +5,8 @@ No special order.
 2. Implement paralelization in python code
 3. Implement verification of initial conditions in each run
 4. Create a Makefile and improve instalation and configuration
-5. Add calculation of Berry curvature and properties derived
+5. Add calculation of and properties derived from Berry curvature
 6. Add calculation of other nonlinear optical properties from Berry connection
-
+7. Add excitonic calculations
+8. Add AI for determining the bands
 
