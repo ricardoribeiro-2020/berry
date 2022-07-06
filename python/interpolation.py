@@ -51,6 +51,7 @@ if __name__ == "__main__":
 
     # Reading data needed for the run
     berrypath = d.berrypath
+    print("     Unique reference of run:", d.refname)
     print("     Path to BERRY files:", berrypath)
     print("     Directory where the wfc are:", d.wfcdirectory)
     print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
@@ -79,15 +80,22 @@ if __name__ == "__main__":
     print("     **********************")
     print("     Problems not solved")
     kpproblem, bnproblem = np.where(signalfinal == -1)
+    machbandproblem = bandsfinal[kpproblem, bnproblem]
+    if bnproblem.size > 0:
+        while bnproblem[-1] > lastband:  # Consider just the ones below last band wanted
+            bnproblem = bnproblem[:-1]
+            kpproblem = kpproblem[:-1]
+    machbandproblem = bandsfinal[kpproblem, bnproblem]
     print("      k-points", kpproblem)
     print("      in bands", bnproblem)
+    print("      mach  bands", machbandproblem)
     nrinter = 0
     print("     Will make interpolations of the wavefunctions.")
     sys.stdout.flush()
     for i in range(kpproblem.size):
         if bnproblem[i] <= lastband:
             nk0 = kpproblem[i]  # Choose the first k-point of the list
-            nb0 = bnproblem[i]  # and the problematic band
+            nb0 = machbandproblem[i]  # and the problematic band
             xx0 = np.full((7), -1, dtype=int)  # k-points in one direction
             xx1 = np.full((7), -1, dtype=int)  # k-points in another direction
             print("     k = ", nk0, "  band = ", nb0)

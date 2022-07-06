@@ -14,8 +14,9 @@
         program = 'QE'
         prefix = ''
         outdir = ''
+       refname = date and time: it is better to keep the default
 """
-__version__ = "v0.2.1"
+__version__ = "v0.3"
 
 import os
 import sys
@@ -77,6 +78,7 @@ if __name__ == "__main__":
     PROGRAM = "QE"  # Default dft program is Quantum Espresso
     PREFIX = ""  # Prefix of the DFT calculation (QE)
     OUTDIR = ""  # Output directory of the DFT calculation (QE)
+    refname = time.strftime("%d-%m-%Y_%H:%M:%S", time.gmtime())  #unique ref.
 
     # Open input file for the run
     with open(sys.argv[1], "r") as inputfile:
@@ -116,6 +118,8 @@ if __name__ == "__main__":
             PREFIX = ii[1]
         if ii[0] == "outdir":
             OUTDIR = ii[1]
+        if ii[0] == "refname":
+            OUTDIR = ii[1]
 
     # create absolute paths for directories and verify values
     if DFTDIRECTORY[:2] == "./":
@@ -146,6 +150,7 @@ if __name__ == "__main__":
     if PREFIX == "":
         PREFIX = parser("prefix", DFTDIRECTORY + NAMESCF)
 
+    print("     Unique reference of run:", refname)
     print("     Starting k-point of the mesh K0:", str(K0))
     print("     Number of points in the mesh ", str(nkx), str(nky), str(nkz))
     print("     Step of the k-point mesh ", str(step))
@@ -465,7 +470,7 @@ if __name__ == "__main__":
         np.save(fich, PREFIX)  # prefix of the DFT calculations
         np.save(fich, WFCK2R)  # File for extracting DFT wfc to real space
         np.save(fich, __version__)  # Version of berry where data was created
-        np.save(fich, "dummy")  # Saving space for future values and compatibility
+        np.save(fich, refname)  # Unique reference for the run
         np.save(fich, "dummy")  # Saving space for future values and compatibility
         np.save(fich, "dummy")  # Saving space for future values and compatibility
         np.save(fich, "dummy")  # Saving space for future values and compatibility

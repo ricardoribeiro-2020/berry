@@ -14,7 +14,7 @@ gradwfc00 = int(sys.argv[1])
 gradwfc11 = int(sys.argv[2])
 tipo = sys.argv[3]
 
-filename = "./berryCurvature" + str(gradwfc00) + "-" + str(gradwfc11)
+filename = "./berry_curvature" + str(gradwfc00) + "-" + str(gradwfc11)
 
 berryCurvature= joblib.load(filename + ".gz")
 
@@ -34,8 +34,8 @@ Q = np.hypot(
 
 if tipo in ('a', 'r'):
     ax1.quiver(
-        np.real(berryCurvature[0]),
-        np.real(berryCurvature[1]),
+        np.real(berryCurvature[0])*0.1,
+        np.real(berryCurvature[1])*0.1,
         M,
         units="x",
         width=0.042,
@@ -43,8 +43,8 @@ if tipo in ('a', 'r'):
     )
 if tipo in ('a', 'i'):
     ax1.quiver(
-        np.imag(berryCurvature[0]),
-        np.imag(berryCurvature[1]),
+        np.imag(berryCurvature[0])*0.1,
+        np.imag(berryCurvature[1])*0.1,
         Q,
         units="x",
         width=0.042,

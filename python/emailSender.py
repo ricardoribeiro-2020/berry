@@ -6,6 +6,7 @@
 
 import smtplib
 from socket import gaierror
+import loaddata as d
 
 # pylint: disable=C0103
 ###################################################################################
@@ -13,16 +14,17 @@ from socket import gaierror
 sender = "sender@physics.org"
 receiver = "receiver@physics.org"
 smtpserver = "localhost"
-port0 = 1025
+port0 = 25
 login = ""
 password = ""
 
 message = """\
 From: ricardo.ribeiro@physics.org
 To: ricardo.ribeiro@physics.org
-Subject: calculation
+Subject: Calculation  """ + d.refname + """
 
-The calculation is finished.
+The calculation is finished in directory\n""" + d.workdir + """
+
 """
 
 try:
