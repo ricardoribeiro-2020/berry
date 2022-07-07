@@ -30,11 +30,11 @@ if __name__ == '__main__':
     STARTTIME = time.time()
 
     bands = [int(v) for v in args] if len(args) > 0 else [0, d.nbnd-1]
-    max_band, min_band = bands
+    min_band, max_band = bands
     n_bands = max_band-min_band+1
 
-    print(f'    Min band: {min_band}    Max band: {max_band}')
-    print(f'    Number of CPUs: {N_PROCESS}')
+    print(f'     Min band: {min_band}    Max band: {max_band}')
+    print(f'     Number of CPUs: {N_PROCESS}\n')
 
     print("     Unique reference of run:", d.refname)
     print("     Directory where the wfc are:", d.wfcdirectory)
