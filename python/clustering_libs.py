@@ -15,6 +15,7 @@ class MATERIAL:
         self.nkx = nkx
         self.nky = nky
         self.nbnd = nbnd
+        self.total_bands = nbnd
         self.nks = nks
         self.eigenvalues = eigenvalues
         self.connections = connections
@@ -339,17 +340,17 @@ class MATERIAL:
         return labels
 
     def obtain_output(self):
-        self.bands_final = np.full((self.nks, self.nbnd), -1, dtype=int)
+        self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
         solved_bands = []
         for solved in self.solved:
             bands = solved.get_bands()
-            bn = solved.bands[0]
+            bn = solved.bands[0] + self.min_band
             solved.bands = solved.bands[1:]
             while bn in solved_bands:
                 bn = solved.bands[0]
                 solved.bands = solved.bands[1:]
             solved_bands.append(bn)
-            self.bands_final[solved.nodes, bn] = bands
+            self.bands_final[solved.k_points, bn] = bands + self.min_band
 
 
 class COMPONENT:
@@ -371,6 +372,7 @@ class COMPONENT:
         self.positions_matrix[index_points[:, 0], index_points[:, 1]] = 1
     
     def get_bands(self):
+        self.k_points = self.nodes % self.nks
         k_bands = self.nodes//self.nks
         bands, counts = np.unique(k_bands, return_counts=True)
         self.bands = bands[np.argsort(counts)]
