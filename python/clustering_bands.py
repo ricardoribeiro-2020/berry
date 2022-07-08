@@ -83,5 +83,13 @@ if __name__ == '__main__':
 
     print('Clustering Done')
 
+    print('    Computing bandsfinal', end=': ')
+    init_time = time.time()
+    material.obtain_output()
+    print(f'{contatempo.tempo(init_time, time.time())}')
+
+    with open('output/bandsfinal.npy', 'wb') as f:
+        np.save(f, material.bands_final)
+
     ENDTIME = time.time()
     footer(contatempo.tempo(STARTTIME, ENDTIME))

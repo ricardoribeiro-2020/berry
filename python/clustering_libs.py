@@ -332,8 +332,21 @@ class MATERIAL:
             sample.save_boundary(f'sample_{count}')
             labels[sample.nodes] = count
             count += 1
+        
+        self.clusters = clusters
+        self.samples = new_samples
 
         return labels
+
+    def obtain_output(self):
+        self.bands_final = np.full((self.nks, self.nbnd), -1, dtype=int)
+        solved_bands = []
+        for solved in self.solved:
+            bn = solved.bands.pop(0)
+            while bn in solved_bands:
+                bn = solved.bands.pop(0)
+            solved_bands.append(bn)
+            self.bands_final[solved.nodes, bn] = np.array(solved.bands_number.values())
 
 
 class COMPONENT:
@@ -352,6 +365,8 @@ class COMPONENT:
         index_points = self.kpoints_index[self.nodes % self.nks]
         self.bands_number = dict(zip(self.nodes % self.nks,
                                      self.nodes//self.nks))
+        bands, counts = np.unique(self.nodes//self.nks, return_counts=True)
+        self.bands = bands[np.argsort(counts)]
         self.positions_matrix[index_points[:, 0], index_points[:, 1]] = 1
 
     def validate(self, component):
