@@ -343,9 +343,11 @@ class MATERIAL:
         solved_bands = []
         for solved in self.solved:
             bands = solved.get_bands()
-            bn = solved.bands.pop(0)
+            bn = solved.bands[0]
+            solved.bands = solved.bands[1:]
             while bn in solved_bands:
-                bn = solved.bands.pop(0)
+                bn = solved.bands[0]
+                solved.bands = solved.bands[1:]
             solved_bands.append(bn)
             self.bands_final[solved.nodes, bn] = bands
 
