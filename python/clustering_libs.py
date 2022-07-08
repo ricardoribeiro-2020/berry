@@ -10,6 +10,25 @@ from scipy.ndimage import correlate
 from multiprocessing import Process
 
 
+def evaluate_result(values):
+    CORRECT = 4
+    POTENTIAL_CORRECT = 3
+    POTENTIAL_MISTAKE = 2
+
+    TOL = 0.9
+    TOL_DEG = 0.7
+
+    value = np.mean(values)
+    if value > TOL:
+        return CORRECT
+    
+    if value > TOL_DEG:
+        return POTENTIAL_CORRECT
+    
+    return POTENTIAL_MISTAKE
+    
+
+
 class MATERIAL:
     def __init__(self, nkx, nky, nbnd, nks, eigenvalues, connections, neighbors, n_process=1):
         self.nkx = nkx
@@ -341,6 +360,10 @@ class MATERIAL:
 
     def obtain_output(self):
         self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
+        self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
+
+        DEGENERATE = 1
+
         solved_bands = []
         for solved in self.solved:
             bands = solved.get_bands()
@@ -351,6 +374,26 @@ class MATERIAL:
                 solved.bands = solved.bands[1:]
             solved_bands.append(bn)
             self.bands_final[solved.k_points, bn] = bands + self.min_band
+
+            for k in solved.k_points:
+                bn1 = solved.bands_number[k]
+                connections = []
+                for i_neig, k_neig in enumerate(self.neighbors[k]):
+                    if k_neig == -1:
+                        continue
+                    bn2 = solved.bands_number[k_neig]
+                    connections.append(self.connections[k, i_neig, bn1, bn2])
+                
+                self.signal_final[k, bn] = evaluate_result(connections)
+
+        for d1, d2 in self.degenerados:
+            k1 = d1 % self.nks
+            bn1 = d1 // self.nks + self.min_band
+            k2 = d2 % self.nks
+            bn2 = d2 // self.nks + self.min_band
+
+            self.signal_final[k1, bn1] = DEGENERATE
+            self.signal_final[k2, bn2] = DEGENERATE
 
 
 class COMPONENT:
