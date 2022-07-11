@@ -396,33 +396,38 @@ class MATERIAL:
             self.signal_final[k2, bn2] = DEGENERATE
         
     def print_report(self):
-        print('\t====== FINAL REPORT ======')
+        MAX_SIGNAL = 4
+        final_report = '\t====== FINAL REPORT ======\n\n'
         bands_report = []
         for bn in range(self.min_band, self.nbnd):
             band_result = self.signal_final[:,bn]
-            report = [np.sum(band_result == signal) for signal in range(4)]
+            report = [np.sum(band_result == signal) for signal in range(MAX_SIGNAL+1)]
             bands_report.append(report)
-            print(f'  New Band: {bn}\tnr falis: {report[0]}')
+
+            final_report += f'  New Band: {bn}\tnr falis: {report[0]}\n'
             new_band = np.empty(self.matrix.shape, dtype= int)
             index = self.kpoints_index
-            new_band[index[:, 0], index[:, 1]] = self.bands_final[bn]
+            new_band[index[:, 0], index[:, 1]] = self.bands_final[:, bn]
             for row in new_band:
-                print('\n' ,end='  ')
-                print(*row, sep = '  ')
-                print('\n')
-        print(' Signaling: how many events in each band signaled.')
-        print(' Band ', end=' ')
-        for signal in range(4):
-            n_spaces = len(str(np.max(bands_report[:, signal])))
-            print(' '*n_spaces+str(signal), end=' ')
+                final_report += '\n  '+'  '.join(row) + '\n'
+        bands_report = np.array(bands_report)
+        final_report += ' Signaling: how many events in each band signaled.\n'
+        final_report += '\n Band | '
 
+        for signal in range(MAX_SIGNAL+1):
+            n_spaces = len(str(np.max(bands_report[:, signal])))
+            final_report += ' '*n_spaces+str(signal) + '   '
+        
         for bn, report in enumerate(bands_report):
             bn += self.min_band
-            print(f' {bn},{" "*(4-len(str(bn)))} ', end=' ')
+            final_report += f'\n {bn}{" "*(4-len(str(bn)))} |' + ' '
             for signal, value in enumerate(report):
                 n_max = len(str(np.max(bands_report[:, signal])))
                 n_spaces = n_max - len(str(value))
-                print(' '*n_spaces+str(value), end=' ')
+                final_report += ' '*n_spaces+str(value) + '   '
+
+        print(final_report)
+        self.final_report = final_report
 
 
 

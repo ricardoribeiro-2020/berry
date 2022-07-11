@@ -96,5 +96,8 @@ if __name__ == '__main__':
 
     material.print_report()
 
+    with open('output/final.report', 'w') as f:
+        f.write(material.final_report)
+
     ENDTIME = time.time()
     footer(contatempo.tempo(STARTTIME, ENDTIME))
