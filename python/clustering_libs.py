@@ -418,7 +418,7 @@ class MATERIAL:
             n_spaces = len(str(np.max(bands_report[:, signal])))-1
             bands_header += ' '*n_spaces+str(signal) + '   '
 
-        final_report += bands_header
+        final_report += bands_header + '\n'
         final_report += '-'*len(bands_header)
         
         for bn, report in enumerate(bands_report):
