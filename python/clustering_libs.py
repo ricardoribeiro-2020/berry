@@ -404,19 +404,22 @@ class MATERIAL:
             report = [np.sum(band_result == signal) for signal in range(MAX_SIGNAL+1)]
             bands_report.append(report)
 
-            final_report += f'  New Band: {bn}\tnr falis: {report[0]}\n'
+            final_report += f'\n  New Band: {bn}\tnr falis: {report[0]}\n'
             new_band = np.empty(self.matrix.shape, dtype= int)
             index = self.kpoints_index
             new_band[index[:, 0], index[:, 1]] = self.bands_final[:, bn]
             for row in new_band:
                 final_report += '\n  '+'  '.join(map(str,row)) + '\n'
         bands_report = np.array(bands_report)
-        final_report += ' Signaling: how many events in each band signaled.\n'
-        final_report += '\n Band | '
+        final_report += '\n Signaling: how many events in each band signaled.\n'
+        bands_header = '\n Band | '
 
         for signal in range(MAX_SIGNAL+1):
             n_spaces = len(str(np.max(bands_report[:, signal])))-1
-            final_report += ' '*n_spaces+str(signal) + '   '
+            bands_header += ' '*n_spaces+str(signal) + '   '
+
+        final_report += bands_header
+        final_report += '-'*len(bands_header)
         
         for bn, report in enumerate(bands_report):
             bn += self.min_band
