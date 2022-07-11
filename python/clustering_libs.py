@@ -399,7 +399,7 @@ class MATERIAL:
         MAX_SIGNAL = 4
         final_report = '\t====== FINAL REPORT ======\n\n'
         bands_report = []
-        for bn in range(self.min_band, self.nbnd):
+        for bn in range(self.min_band, self.nbnd+1):
             band_result = self.signal_final[:,bn]
             report = [np.sum(band_result == signal) for signal in range(MAX_SIGNAL+1)]
             bands_report.append(report)
@@ -409,13 +409,13 @@ class MATERIAL:
             index = self.kpoints_index
             new_band[index[:, 0], index[:, 1]] = self.bands_final[:, bn]
             for row in new_band:
-                final_report += '\n  '+'  '.join(row) + '\n'
+                final_report += '\n  '+'  '.join(map(str,row)) + '\n'
         bands_report = np.array(bands_report)
         final_report += ' Signaling: how many events in each band signaled.\n'
         final_report += '\n Band | '
 
         for signal in range(MAX_SIGNAL+1):
-            n_spaces = len(str(np.max(bands_report[:, signal])))
+            n_spaces = len(str(np.max(bands_report[:, signal])))-1
             final_report += ' '*n_spaces+str(signal) + '   '
         
         for bn, report in enumerate(bands_report):
