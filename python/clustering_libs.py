@@ -459,7 +459,7 @@ class COMPONENT:
         self.bands_number = dict(zip(self.nodes % self.nks,
                                      self.nodes//self.nks))
         bands, counts = np.unique(k_bands, return_counts=True)
-        self.bands = bands[np.argsort(counts)]
+        self.bands = bands[np.argsort(counts)[::-1]]
         return k_bands
 
     def validate(self, component):
