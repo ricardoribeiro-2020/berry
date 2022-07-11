@@ -94,5 +94,7 @@ if __name__ == '__main__':
     with open('output/signalfinal.npy', 'wb') as f:
         np.save(f, material.signal_final)
 
+    material.print_report()
+
     ENDTIME = time.time()
     footer(contatempo.tempo(STARTTIME, ENDTIME))
