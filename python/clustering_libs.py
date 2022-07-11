@@ -399,7 +399,7 @@ class MATERIAL:
         MAX_SIGNAL = 4
         final_report = '\t====== FINAL REPORT ======\n\n'
         bands_report = []
-        for bn in range(self.min_band, self.nbnd+1):
+        for bn in range(self.min_band, self.min_band+self.nbnd):
             band_result = self.signal_final[:,bn]
             report = [np.sum(band_result == signal) for signal in range(MAX_SIGNAL+1)]
             bands_report.append(report)
