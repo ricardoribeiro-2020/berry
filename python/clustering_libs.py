@@ -417,6 +417,8 @@ class COMPONENT:
     def get_bands(self):
         self.k_points = self.nodes % self.nks
         k_bands = self.nodes//self.nks
+        self.bands_number = dict(zip(self.nodes % self.nks,
+                                     self.nodes//self.nks))
         bands, counts = np.unique(k_bands, return_counts=True)
         self.bands = bands[np.argsort(counts)]
         return k_bands
