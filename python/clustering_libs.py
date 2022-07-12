@@ -21,16 +21,16 @@ def evaluate_result(values):
     value = np.mean(values)
     if value > TOL:
         return CORRECT
-    
+
     if value > TOL_DEG:
         return POTENTIAL_CORRECT
-    
+
     return POTENTIAL_MISTAKE
-    
 
 
 class MATERIAL:
-    def __init__(self, nkx, nky, nbnd, nks, eigenvalues, connections, neighbors, n_process=1):
+    def __init__(self, nkx, nky, nbnd, nks, eigenvalues,
+                 connections, neighbors, n_process=1):
         self.nkx = nkx
         self.nky = nky
         self.nbnd = nbnd
@@ -352,7 +352,7 @@ class MATERIAL:
             sample.save_boundary(f'sample_{count}')
             labels[sample.nodes] = count
             count += 1
-        
+
         self.clusters = clusters
         self.samples = new_samples
 
@@ -383,7 +383,7 @@ class MATERIAL:
                         continue
                     bn2 = solved.bands_number[k_neig]
                     connections.append(self.connections[k, i_neig, bn1, bn2])
-                
+
                 self.signal_final[k, bn] = evaluate_result(connections)
 
         for d1, d2 in self.degenerados:
@@ -394,24 +394,25 @@ class MATERIAL:
 
             self.signal_final[k1, bn1] = DEGENERATE
             self.signal_final[k2, bn2] = DEGENERATE
-        
+
     def print_report(self):
         MAX_SIGNAL = 4
         final_report = '\t====== FINAL REPORT ======\n\n'
         bands_report = []
         for bn in range(self.min_band, self.min_band+self.nbnd):
-            band_result = self.signal_final[:,bn]
-            report = [np.sum(band_result == signal) for signal in range(MAX_SIGNAL+1)]
+            band_result = self.signal_final[:, bn]
+            report = [np.sum(band_result == s) for s in range(MAX_SIGNAL+1)]
             bands_report.append(report)
 
             final_report += f'\n  New Band: {bn}\tnr falis: {report[0]}\n'
-            new_band = np.empty(self.matrix.shape, dtype= int)
+            new_band = np.empty(self.matrix.shape, dtype=int)
             index = self.kpoints_index
             new_band[index[:, 0], index[:, 1]] = self.bands_final[:, bn]
             for row in new_band:
-                final_report += '\n  '+'  '.join(map(str,row)) + '\n'
+                final_report += '\n  '+'  '.join(map(str, row)) + '\n'
         bands_report = np.array(bands_report)
-        final_report += '\n Signaling: how many events in each band signaled.\n'
+        final_report += '\n Signaling: how many events \
+                        in each band signaled.\n'
         bands_header = '\n Band | '
 
         for signal in range(MAX_SIGNAL+1):
@@ -420,7 +421,7 @@ class MATERIAL:
 
         final_report += bands_header + '\n'
         final_report += '-'*len(bands_header)
-        
+
         for bn, report in enumerate(bands_report):
             bn += self.min_band
             final_report += f'\n {bn}{" "*(4-len(str(bn)))} |' + ' '
@@ -431,8 +432,6 @@ class MATERIAL:
 
         print(final_report)
         self.final_report = final_report
-
-
 
 
 class COMPONENT:
@@ -452,7 +451,7 @@ class COMPONENT:
         self.bands_number = dict(zip(self.nodes % self.nks,
                                      self.nodes//self.nks))
         self.positions_matrix[index_points[:, 0], index_points[:, 1]] = 1
-    
+
     def get_bands(self):
         self.k_points = self.nodes % self.nks
         k_bands = self.nodes//self.nks

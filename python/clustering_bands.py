@@ -90,7 +90,7 @@ if __name__ == '__main__':
 
     with open('output/bandsfinal.npy', 'wb') as f:
         np.save(f, material.bands_final)
-    
+
     with open('output/signalfinal.npy', 'wb') as f:
         np.save(f, material.signal_final)
 
