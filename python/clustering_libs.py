@@ -16,7 +16,7 @@ def evaluate_result(values):
     POTENTIAL_MISTAKE = 2
 
     TOL = 0.9
-    TOL_DEG = 0.7
+    TOL_DEG = 0.8
 
     value = np.mean(values)
     if value > TOL:
@@ -280,9 +280,8 @@ class MATERIAL:
         print(f'    Phase 1: {len(self.solved)}/{self.nbnd} Solved')
         print(f'    Initial clusters: {len(clusters)} Samples: {len(samples)}')
 
-        tol = 1
+        count = np.array([0, len(samples)])
         while len(samples) > 0:
-            count = np.array([0, len(samples)])
             evaluate_samples = np.zeros((len(samples), 2))
             for i_s, sample in enumerate(samples):
                 scores = np.zeros(len(clusters))
@@ -300,42 +299,21 @@ class MATERIAL:
                                                            self.connections)
                 evaluate_samples[i_s] = np.array([np.max(scores),
                                                   np.argmax(scores)])
-            arg_evaluate = np.argsort(evaluate_samples[:, 0])[::-1]
-            flag = True
-
-            samples = [samples[i_arg] for i_arg in arg_evaluate]
-            new_samples = []
-            i_arg = 0
-            while len(samples) > 0:
-                sample = samples.pop(0)
-                score, bn = evaluate_samples[arg_evaluate[i_arg]]
-                bn = int(bn)
-                if score < tol:
-                    new_samples.append(sample)
-                    new_samples += samples
-                    break
-                tol = score if score > tol else tol
-                i_arg += 1
-                flag = False
-                count[0] += 1
-                print(f'{tol}-{count[0]}/{count[1]} Sample corrected: {score}')
-                clusters[bn].join(sample)
-                if clusters[bn].N == self.nks:
-                    print('Cluster Solved')
-                    self.solved.append(clusters.pop(bn))
-
-            if flag:
-                tol -= 0.05
-                flag = True
-                count = np.array([0, len(samples)])
-
-            samples = new_samples
+            arg_max = np.argmax(evaluate_samples[:, 0])
+            sample = samples.pop(arg_max)
+            score, bn = evaluate_samples[arg_max]
+            bn = int(bn)
+            count[0] += 1
+            clusters[bn].join(sample)
+            print(f'{count[0]}/{count[1]} Sample corrected: {score}')
+            if clusters[bn].N == self.nks:
+                print('Cluster Solved')
+                self.solved.append(clusters.pop(bn))
 
         print(f'    Phase 2: {len(self.solved)}/{self.nbnd} Solved')
 
         if len(self.solved)/self.nbnd < 1:
             print(f'    New clusnters: {len(clusters)}', end='')
-            print(f'    New Samples: {len(new_samples)}')
 
         labels = np.empty(self.nks*self.nbnd, int)
         count = 0
@@ -348,13 +326,7 @@ class MATERIAL:
             labels[cluster.nodes] = count
             count += 1
 
-        for sample in new_samples:
-            sample.save_boundary(f'sample_{count}')
-            labels[sample.nodes] = count
-            count += 1
-
         self.clusters = clusters
-        self.samples = new_samples
 
         return labels
 
@@ -376,12 +348,12 @@ class MATERIAL:
             self.bands_final[solved.k_points, bn] = bands + self.min_band
 
             for k in solved.k_points:
-                bn1 = solved.bands_number[k]
+                bn1 = solved.bands_number[k] + self.min_band
                 connections = []
                 for i_neig, k_neig in enumerate(self.neighbors[k]):
                     if k_neig == -1:
                         continue
-                    bn2 = solved.bands_number[k_neig]
+                    bn2 = solved.bands_number[k_neig] + self.min_band
                     connections.append(self.connections[k, i_neig, bn1, bn2])
 
                 self.signal_final[k, bn] = evaluate_result(connections)
@@ -391,6 +363,9 @@ class MATERIAL:
             bn1 = d1 // self.nks + self.min_band
             k2 = d2 % self.nks
             bn2 = d2 // self.nks + self.min_band
+
+            bn1 = np.argmax(self.bands_final[k1]==bn1)
+            bn2 = np.argmax(self.bands_final[k2]==bn2)
 
             self.signal_final[k1, bn1] = DEGENERATE
             self.signal_final[k2, bn2] = DEGENERATE

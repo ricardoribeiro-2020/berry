@@ -17,6 +17,11 @@ from write_k_points import bands_numbers
 
 # pylint: disable=C0103
 ###################################################################################
+CORRECT = 4
+POTENTIAL_CORRECT = 3
+POTENTIAL_MISTAKE = 2
+DEGENERATE = 1
+ERROR = 0
 
 def func(aa, ddot):
     r1 = complex(ddot[0],ddot[1])*aa[0]*np.exp(1j*aa[1]) + complex(ddot[2],ddot[3])*np.sqrt(1 - aa[0]**2)*np.exp(1j*aa[2])
@@ -67,7 +72,7 @@ if __name__ == "__main__":
     print()
     print("     **********************")
     print("     Problems not solved")
-    kpproblem, bnproblem = np.where(signalfinal == -1)
+    kpproblem, bnproblem = np.where(signalfinal == DEGENERATE)
     machbandproblem = bandsfinal[kpproblem, bnproblem]
     if bnproblem.size > 0:
         while bnproblem[-1] > lastband:  # Consider just the ones below last band wanted
@@ -92,7 +97,7 @@ if __name__ == "__main__":
         for j in range(4):  # Find the neigbhors of the k-point to be used
             nk = d.neighbors[nk0, j]  # on interpolation
 #            print(j, nk, bnproblem[karray[i][0]])
-            if nk != -1 and signalfinal[nk,bnproblem[karray[i][0]]] > 0 and signalfinal[nk,bnproblem[karray[i][1]]] > 0:
+            if nk != -1 and signalfinal[nk,bnproblem[karray[i][0]]] > DEGENERATE and signalfinal[nk,bnproblem[karray[i][1]]] > DEGENERATE:
                 nb1 = machbandproblem[karray[i][0]]
                 nb2 = machbandproblem[karray[i][1]]
                 nkj = j
@@ -211,7 +216,7 @@ if __name__ == "__main__":
     #print("     Bands: gives the original band that belongs to new band (nk,nb)")
     for nb in range(lastband + 1):
         nk = -1
-        nrnotattrib[nb] = np.count_nonzero(bandsfinal[:, nb] == -2)
+        nrnotattrib[nb] = np.count_nonzero(bandsfinal[:, nb] == ERROR)
         print()
         print(
             "  New band "
@@ -222,48 +227,54 @@ if __name__ == "__main__":
         bands_numbers(d.nkx, d.nky, bandsfinal[:, nb])
     print()
     print(" Signaling")
-    nrsignal = np.full((d.nbnd, 7), -2, dtype=int)
+    nrsignal = np.zeros((d.nbnd, CORRECT+1), dtype=int)
     for nb in range(lastband + 1):
         nk = -1
-        nrsignal[nb, 0] = str(np.count_nonzero(signalfinal[:, nb] == -1))
-        nrsignal[nb, 1] = str(np.count_nonzero(signalfinal[:, nb] == 0))
-        nrsignal[nb, 2] = str(np.count_nonzero(signalfinal[:, nb] == 1))
-        nrsignal[nb, 3] = str(np.count_nonzero(signalfinal[:, nb] == 2))
-        nrsignal[nb, 4] = str(np.count_nonzero(signalfinal[:, nb] == 3))
-        nrsignal[nb, 5] = str(np.count_nonzero(signalfinal[:, nb] == 4))
-        nrsignal[nb, 6] = str(np.count_nonzero(signalfinal[:, nb] == 5))
+        for s in range(CORRECT+1):
+            nrsignal[nb, s] = str(np.count_nonzero(signalfinal[:, nb] == s))
+
         print()
         print(
             "     "
             + str(nb)
-            + "         -1: "
-            + str(nrsignal[nb, 0])
-            + "     0: "
-            + str(nrsignal[nb, 1])
+            + f"         {ERROR}: "
+            + str(nrsignal[nb, ERROR])
         )
         bands_numbers(d.nkx, d.nky, signalfinal[:, nb])
 
     print()
     print("     Resume of results")
     print()
-    print("     nr k-points not attributed to a band (bandfinal=-2)")
+    print(f"     nr k-points not attributed to a band (bandfinal={ERROR})")
     print("     Band       nr k-points")
     for nb in range(lastband + 1):
         print("     ", nb, "         ", nrnotattrib[nb])
 
     print()
     print("     Signaling")
-    print("     Band    -1    0    1    2    3    4    5")
+
+    signal_report = '    Bands | '
+    for signal in range(CORRECT+1):
+        n_spaces = len(str(np.max(nrsignal[:, signal])))-1
+        signal_report += ' '*n_spaces+str(signal) + '   '
+    
+    signal_report += '\n'+'-'*len(signal_report)
+
     for nb in range(lastband + 1):
-        print("      " + str(nb) + "   " + str(nrsignal[nb, :]))
+        f'\n    {nb}{" "*(4-len(str(nb)))} |' + ' '
+        for signal, value in enumerate(nrsignal):
+                n_max = len(str(np.max(nrsignal[:, signal])))
+                n_spaces = n_max - len(str(value))
+                signal_report += ' '*n_spaces+str(value) + '   '
+    print(signal_report)
 
     print()
 
     print("     Bands not usable (not completed)")
     for nb in range(lastband + 1):
-        if nrsignal[nb, 0] != 0:
+        if nrsignal[nb, ERROR] != 0:
             print(
-                "      band ", nb, "  failed attribution of ", nrsignal[nb, 0], " k-points"
+                "      band ", nb, "  failed attribution of ", nrsignal[nb, ], " k-points"
             )
         if nrsignal[nb, 1] != 0:
             print(
