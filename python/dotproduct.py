@@ -123,14 +123,14 @@ if __name__ == "__main__":
     dp = np.abs(dpc)
 
     # Save dot products to file
-    with open("dpc_pool.npy", "wb") as fich:
+    with open("dpc.npy", "wb") as fich:
         np.save(fich, dpc)
-    print("     Dot products saved to file dpc_pool.npy")
+    print("     Dot products saved to file dpc.npy")
 
     # Save dot products modulus to file
-    with open("dp_pool.npy", "wb") as fich:
+    with open("dp.npy", "wb") as fich:
         np.save(fich, dp)
-    print("     Dot products modulus saved to file dp_pool.npy")
+    print("     Dot products modulus saved to file dp.npy")
 
     ###################################################################################
     # Finished
