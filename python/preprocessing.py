@@ -341,7 +341,7 @@ if __name__ == "__main__":
     for l in range(NR3):
         for k in range(NR2):
             for i in range(NR1):
-                RPOINT[COUNT] = A1 * i / NR1 + A2 * j / NR2 + A3 * l / NR3
+                RPOINT[COUNT] = A1 * i / NR1 + A2 * k / NR2 + A3 * l / NR3
                 COUNT += 1
 
     PHASE = np.exp(1j * np.dot(RPOINT, np.transpose(KPOINTS)))
