@@ -2,7 +2,7 @@ This is a list of things to add or improve in the suite berry.
 No special order.
 
 1. Add suport for noncolinear calculations
-2. Implement paralelization in python code
+2. Implement paralelization in more python code
 3. Implement verification of initial conditions in each run
 4. Create a Makefile and improve instalation and configuration
 5. Add calculation of and properties derived from Berry curvature
