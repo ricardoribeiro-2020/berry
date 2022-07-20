@@ -444,9 +444,10 @@ class MATERIAL:
             bn1 = d1 // self.nks + self.min_band
             k2 = d2 % self.nks
             bn2 = d2 // self.nks + self.min_band
-
-            bn1 = np.argmax(self.bands_final[k1] == bn1)
-            bn2 = np.argmax(self.bands_final[k2] == bn2)
+            Bk1 = self.bands_final[k1] == bn1
+            Bk2 = self.bands_final[k2] == bn2
+            bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1
+            bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2
 
             self.signal_final[k1, bn1] = DEGENERATE
             self.signal_final[k2, bn2] = DEGENERATE
@@ -464,12 +465,12 @@ class MATERIAL:
             report = [np.sum(band_result == s) for s in range(MAX_SIGNAL+1)]
             bands_report.append(report)
 
-            final_report += f'\n  New Band: {bn}\tnr falis: {report[0]}\n'
+            print(f'\n  New Band: {bn}\tnr falis: {report[0]}')
             bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
 
         bands_report = np.array(bands_report)
-        final_report += '\n Signaling: how many events \
-                        in each band signaled.\n'
+        final_report += '\n Signaling: how many events ' + \
+                        'in each band signaled.\n'
         bands_header = '\n Band | '
 
         for signal in range(MAX_SIGNAL+1):
