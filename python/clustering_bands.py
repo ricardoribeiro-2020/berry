@@ -1,6 +1,5 @@
 """This module computes the band classification
 using the algorithm in clustering_libs.py
-
 """
 
 import sys
@@ -93,6 +92,9 @@ if __name__ == '__main__':
 
     with open('output/signalfinal.npy', 'wb') as f:
         np.save(f, material.signal_final)
+
+    with open('output/degeneratefinal.npy', 'wb') as f:
+        np.save(f, material.degenerate_final)
 
     material.print_report()
 

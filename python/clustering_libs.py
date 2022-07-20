@@ -7,10 +7,30 @@ import numpy as np
 import networkx as nx
 import os
 from scipy.ndimage import correlate
+from write_k_points import bands_numbers
 from multiprocessing import Process
 
 
 def evaluate_result(values):
+    '''
+    It function attributes the correspondent signal using
+    the dot product between each neighbor.
+
+    INPUT
+    values: It is an array that contains the dot product
+            between the k point and all neighbors.
+
+    C -> Mean connection of each k point
+
+    OUTPUT
+    Value :                              Description
+    0     :                        The point is not solved
+    1     :  DEGENERATE            It is a degenerate point.
+    2     :  POTENTIAL_MISTAKE     C <= 0.8
+    3     :  POTENTIAL_CORRECT     0.8 < C < 0.9
+    4     :  CORRECT               C >= 0.9
+    '''
+
     CORRECT = 4
     POTENTIAL_CORRECT = 3
     POTENTIAL_MISTAKE = 2
@@ -29,6 +49,10 @@ def evaluate_result(values):
 
 
 class MATERIAL:
+    '''
+    This object contains all information about the material that
+    It will be used to solve their bands' problem.
+    '''
     def __init__(self, nkx, nky, nbnd, nks, eigenvalues,
                  connections, neighbors, n_process=1):
         self.nkx = nkx
@@ -65,6 +89,27 @@ class MATERIAL:
                                       axis=1)
 
     def make_vectors(self, min_band=0, max_band=-1):
+        '''
+        It transforms the information into more convenient data structures.
+
+        INPUT
+        min_band: It is an integer that gives the minimum band that
+                  will be used for clustering.
+                  default: 0
+        max_band: It is an integer that gives the maximum band that
+                  will be used for clustering.
+                  default: All
+
+        RESULT
+        self.vectors: [kx_b, ky_b, E_b]
+            k = (kx, ky)_b: k point
+            b: band number
+        self.degenerados: It marks the degenerate points
+        self.GRPAH: It is a graph which each node represents a vector
+        self.energies: It contains the energy values for each band distributed
+                       in a matrix.
+        '''
+
         self.GRAPH = nx.Graph()
         self.min_band = min_band
         self.max_band = max_band
@@ -116,6 +161,19 @@ class MATERIAL:
         return neigh == j if neigh is not None else False
 
     def make_connections(self, tol=0.95):
+        '''
+        This function evaluates the connection between each k point,
+        and it adds an edge to the graph if its connection is greater
+        than a tolerance value (tol).
+
+        <i|j>: Dot product between i and j that represents its connection
+
+        INPUT
+        tol: It is the minimum connection value that will be accepted as
+             an edge.
+             default: 0.95
+        '''
+
         def connection_component(i_start, j_end, tol=0.95):
             V = self.vectors[i_start:j_end]
             edges = []
@@ -142,7 +200,7 @@ class MATERIAL:
                                                       bn1, bn2]  # <i|j>
                         '''
                         for each first neighbor
-                        Mij = 1 iff <i, j> ~ 1
+                        Edge(i,j) = 1 iff <i, j> ~ 1
                         '''
                         if connection > tol:
                             edges.append([i_, j_])
@@ -159,6 +217,11 @@ class MATERIAL:
         self.GRAPH.add_edges_from(edges)
 
         for d1, d2 in self.degenerados:
+            '''
+            The degenerate points may cause problems.
+            The algorithm below finds its problems and solves them.
+            '''
+
             if not self.find_path(d1, d2):
                 continue
             N1 = np.array(self.get_neigs(d1))
@@ -251,6 +314,18 @@ class MATERIAL:
         return result
 
     def get_components(self):
+        '''
+        The graph was constructed using the make_connections function then
+        it is possible to detect components well constructed.
+
+            - A component is denominated solved when it has all
+              k points attributed.
+            - A cluster is identified as a big component that can not
+              be joined with any other cluster.
+            - Otherwise, It is a sample that has to be grouped with
+              some cluster.
+        '''
+
         print('\n\nNumber of Components: ', end='')
         print(f'{nx.number_connected_components(self.GRAPH)}')
         self.components = [COMPONENT(self.GRAPH.subgraph(c),
@@ -262,7 +337,7 @@ class MATERIAL:
         self.solved = []
         clusters = []
         samples = []
-        for i_, i in enumerate(index_sorted):
+        for i in index_sorted:
             component = self.components[i]
             if component.N == self.nks:
                 self.solved.append(component)
@@ -331,8 +406,14 @@ class MATERIAL:
         return labels
 
     def obtain_output(self):
+        '''
+        This function prepares the final data structures
+        that are essential to other programs.
+        '''
+
         self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
         self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
+        self.degenerate_final = []
 
         DEGENERATE = 1
 
@@ -364,11 +445,15 @@ class MATERIAL:
             k2 = d2 % self.nks
             bn2 = d2 // self.nks + self.min_band
 
-            bn1 = np.argmax(self.bands_final[k1]==bn1)
-            bn2 = np.argmax(self.bands_final[k2]==bn2)
+            bn1 = np.argmax(self.bands_final[k1] == bn1)
+            bn2 = np.argmax(self.bands_final[k2] == bn2)
 
             self.signal_final[k1, bn1] = DEGENERATE
             self.signal_final[k2, bn2] = DEGENERATE
+
+            self.degenerate_final.append([k1, k2, bn1, bn2])
+
+        self.degenerate_final = np.array(self.degenerate_final)
 
     def print_report(self):
         MAX_SIGNAL = 4
@@ -380,11 +465,8 @@ class MATERIAL:
             bands_report.append(report)
 
             final_report += f'\n  New Band: {bn}\tnr falis: {report[0]}\n'
-            new_band = np.empty(self.matrix.shape, dtype=int)
-            index = self.kpoints_index
-            new_band[index[:, 0], index[:, 1]] = self.bands_final[:, bn]
-            for row in new_band:
-                final_report += '\n  '+'  '.join(map(str, row)) + '\n'
+            bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
+
         bands_report = np.array(bands_report)
         final_report += '\n Signaling: how many events \
                         in each band signaled.\n'
@@ -410,6 +492,11 @@ class MATERIAL:
 
 
 class COMPONENT:
+    '''
+    This object contains the information that constructs a component,
+    and also it has functions that are necessary to establish
+    relations between components.
+    '''
     def __init__(self, component: nx.Graph, kpoints_index, matrix):
         self.GRAPH = component
         self.N = self.GRAPH.number_of_nodes()
@@ -452,6 +539,11 @@ class COMPONENT:
         self.calc_boundary()
 
     def calc_boundary(self):
+        '''
+        To compare components only the boundary nodes are necessary,
+        therefore this function computes these important nodes.
+        '''
+
         if self.positions_matrix is None:
             self.calculate_pointsMatrix()
         Gx = np.array([[-1, 0, 1]]*3)
@@ -468,6 +560,26 @@ class COMPONENT:
 
     def get_cluster_score(self, cluster, min_band, max_band,
                           neighbors, energies, connections):
+        '''
+        This function returns the similarity between components taking
+        into account the dot product of all essential points and their
+        energy value.
+
+        INPUT
+        cluster: It is a component with will be computed the similarity.
+        min_band: It is an integer that gives the minimum band that
+                  will be used for clustering.
+        max_band: It is an integer that gives the maximum band that
+                  will be used for clustering.
+        neighbors: It is an array that identifies the neighbors of each k point
+        energies: It is an array of the energy values inside a matrix.
+        connections: It is an array with the dot product between k points
+                     and his neighbors.
+
+        OUTPUT
+        score: It is a float with the similarity between components.
+        '''
+
         score = 0
         for k in self.k_edges:
             bn1 = self.bands_number[k] + min_band
@@ -484,8 +596,6 @@ class COMPONENT:
                                      for bn in bands])
                 delta_energy = np.abs(Ei-energies[bn2, ik_n, jk_n])
                 energy_val = min_energy/delta_energy if delta_energy else 1
-                # print(f'    {bn1}-{bn2}: {connection} ', end='')
-                # print(f'{energy_val} = {0.3*connection + 0.7*energy_val}')
                 score += 0.5*connection + 0.5*energy_val
         score /= len(self.k_edges)*4
         return score
