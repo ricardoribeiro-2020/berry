@@ -90,9 +90,16 @@ if __name__ == "__main__":
     if NPR > os.cpu_count():
         print("Warning: Number of processors is greater than the number of available processors")
         print("Setting number of processors to the number of available processors")
+        NPR = os.cpu_count() // 2 # Hyperthreading is not considered
         if input("Do you want to continue? ([y]/n)? ") == "n":
             sys.exit(0)
-        NPR = int(os.cpu_count() / 2) # Hyperthreading is not considered
+    if NPR < 1:
+        print("Error: Number of processors must be greater than 0")
+        sys.exit(0)
+    if NPR > d.nks:
+        print("Warning: Number of processors is greater than the number of k-points")
+        if input("Should the number of processors be set to the number of k-points ([y]/n)? ") != "n":
+            NPR = d.nks
     SUFFIX = "" # Append to the output file name - for dubbuging purposes
     if "-o" in sys.argv:
         SUFFIX = sys.argv[sys.argv.index("-o") + 1]
