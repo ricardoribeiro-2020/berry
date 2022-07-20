@@ -84,7 +84,7 @@ if __name__ == "__main__":
         "nk_points": range(d.nks),
         "num_neibhors": range(4),  # TODO Fix Hardcoded value
     }
-    NPR = 20
+    NPR = d.npr
     if "-np" in sys.argv:
         NPR = int(sys.argv[sys.argv.index("-np") + 1])
     if NPR > os.cpu_count():
