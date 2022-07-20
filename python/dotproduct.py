@@ -6,10 +6,10 @@ from itertools import product
 from typing import Tuple, Optional
 from multiprocessing import Array, Pool
 
+import os
 import sys
 import time
 import ctypes
-import multiprocessing
 
 import numpy as np
 
@@ -34,7 +34,7 @@ def _connect(nk, j, neighbor, jNeighbor, dphase, band0, band1):
     dpc[neighbor, jNeighbor, band1, band0] = np.conjugate(dpc[nk, j, band0, band1])
 
 
-def pre_connection(nkconn, j, neighborconn, jNeighbor, dphaseconn):
+def connection(nkconn, j, neighborconn, jNeighbor, dphaseconn):
     """Calculates the dot product of all combinations of wfc in nkconn and neighborconn."""
     params = {
         "nkconn": (nkconn,),
@@ -46,11 +46,11 @@ def pre_connection(nkconn, j, neighborconn, jNeighbor, dphaseconn):
         "banda1": range(d.nbnd),
     }
 
-    with Pool(processes=min(d.nbnd, multiprocessing.cpu_count())) as pool:
+    with Pool(1) as pool: #TODO Add Some sort of logic behind the number of cores
         pool.starmap(_connect, product(*params.values()))
 
 
-def connection(
+def pre_connection(
     nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]
 ) -> None:
 
@@ -59,10 +59,10 @@ def connection(
     print("      Calculating   nk = " + str(nk) + "  neighbor = " + str(neighbor))
     sys.stdout.flush()
 
-    pre_connection(nk, j, neighbor, jNeighbor, dphase)
+    connection(nk, j, neighbor, jNeighbor, dphase)
 
 
-def _generate_pre_connection_args(
+def generate_pre_connection_args(
     nk: int, j: int
 ) -> Optional[Tuple[int, int, int, Tuple[np.ndarray]]]:
     """Generates the arguments for the pre_connection function."""
@@ -84,6 +84,18 @@ if __name__ == "__main__":
         "nk_points": range(d.nks),
         "num_neibhors": range(4),  # TODO Fix Hardcoded value
     }
+    NPR = 20
+    if "-np" in sys.argv:
+        NPR = int(sys.argv[sys.argv.index("-np") + 1])
+    if NPR > os.cpu_count():
+        print("Warning: Number of processors is greater than the number of available processors")
+        print("Setting number of processors to the number of available processors")
+        if input("Do you want to continue? ([y]/n)? ") == "n":
+            sys.exit(0)
+        NPR = int(os.cpu_count() / 2) # Hyperthreading is not considered
+    SUFFIX = "" # Append to the output file name - for dubbuging purposes
+    if "-o" in sys.argv:
+        SUFFIX = sys.argv[sys.argv.index("-o") + 1]
 
     # Reading data needed for the run
 
@@ -91,7 +103,7 @@ if __name__ == "__main__":
     print("     Directory where the wfc are:", d.wfcdirectory)
     print("     Total number of k-points:", d.nks)
     print("     Total number of points in real space:", d.nr)
-    print("     Number of processors to use", d.npr)
+    print("     Number of processors to use", NPR)
     print("     Number of bands:", d.nbnd)
     print()
     print("     Phases loaded")
@@ -109,28 +121,23 @@ if __name__ == "__main__":
     ##########################################################
 
     # Creating a list of tuples with the neighbors of each k-point
-    with NestablePool(d.npr) as pool:
-        pre_connection_args = (
-            filter(
-                None,
-                pool.starmap(
-                    _generate_pre_connection_args, product(*RUN_PARAMS.values())
-                ),
-            ),
-        )
-        pool.starmap(connection, pre_connection_args)
+    #! A Bigger Pool here seems to be better 
+    #TODO Add some sort of logic behind the number of cores
+    with NestablePool(NPR) as pool:
+        pre_connection_args = list(filter(None, pool.starmap(generate_pre_connection_args, product(*RUN_PARAMS.values()))))
+        pool.starmap(pre_connection, pre_connection_args)
 
     dp = np.abs(dpc)
 
     # Save dot products to file
-    with open("dpc.npy", "wb") as fich:
+    with open(f"dpc{SUFFIX}.npy", "wb") as fich:
         np.save(fich, dpc)
-    print("     Dot products saved to file dpc.npy")
+    print(f"     Dot products saved to file dpc{SUFFIX}.npy")
 
     # Save dot products modulus to file
-    with open("dp.npy", "wb") as fich:
+    with open(f"dp{SUFFIX}.npy", "wb") as fich:
         np.save(fich, dp)
-    print("     Dot products modulus saved to file dp.npy")
+    print(f"     Dot products modulus saved to file dp{SUFFIX}.npy")
 
     ###################################################################################
     # Finished
