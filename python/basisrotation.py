@@ -79,6 +79,8 @@ if __name__ == "__main__":
             bnproblem = bnproblem[:-1]
             kpproblem = kpproblem[:-1]
     machbandproblem = bandsfinal[kpproblem, bnproblem]
+    error_bands = machbandproblem == -1
+    machbandproblem[error_bands] = bnproblem[error_bands]
     print("      k-points", kpproblem)
     print("      in bands", bnproblem)
     print("      mach  bands", machbandproblem)
