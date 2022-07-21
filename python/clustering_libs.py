@@ -10,6 +10,12 @@ from scipy.ndimage import correlate
 from write_k_points import bands_numbers
 from multiprocessing import Process
 
+CORRECT = 5
+POTENTIAL_CORRECT = 4
+POTENTIAL_MISTAKE = 3
+DEGENERATE = 2
+MISTAKE = 1
+NOT_SOLVED = 0
 
 def evaluate_result(values):
     '''
@@ -28,15 +34,12 @@ def evaluate_result(values):
     1     :  DEGENERATE            It is a degenerate point.
     2     :  POTENTIAL_MISTAKE     C <= 0.8
     3     :  POTENTIAL_CORRECT     0.8 < C < 0.9
-    4     :  CORRECT               C >= 0.9
+    4     :  CORRECT               C > 0.9
     '''
-
-    CORRECT = 4
-    POTENTIAL_CORRECT = 3
-    POTENTIAL_MISTAKE = 2
 
     TOL = 0.9
     TOL_DEG = 0.8
+    TOL_MIN = 0.2
 
     value = np.mean(values)
     if value > TOL:
@@ -45,8 +48,10 @@ def evaluate_result(values):
     if value > TOL_DEG:
         return POTENTIAL_CORRECT
 
-    return POTENTIAL_MISTAKE
+    if value > TOL_MIN and value < TOL_DEG:
+        return POTENTIAL_MISTAKE
 
+    return MISTAKE
 
 class MATERIAL:
     '''
@@ -415,15 +420,13 @@ class MATERIAL:
         self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
         self.degenerate_final = []
 
-        DEGENERATE = 1
-
         solved_bands = []
         for solved in self.solved:
             bands = solved.get_bands()
             bn = solved.bands[0] + self.min_band
             solved.bands = solved.bands[1:]
             while bn in solved_bands:
-                bn = solved.bands[0]
+                bn = solved.bands[0] + self.min_band
                 solved.bands = solved.bands[1:]
             solved_bands.append(bn)
             self.bands_final[solved.k_points, bn] = bands + self.min_band
@@ -438,6 +441,36 @@ class MATERIAL:
                     connections.append(self.connections[k, i_neig, bn1, bn2])
 
                 self.signal_final[k, bn] = evaluate_result(connections)
+        
+        clusters_sort = np.argsort([c.N for c in self.clusters])
+        self.clusters = self.clusters[clusters_sort[::-1]]
+        for cluster in self.clusters:
+            bands = cluster.get_bands()
+            bn = cluster.bands[0] + self.min_band
+            cluster.bands = cluster.bands[1:]
+            while bn in solved_bands and len(cluster.bands) > 0:
+                bn = cluster.bands[0] + self.min_band
+                cluster.bands = cluster.bands[1:]
+
+            if bn in solved_bands and len(cluster.bands) == 0:
+                break
+
+            solved_bands.append(bn)
+            self.bands_final[cluster.k_points, bn] = bands + self.min_band
+            for k in cluster.k_points:
+                bn1 = cluster.bands_number[k] + self.min_band
+                connections = []
+                for i_neig, k_neig in enumerate(self.neighbors[k]):
+                    if k_neig == -1:
+                        continue
+                    if k_neig not in cluster.k_points:
+                        connections.append(0)
+                        continue
+                    bn2 = cluster.bands_number[k_neig] + self.min_band
+                    connections.append(self.connections[k, i_neig, bn1, bn2])
+
+                self.signal_final[k, bn] = evaluate_result(connections)
+
 
         for d1, d2 in self.degenerados:
             k1 = d1 % self.nks
