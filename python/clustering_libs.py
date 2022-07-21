@@ -441,10 +441,10 @@ class MATERIAL:
                     connections.append(self.connections[k, i_neig, bn1, bn2])
 
                 self.signal_final[k, bn] = evaluate_result(connections)
-        
+
         clusters_sort = np.argsort([c.N for c in self.clusters])
-        self.clusters = self.clusters[clusters_sort[::-1]]
-        for cluster in self.clusters:
+        for i_arg in clusters_sort[::-1]:
+            cluster = self.clusters[i_arg]
             bands = cluster.get_bands()
             bn = cluster.bands[0] + self.min_band
             cluster.bands = cluster.bands[1:]
