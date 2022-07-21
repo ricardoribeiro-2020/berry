@@ -490,12 +490,11 @@ class MATERIAL:
         self.degenerate_final = np.array(self.degenerate_final)
 
     def print_report(self):
-        MAX_SIGNAL = 4
         final_report = '\t====== FINAL REPORT ======\n\n'
         bands_report = []
         for bn in range(self.min_band, self.min_band+self.nbnd):
             band_result = self.signal_final[:, bn]
-            report = [np.sum(band_result == s) for s in range(MAX_SIGNAL+1)]
+            report = [np.sum(band_result == s) for s in range(CORRECT+1)]
             bands_report.append(report)
 
             print(f'\n  New Band: {bn}\tnr falis: {report[0]}')
@@ -506,7 +505,7 @@ class MATERIAL:
                         'in each band signaled.\n'
         bands_header = '\n Band | '
 
-        for signal in range(MAX_SIGNAL+1):
+        for signal in range(CORRECT+1):
             n_spaces = len(str(np.max(bands_report[:, signal])))-1
             bands_header += ' '*n_spaces+str(signal) + '   '
 
