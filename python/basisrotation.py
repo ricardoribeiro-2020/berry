@@ -148,7 +148,7 @@ if __name__ == "__main__":
         psinewB = np.zeros((int(d.nr)), dtype=complex)
         psi1 = np.zeros((int(d.nr)), dtype=complex)
         psi2 = np.zeros((int(d.nr)), dtype=complex)
-        d.wfcdirectory = "/home/ricardo/local/teste_minimization/wfc/"
+
         infile = (
             d.wfcdirectory
             + "k0"
