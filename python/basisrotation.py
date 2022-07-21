@@ -218,7 +218,7 @@ if __name__ == "__main__":
     #print("     Bands: gives the original band that belongs to new band (nk,nb)")
     for nb in range(lastband + 1):
         nk = -1
-        nrnotattrib[nb] = np.count_nonzero(bandsfinal[:, nb] == ERROR)
+        nrnotattrib[nb] = np.count_nonzero(signalfinal[:, nb] == ERROR)
         print()
         print(
             "  New band "
@@ -233,7 +233,7 @@ if __name__ == "__main__":
     for nb in range(lastband + 1):
         nk = -1
         for s in range(CORRECT+1):
-            nrsignal[nb, s] = str(np.count_nonzero(signalfinal[:, nb] == s))
+            nrsignal[nb, s] = np.count_nonzero(signalfinal[:, nb] == s)
 
         print()
         print(
