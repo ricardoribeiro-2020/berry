@@ -19,7 +19,7 @@ NOT_SOLVED = 0
 
 def evaluate_result(values):
     '''
-    It function attributes the correspondent signal using
+    This function attributes the correspondent signal using
     the dot product between each neighbor.
 
     INPUT
@@ -31,10 +31,11 @@ def evaluate_result(values):
     OUTPUT
     Value :                              Description
     0     :                        The point is not solved
-    1     :  DEGENERATE            It is a degenerate point.
-    2     :  POTENTIAL_MISTAKE     C <= 0.8
-    3     :  POTENTIAL_CORRECT     0.8 < C < 0.9
-    4     :  CORRECT               C > 0.9
+    1     :  MISTAKE               c <= 0.2
+    2     :  DEGENERATE            It is a degenerate point.
+    3     :  POTENTIAL_MISTAKE     C <= 0.8
+    4     :  POTENTIAL_CORRECT     0.8 < C < 0.9
+    5     :  CORRECT               C > 0.9
     '''
 
     TOL = 0.9
@@ -56,7 +57,7 @@ def evaluate_result(values):
 class MATERIAL:
     '''
     This object contains all information about the material that
-    It will be used to solve their bands' problem.
+    will be used to solve their bands' problem.
     '''
     def __init__(self, nkx, nky, nbnd, nks, eigenvalues,
                  connections, neighbors, n_process=1):
@@ -98,11 +99,9 @@ class MATERIAL:
         It transforms the information into more convenient data structures.
 
         INPUT
-        min_band: It is an integer that gives the minimum band that
-                  will be used for clustering.
+        min_band: An integer that gives the minimum band that clustering will use.
                   default: 0
-        max_band: It is an integer that gives the maximum band that
-                  will be used for clustering.
+        max_band: An integer that gives the maximum band that clustering will use.
                   default: All
 
         RESULT
@@ -110,7 +109,7 @@ class MATERIAL:
             k = (kx, ky)_b: k point
             b: band number
         self.degenerados: It marks the degenerate points
-        self.GRPAH: It is a graph which each node represents a vector
+        self.GRPAH: It is a graph in which each node represents a vector.
         self.energies: It contains the energy values for each band distributed
                        in a matrix.
         '''
@@ -168,10 +167,10 @@ class MATERIAL:
     def make_connections(self, tol=0.95):
         '''
         This function evaluates the connection between each k point,
-        and it adds an edge to the graph if its connection is greater
+        and adds an edge to the graph if its connection is greater
         than a tolerance value (tol).
 
-        <i|j>: Dot product between i and j that represents its connection
+        <i|j>: The dot product between i and j represents its connection
 
         INPUT
         tol: It is the minimum connection value that will be accepted as
@@ -320,13 +319,13 @@ class MATERIAL:
 
     def get_components(self):
         '''
-        The graph was constructed using the make_connections function then
-        it is possible to detect components well constructed.
+        The make_connections function constructs the graph, in which
+        it can detect components well constructed.
 
             - A component is denominated solved when it has all
               k points attributed.
-            - A cluster is identified as a big component that can not
-              be joined with any other cluster.
+            - A cluster is a significant component that can not join
+              with any other cluster.
             - Otherwise, It is a sample that has to be grouped with
               some cluster.
         '''
@@ -573,8 +572,8 @@ class COMPONENT:
 
     def calc_boundary(self):
         '''
-        To compare components only the boundary nodes are necessary,
-        therefore this function computes these important nodes.
+        Only the boundary nodes are necessary. Therefore this function computes
+        these essential nodes and uses them to compare components.
         '''
 
         if self.positions_matrix is None:
@@ -599,18 +598,16 @@ class COMPONENT:
         energy value.
 
         INPUT
-        cluster: It is a component with will be computed the similarity.
-        min_band: It is an integer that gives the minimum band that
-                  will be used for clustering.
-        max_band: It is an integer that gives the maximum band that
-                  will be used for clustering.
-        neighbors: It is an array that identifies the neighbors of each k point
+        cluster: It is a component with which the similarity is calculated.
+        min_band: It is an integer that gives the minimum band used for clustering.
+        max_band: It is an integer that gives the maximum band used for clustering.
+        neighbors: It is an array that identifies the neighbors of each k point.
         energies: It is an array of the energy values inside a matrix.
         connections: It is an array with the dot product between k points
                      and his neighbors.
 
         OUTPUT
-        score: It is a float with the similarity between components.
+        score: It is a float that represents the similarity between components.
         '''
 
         score = 0

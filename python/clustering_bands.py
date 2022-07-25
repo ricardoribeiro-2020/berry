@@ -13,14 +13,17 @@ from headerfooter import header, footer
 from clustering_libs import MATERIAL
 
 N_PROCESS = os.cpu_count()
+TOL = 0.95
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
-        opts, args = getopt.getopt(sys.argv[1:], "n:")
+        opts, args = getopt.getopt(sys.argv[1:], "n:t:")
         if len(opts) > 0:
             for opt, arg in opts:
                 if opt == '-n':
                     N_PROCESS = int(arg)
+                if opt == '-t':
+                    TOL = float(arg)
     else:
         args = []
 
@@ -28,11 +31,19 @@ if __name__ == '__main__':
 
     STARTTIME = time.time()
 
-    bands = [int(v) for v in args] if len(args) > 0 else [0, d.nbnd-1]
+    try:
+        bands = [0, int(args)] if len(args) == 1 else None
+        bands = [int(v) for v in args] if len(args) == 2 else [0, d.nbnd-1]
+    except:
+        bands = [0, d.nbnd-1]
+        print(f'Warning: The arguments given do not correspond to the expected.\
+             \n          The program will use the default settings. BANDS: 0-{d.nbnd-1}')
+
     min_band, max_band = bands
     n_bands = max_band-min_band+1
 
     print(f'     Min band: {min_band}    Max band: {max_band}')
+    print(f'     Tolerance: {TOL}')
     print(f'     Number of CPUs: {N_PROCESS}\n')
 
     print("     Unique reference of run:", d.refname)
@@ -61,7 +72,7 @@ if __name__ == '__main__':
 
     print('  Calculating Connections Matrix', end=': ')
     init_time = time.time()
-    material.make_connections()
+    material.make_connections(tol=TOL)
     print(f'{contatempo.tempo(init_time, time.time())}')
 
     material.clear_temp()
@@ -80,7 +91,7 @@ if __name__ == '__main__':
         np.save(f, material.vectors)
         np.save(f, labels)
 
-    print('Clustering Done')
+    print('Clustering Done\n')
 
     print('    Computing bandsfinal', end=': ')
     init_time = time.time()

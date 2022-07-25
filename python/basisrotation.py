@@ -264,7 +264,7 @@ if __name__ == "__main__":
     signal_report += '\n'+'-'*len(signal_report)
 
     for nb in range(lastband + 1):
-        signal_report += f'\n     {nb}{" "*(4-len(str(nb)))} |' + ' \n'
+        signal_report += f'\n     {nb}{" "*(4-len(str(nb)))} |' + ' '
         for signal, value in enumerate(nrsignal[nb]):
                 n_max = len(str(np.max(nrsignal[:, signal])))
                 n_spaces = n_max - len(str(value))
@@ -285,7 +285,7 @@ if __name__ == "__main__":
             )
         if nrsignal[nb, POTENTIAL_MISTAKE] != 0:
             print(
-                "      band ", nb, "  signals 0 in", nrsignal[nb, POTENTIAL_MISTAKE], " k-points"
+                "      band ", nb, f"  signals {POTENTIAL_MISTAKE} in", nrsignal[nb, POTENTIAL_MISTAKE], " k-points"
             )
     print()
 
