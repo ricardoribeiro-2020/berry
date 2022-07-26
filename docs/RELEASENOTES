@@ -1,5 +1,9 @@
 RELEASE NOTES for berry v.0.3.1
 
+New in 0.3.2 version:
+
+- dotproduct.py was not running, now is corrected
+
 New in 0.3.1 version:
 
 - Serious bug corrected in the script preprocessing.py
