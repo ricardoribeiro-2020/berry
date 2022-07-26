@@ -12,15 +12,16 @@ import loaddata as d
 from headerfooter import header, footer
 from clustering_libs import MATERIAL
 
-N_PROCESS = os.cpu_count()
+N_PROCESS = d.npr
 TOL = 0.95
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
-        opts, args = getopt.getopt(sys.argv[1:], "n:t:")
+        opts, args = getopt.getopt(sys.argv[1:], "n:t:", ["np ="])
+        print(args)
         if len(opts) > 0:
             for opt, arg in opts:
-                if opt == '-n':
+                if opt in ['-n', '--np', '--np ']:
                     N_PROCESS = int(arg)
                 if opt == '-t':
                     TOL = float(arg)
@@ -32,12 +33,15 @@ if __name__ == '__main__':
     STARTTIME = time.time()
 
     try:
-        bands = [0, int(args)] if len(args) == 1 else None
-        bands = [int(v) for v in args] if len(args) == 2 else [0, d.nbnd-1]
-    except:
+        bands = [0, int(args[0])] if len(args) == 1 else \
+                [int(v) for v in args] if len(args) == 2 else [0, d.nbnd-1]
+    except Exception:
         bands = [0, d.nbnd-1]
-        print(f'Warning: The arguments given do not correspond to the expected.\
-             \n          The program will use the default settings. BANDS: 0-{d.nbnd-1}')
+        warning_msg = 'WARNING: The arguments given do not correspond'\
+                      + ' to the expected.'\
+                      + '\n\tThe program will use the default settings.'\
+                      + f'BANDS: 0-{d.nbnd-1}'
+        print(warning_msg)
 
     min_band, max_band = bands
     n_bands = max_band-min_band+1

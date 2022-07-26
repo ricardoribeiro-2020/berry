@@ -17,6 +17,7 @@ DEGENERATE = 2
 MISTAKE = 1
 NOT_SOLVED = 0
 
+
 def evaluate_result(values):
     '''
     This function attributes the correspondent signal using
@@ -53,6 +54,7 @@ def evaluate_result(values):
         return POTENTIAL_MISTAKE
 
     return MISTAKE
+
 
 class MATERIAL:
     '''
@@ -401,7 +403,7 @@ class MATERIAL:
             count += 1
 
         for cluster in clusters:
-            cluster.save_boundary(f'cluster_{count}')
+            # cluster.save_boundary(f'cluster_{count}') # Used for analysis
             labels[cluster.nodes] = count
             count += 1
 
@@ -469,7 +471,6 @@ class MATERIAL:
                     connections.append(self.connections[k, i_neig, bn1, bn2])
 
                 self.signal_final[k, bn] = evaluate_result(connections)
-
 
         for d1, d2 in self.degenerados:
             k1 = d1 % self.nks
