@@ -1,5 +1,16 @@
 """This module computes the band classification
 using the algorithm in clustering_libs.py
+
+python clustering_bands.py
+
+Some flags are permitted.
+    -n: set the number of CPUs
+    -t: set the tolerance
+
+Finally, It is possible to choose the group of bands
+to be solved given into the arguments the maximum band
+or the interval of minimum and maximum band.
+The default uses all bands.
 """
 
 import sys
