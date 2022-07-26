@@ -8,6 +8,7 @@ import sys
 import time
 import numpy as np
 from findiff import Gradient
+from NestablePool import NestablePool
 
 import joblib
 
@@ -18,6 +19,79 @@ import loaddata as d
 
 # pylint: disable=C0103
 ###################################################################################
+def func_name(banda):
+    wfct_k = np.zeros((d.nr, d.nks), dtype=complex)
+    print(
+        "     Reading wfcs of band ",
+        str(banda),
+        "from files.   ",
+        inter_time(time.time() - STARTTIME)
+    )
+    for kp in range(d.nks):
+        if (
+            signalfinal[kp, banda] == -1
+        ):  # if its a signaled wfc, choose interpolated
+            infile = (
+                d.wfcdirectory
+                + "/k0"
+                + str(kp)
+                + "b0"
+                + str(bandsfinal[kp, banda])
+                + ".wfc1"
+            )
+        else:  # else choose original
+            infile = (
+                d.wfcdirectory
+                + "/k0"
+                + str(kp)
+                + "b0"
+                + str(bandsfinal[kp, banda])
+                + ".wfc"
+            )
+        wfct_k[:, kp] = np.load(infile)
+    print(
+        "     Finished reading wfcs of band ",
+        str(banda),
+        "from files.   ",
+        inter_time(time.time() - STARTTIME)
+    )
+    sys.stdout.flush()
+
+    wfcpos = {}  # Dictionary with wfc for all points
+    wfcgra = {}  # Dictionary with wfc gradients for all points
+
+    wfcpos = {
+        posi: d.phase[posi, d.ijltonk[:, :, 0]] * wfct_k[posi, d.ijltonk[:, :, 0]]
+        for posi in range(d.nr)
+    }
+    wfcgra = {posi: grad(wfcpos[posi]) for posi in range(d.nr)}
+    #    for posi in range(d.nr):
+    #      wfcpos[posi] = d.phase[posi,d.ijltonk[:,:,0]]*wfct_k[posi,d.ijltonk[:,:,0]]
+
+    #      wfcgra[posi] = grad(wfcpos[posi])                  # Complex gradient
+
+    BANDSR[banda] = wfcpos  # add to dictionary
+    BANDSG[banda] = wfcgra
+
+    print(
+        "     Saving band ",
+        str(banda),
+        "        ",
+        inter_time(time.time() - STARTTIME)
+    )
+
+    # Saving files
+    joblib.dump(wfcpos, "./wfcpos" + str(banda) + ".gz", compress=3)
+    joblib.dump(wfcgra, "./wfcgra" + str(banda) + ".gz", compress=3)
+
+    print(
+        "     Saved band ",
+        str(banda),
+        "        ",
+        inter_time(time.time() - STARTTIME)
+    )
+    sys.stdout.flush()
+
 if __name__ == "__main__":
     header("R2K", d.version, time.asctime())
 
@@ -42,6 +116,7 @@ if __name__ == "__main__":
             " to",
             NBNDMAX - 1,
         )
+    NPR = min(NBNDMAX - NBNDMIN, d.npr)
 
     # Reading data needed for the run
 
@@ -50,7 +125,7 @@ if __name__ == "__main__":
     print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
     print("     Total number of k-points:", d.nks)
     print("     Total number of points in real space:", d.nr)
-    print("     Number of processors to use", d.npr)
+    print("     Number of processors to use", NPR)
     print("     Number of bands:", d.nbnd)
     print("     k-points step, dk", d.step)  # Defines the step for gradient calculation
     print()
@@ -80,64 +155,8 @@ if __name__ == "__main__":
     BANDSR = {}  # Dictionary with wfc for all points and bands
     BANDSG = {}  # Dictionary with wfc gradients for all points and bands
 
-    for banda in range(NBNDMIN, NBNDMAX):  # For each band
-        wfct_k = np.zeros((d.nr, d.nks), dtype=complex)
-        for kp in range(d.nks):
-            if (
-                signalfinal[kp, banda] == -1
-            ):  # if its a signaled wfc, choose interpolated
-                infile = (
-                    d.wfcdirectory
-                    + "/k0"
-                    + str(kp)
-                    + "b0"
-                    + str(bandsfinal[kp, banda])
-                    + ".wfc1"
-                )
-            else:  # else choose original
-                infile = (
-                    d.wfcdirectory
-                    + "/k0"
-                    + str(kp)
-                    + "b0"
-                    + str(bandsfinal[kp, banda])
-                    + ".wfc"
-                )
-            wfct_k[:, kp] = np.load(infile)
-        print(
-            "     Finished reading wfcs of band ",
-            str(banda),
-            "from files.   ",
-            inter_time(time.time() - STARTTIME)
-        )
-        sys.stdout.flush()
-
-        wfcpos = {}  # Dictionary with wfc for all points
-        wfcgra = {}  # Dictionary with wfc gradients for all points
-
-        wfcpos = {
-            posi: d.phase[posi, d.ijltonk[:, :, 0]] * wfct_k[posi, d.ijltonk[:, :, 0]]
-            for posi in range(d.nr)
-        }
-        wfcgra = {posi: grad(wfcpos[posi]) for posi in range(d.nr)}
-        #    for posi in range(d.nr):
-        #      wfcpos[posi] = d.phase[posi,d.ijltonk[:,:,0]]*wfct_k[posi,d.ijltonk[:,:,0]]
-
-        #      wfcgra[posi] = grad(wfcpos[posi])                  # Complex gradient
-
-        BANDSR[banda] = wfcpos  # add to dictionary
-        BANDSG[banda] = wfcgra
-        print(
-            "     Finished band ",
-            str(banda),
-            "        ",
-            inter_time(time.time() - STARTTIME)
-        )
-        sys.stdout.flush()
-
-        # Saving files
-        joblib.dump(wfcpos, "./wfcpos" + str(banda) + ".gz", compress=3)
-        joblib.dump(wfcgra, "./wfcgra" + str(banda) + ".gz", compress=3)
+    with NestablePool(processes=NPR) as pool:
+        pool.map(func_name, range(NBNDMIN, NBNDMAX))
 
     sys.stdout.flush()
 
