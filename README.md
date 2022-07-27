@@ -1,7 +1,7 @@
+# berry
 <h1 align="center">
 <img src="/docs/figures/BerryLogo.svg" width="300">
 </h1><br>
-# berry
 
 This project extracts the Bloch wavefunctions from DFT calculations in an ordered way so they can be directly used to make calculations.
 
