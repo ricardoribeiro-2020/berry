@@ -1,6 +1,6 @@
 # berry
 <h2 align="center">
-<img src="/docs/figures/BerryLogo.svg" width="300">
+<img src="/docs/figures/BerryLogo.svg" width="200">
 </h2><br>
 
 Berry extracts the Bloch wavefunctions from DFT calculations in an ordered way so they can be directly used to make calculations.
