@@ -2,10 +2,29 @@
 
 # pylint: disable=C0103
 
+BERRY_LOGO = '''
+                     .     .=*=             .     .
+                     .      #@%:        ...       .
+                     .           .    ..          .
+                      .           +++:           . 
+                       .        ==+=+++=        .  
+                        ..   .-++======++=.    .   
+                          . .*=++=====++=++- .     
+                           *=+*@#.===+@%:==++      
+                          .-=++++=====+*=++: .     
+                        ..   -+++======*==     .   
+                       .       :+++==*==        .  
+                      .           =+++           . 
+                     .           .    .           .
+                     .        ..        .#@#.     .
+
+'''
+
 def header(title, version, time):
     """ Header that appears in the output of the programas."""
 
     print()
+    print(BERRY_LOGO)
     print("     Program " + title + " " + version + " starts on " + time)
     print()
     print("     This program is part of the open-source BERRY suite.")
