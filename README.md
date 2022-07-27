@@ -3,7 +3,7 @@
 <img src="/docs/figures/BerryLogo.svg" width="150">
 </h2><br>
 
-Berry extracts the Bloch wavefunctions from DFT calculations in an ordered way so they can be directly used to make calculations.
+**Berry** extracts the Bloch wavefunctions from DFT calculations in an ordered way so they can be directly used to make calculations.
 
 It retrieves the wavefunctions and their gradients in reciprocal space totally ordered by unentangled bands, where continuity applies.
 
@@ -17,4 +17,6 @@ It still can only be used with 2D materials and with DFT suite Quantum Espresso.
 
 It is expected that this software will evolve with many more possibilities in the near future.
 The list of TODOs is already large.
+
+- **Source code:** https://github.com/berry
 
