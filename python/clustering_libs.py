@@ -380,12 +380,15 @@ class MATERIAL:
                                                            self.connections)
                 evaluate_samples[i_s] = np.array([np.max(scores),
                                                   np.argmax(scores)])
+            for cluster in clusters:
+                cluster.was_modified = False
             arg_max = np.argmax(evaluate_samples[:, 0])
             sample = samples.pop(arg_max)
             score, bn = evaluate_samples[arg_max]
             bn = int(bn)
             count[0] += 1
             clusters[bn].join(sample)
+            clusters[bn].was_modified = True
             print(f'{count[0]}/{count[1]} Sample corrected: {score}')
             if clusters[bn].N == self.nks:
                 print('Cluster Solved')
@@ -540,6 +543,10 @@ class COMPONENT:
         self.positions_matrix = None
         self.nodes = np.array(self.GRAPH.nodes)
 
+        self.__id__ = str(self.nodes[0])
+        self.was_modified = False
+        self.scores = {}
+
     def calculate_pointsMatrix(self):
         self.positions_matrix = np.zeros(self.m_shape, int)
         index_points = self.kpoints_index[self.nodes % self.nks]
@@ -563,6 +570,8 @@ class COMPONENT:
         return (component.N <= self.nks - self.N and N == self.N+component.N)
 
     def join(self, component):
+        del component.scores
+        self.was_modified = True
         G = nx.Graph(self.GRAPH)
         G.add_nodes_from(component.GRAPH)
         self.GRAPH = G
@@ -610,7 +619,10 @@ class COMPONENT:
         OUTPUT
         score: It is a float that represents the similarity between components.
         '''
-
+        if not cluster.was_modified:
+            return self.scores[cluster.__id__]
+        
+        cluster.was_modified = False
         score = 0
         for k in self.k_edges:
             bn1 = self.bands_number[k] + min_band
@@ -629,6 +641,7 @@ class COMPONENT:
                 energy_val = min_energy/delta_energy if delta_energy else 1
                 score += 0.5*connection + 0.5*energy_val
         score /= len(self.k_edges)*4
+        self.scores[cluster.__id__] = score
         return score
 
     def save_boundary(self, filename):
