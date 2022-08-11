@@ -2,11 +2,13 @@
 # This program calculates the Berry curvature
 """
 
+from multiprocessing import Pool, Array
+
 import sys
 import time
+import ctypes
 
 import numpy as np
-import joblib
 
 # This are the subroutines and functions
 from contatempo import tempo, inter_time
@@ -15,76 +17,52 @@ import loaddata as d
 
 # pylint: disable=C0103
 ###################################################################################
-def berry_curv(gradwfc00, gradwfc11):
+def berry_curv(band0, band1):
     """Calculates the Berry curvature."""
 
-    # Reading data needed for the run
-    print()
-    print(
-        "     Reading files ./wfcpos"
-        + str(gradwfc00)
-        + ".gz and ./wfcgra"
-        + str(gradwfc11)
-        + ".gz"
-    )
-    wfcgra0 = joblib.load("./wfcgra" + str(gradwfc00) + ".gz")
-    wfcgra1 = joblib.load("./wfcgra" + str(gradwfc11) + ".gz")
+    if band0 != band1:
+        wfcgra1 = np.load("./wfcgra" + str(band1) + ".npy", mmap_mode="r")
+    else:
+        wfcgra1 = wfcgra
 
-    print(
-        "     Finished reading data ",
-        str(gradwfc00),
-        " and ",
-        str(gradwfc11),
-        "         "
-        + inter_time(time.time() - STARTTIME)
-    )
-    sys.stdout.flush()
-    #  sys.exit("Stop")
-
-    ### Finished reading data
-    # Calculation of the Berry curvature
-    berry_curvature = np.zeros(wfcgra0[0].shape, dtype=complex)
+    berry_curvature = np.zeros(wfcgra[0].shape, dtype=complex)
 
     for posi in range(d.nr):
         berry_curvature += (
-            1j * wfcgra0[posi][0] * wfcgra1[posi][1].conj()
-            - 1j * wfcgra0[posi][1] * wfcgra1[posi][0].conj()
+            1j * wfcgra[posi][0] * wfcgra1[posi][1].conj()
+            - 1j * wfcgra[posi][1] * wfcgra1[posi][0].conj()
         )
     ##  we are assuming that normalization is \sum |\psi|^2 = 1
     ##  if not, needs division by d.nr
     berry_curvature /= d.nr
+    print("          Finished curvature for index " + str(band1), inter_time(time.time() - STARTTIME)); sys.stdout.flush()
 
-    print(
-        "     Finished calculating Berry curvature for index "
-        + str(gradwfc00)
-        + "  "
-        + str(gradwfc11)
-        + ".\
-           \n     Saving results to file   "
-        + inter_time(time.time() - STARTTIME)
-    )
-    sys.stdout.flush()
+    filename = "./berry_curvature" + str(band0) + "-" + str(band1) + ".npy"
 
-    filename = "./berry_curvature" + str(gradwfc00) + "-" + str(gradwfc11)
-    # output units of Berry curvature is none
-
-    joblib.dump(berry_curvature, filename + ".gz", compress=3)
-
+    np.save(filename, berry_curvature)
 
 ###################################################################################
 if __name__ == "__main__":
     header("BERRY CURVATURE", d.version, time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
+    NUM_BANDS = int(sys.argv[1])
+    GRA_SIZE = d.nr * 2 * d.nkx * d.nky
+    GRA_SHAPE = (d.nr, 2, d.nkx, d.nky)
 
     if len(sys.argv) == 2:
         print(
             "     Will calculate all combinations of bands from 0 up to "
-            + str(sys.argv[1])
+            + str(NUM_BANDS)
         )
-        for gradwfc0 in range(int(sys.argv[1]) + 1):
-            for gradwfc1 in range(int(sys.argv[1]) + 1):
-                berry_curv(gradwfc0, gradwfc1)
+        for gradwfc0 in range(NUM_BANDS + 1):
+            gra_base = Array(ctypes.c_double, 2 * GRA_SIZE, lock=False)
+            wfcgra = np.frombuffer(gra_base, dtype=complex).reshape(GRA_SHAPE)
+            wfcgra = np.load("./wfcgra" + str(gradwfc0) + ".npy")
+
+            print("     Calculating Berry curvature for band ", str(gradwfc0)); sys.stdout.flush()
+            with Pool(NUM_BANDS) as pool:
+                pool.starmap(berry_curv, [(gradwfc0, gradwfc1) for gradwfc1 in range(NUM_BANDS + 1)])
 
     elif len(sys.argv) == 3:
         print(

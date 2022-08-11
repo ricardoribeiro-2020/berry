@@ -1,9 +1,11 @@
 """
  This program calculates the Berry connections
 """
+from multiprocessing import Pool, Array
 
 import sys
 import time
+import ctypes
 
 import numpy as np
 import joblib
@@ -15,33 +17,12 @@ import loaddata as d
 
 # pylint: disable=C0103
 ###################################################################################
-def berry_connect(bandwfc0, gradwfc0):
+def berry_connect(band0, band1):
     """Calculates the Berry connection."""
 
-    # Reading data needed for the run
-    print()
-    print(
-        "     Reading files ./wfcpos"
-        + str(bandwfc0)
-        + ".gz and ./wfcgra"
-        + str(gradwfc0)
-        + ".gz"
-    )
-    wfcpos = joblib.load("./wfcpos" + str(bandwfc0) + ".gz")
-    wfcgra = joblib.load("./wfcgra" + str(gradwfc0) + ".gz")
+    ### Reading data
+    wfcpos = np.load("./wfcpos" + str(band1) + ".npy", mmap_mode="r")
 
-    print(
-        "     Finished reading data ",
-        str(bandwfc0),
-        " and ",
-        str(gradwfc0),
-        "         "
-        + inter_time(time.time() - STARTTIME)
-    )
-    sys.stdout.flush()
-    #  sys.exit("Stop")
-
-    ### Finished reading data
     # Calculation of the Berry connection
     berry_connection = np.zeros(wfcgra[0].shape, dtype=complex)
 
@@ -51,21 +32,12 @@ def berry_connect(bandwfc0, gradwfc0):
     ##  if not, needs division by d.nr
     berry_connection /= d.nr
 
-    print(
-        "     Finished calculating Berry connection for index "
-        + str(bandwfc0)
-        + "  "
-        + str(gradwfc0)
-        + "  \
-         \n     Saving results to file  "
-        + inter_time(time.time() - STARTTIME)
-    )
+    print("          Finished connection to band ", str(band1), "   ", inter_time(time.time() - STARTTIME))
     sys.stdout.flush()
 
-    filename = "./berryCon" + str(bandwfc0) + "-" + str(gradwfc0)
     # output units of Berry connection are bohr
-
-    joblib.dump(berry_connection, filename + ".gz", compress=3)
+    filename = "./berryCon" + str(band1) + "_" + str(band0) + ".npy"
+    np.save(filename, berry_connection)
 
 
 ###################################################################################
@@ -73,15 +45,25 @@ if __name__ == "__main__":
     header("BERRY CONNECTION", d.version, time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
+    GRA_SIZE = d.nr * 2 * d.nkx * d.nky
+    GRA_SHAPE = (d.nr, 2, d.nkx, d.nky)
 
     if len(sys.argv) == 2:
+        NUM_BANDS = int(sys.argv[1])
         print(
             "     Will calculate all combinations of bands from 0 up to "
-            + str(sys.argv[1])
+            + str(NUM_BANDS)
         )
-        for bandwfc in range(int(sys.argv[1]) + 1):
-            for gradwfc in range(int(sys.argv[1]) + 1):
-                berry_connect(bandwfc, gradwfc)
+        for bandwfc in range(NUM_BANDS + 1):
+            gra_base = Array(ctypes.c_double, 2 * GRA_SIZE, lock=False)
+            wfcgra = np.frombuffer(gra_base, dtype=complex).reshape(GRA_SHAPE)
+            wfcgra[:] = np.load("./wfcgra" + str(bandwfc) + ".npy")[:]
+
+
+            print("     Calculating Berry connection for band " + str(bandwfc)); 
+            sys.stdout.flush()
+            with Pool(NUM_BANDS + 1) as pool:
+                pool.starmap(berry_connect, [(bandwfc, band) for band in range(NUM_BANDS + 1)])
 
     elif len(sys.argv) == 3:
         print(
@@ -92,7 +74,19 @@ if __name__ == "__main__":
         )
         bandwfc = int(sys.argv[1])
         gradwfc = int(sys.argv[2])
-        berry_connect(bandwfc, gradwfc)
+
+        wfcpos = np.load("./wfcpos" + str(bandwfc) + ".npy", mmap_mode="r")
+        wfcgra = np.load("./wfcgra" + str(gradwfc) + ".npy", mmap_mode="r")
+
+        berry_connection = np.zeros(wfcgra[0].shape, dtype=complex)
+
+        for posi in range(d.nr):
+            berry_connection += 1j * wfcpos[posi].conj() * wfcgra[posi]
+
+        berry_connection /= d.nr
+
+        filename = "./berryCon" + str(bandwfc) + "_" + str(gradwfc) + ".npy"
+        np.save(filename, berry_connection)
 
     else:
         print("     ERROR in number of arguments. Has to be one or two integers.")
