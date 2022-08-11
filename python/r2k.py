@@ -3,14 +3,15 @@
  to another set for different points in real space,
  the functions become a function of k instead of r
 """
+from multiprocessing import Pool
 
+import gc
 import sys
 import time
-import numpy as np
-from findiff import Gradient
-from NestablePool import NestablePool
 
-import joblib
+from findiff import Gradient
+
+import numpy as np
 
 # These are the subroutines and functions
 from contatempo import tempo, inter_time
@@ -19,20 +20,24 @@ import loaddata as d
 
 # pylint: disable=C0103
 ###################################################################################
+def apply_grad(wfcidx):
+    return grad(wfcidx)
+
+
 def func_name(banda):
     wfct_k = np.zeros((d.nr, d.nks), dtype=complex)
     print(
         "     Reading wfcs of band ",
         str(banda),
         "from files.   ",
-        inter_time(time.time() - STARTTIME)
+        inter_time(time.time() - STARTTIME),
     )
+    sys.stdout.flush()
+
     for kp in range(d.nks):
-        if (
-            signalfinal[kp, banda] == -1
-        ):  # if its a signaled wfc, choose interpolated
+        if signalfinal[kp, banda] == -1:  # if its a signaled wfc, choose interpolated
             infile = (
-                d.wfcdirectory
+                "/local/bn/e100_3120/wfc"
                 + "/k0"
                 + str(kp)
                 + "b0"
@@ -41,56 +46,59 @@ def func_name(banda):
             )
         else:  # else choose original
             infile = (
-                d.wfcdirectory
+                "/local/bn/e100_3120/wfc"
                 + "/k0"
                 + str(kp)
                 + "b0"
                 + str(bandsfinal[kp, banda])
                 + ".wfc"
             )
-        wfct_k[:, kp] = np.load(infile)
+        wfct_k[:, kp] = np.load(infile, mmap_mode="r")
     print(
         "     Finished reading wfcs of band ",
         str(banda),
         "from files.   ",
-        inter_time(time.time() - STARTTIME)
+        inter_time(time.time() - STARTTIME),
     )
     sys.stdout.flush()
 
-    wfcpos = {}  # Dictionary with wfc for all points
-    wfcgra = {}  # Dictionary with wfc gradients for all points
-
-    wfcpos = {
-        posi: d.phase[posi, d.ijltonk[:, :, 0]] * wfct_k[posi, d.ijltonk[:, :, 0]]
-        for posi in range(d.nr)
-    }
-    wfcgra = {posi: grad(wfcpos[posi]) for posi in range(d.nr)}
+    t1 = time.time()
+    wfcpos = np.array(
+        [
+            d.phase[posi, d.ijltonk[:, :, 0]] * wfct_k[posi, d.ijltonk[:, :, 0]]
+            for posi in range(d.nr)
+        ]
+    )
+    t2 = time.time()
+    wfcgra = np.array([grad(wfcpos[posi]) for posi in range(d.nr)])
+    t3 = time.time()
     #    for posi in range(d.nr):
     #      wfcpos[posi] = d.phase[posi,d.ijltonk[:,:,0]]*wfct_k[posi,d.ijltonk[:,:,0]]
 
     #      wfcgra[posi] = grad(wfcpos[posi])                  # Complex gradient
 
-    BANDSR[banda] = wfcpos  # add to dictionary
-    BANDSG[banda] = wfcgra
-
+    print("     Finished positions gradients.   ", inter_time(t2 - t1))
+    print("     Finished gradients gradients.   ", inter_time(t3 - t2))
     print(
-        "     Saving band ",
-        str(banda),
-        "        ",
-        inter_time(time.time() - STARTTIME)
-    )
-
-    # Saving files
-    joblib.dump(wfcpos, "./wfcpos" + str(banda) + ".gz", compress=3)
-    joblib.dump(wfcgra, "./wfcgra" + str(banda) + ".gz", compress=3)
-
-    print(
-        "     Saved band ",
-        str(banda),
-        "        ",
-        inter_time(time.time() - STARTTIME)
+        "     Saving band ", str(banda), "        ", inter_time(time.time() - STARTTIME)
     )
     sys.stdout.flush()
+
+    # Saving files
+    np.save(f"wfcpos{banda}.npy", wfcpos)
+    np.save(f"wfcgra{banda}.npy", wfcgra)
+
+    del wfcpos, wfcgra, wfct_k
+    t1 = time.time()
+    gc.collect()
+    t2 = time.time()
+    print("     Finished garbage collection.   ", inter_time(t2 - t1))
+
+    print(
+        "     Saved band ", str(banda), "        ", inter_time(time.time() - STARTTIME)
+    )
+    sys.stdout.flush()
+
 
 if __name__ == "__main__":
     header("R2K", d.version, time.asctime())
@@ -116,12 +124,12 @@ if __name__ == "__main__":
             " to",
             NBNDMAX - 1,
         )
-    NPR = min(NBNDMAX - NBNDMIN, d.npr)
+    NPR = 5  # TODO change this to an input parameter
 
     # Reading data needed for the run
 
     print("     Unique reference of run:", d.refname)
-    print("     Directory where the wfc are:", d.wfcdirectory)
+    print("     Directory where the wfc are:", "/local/bn/e100_3120/wfc")
     print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
     print("     Total number of k-points:", d.nks)
     print("     Total number of points in real space:", d.nr)
@@ -152,13 +160,8 @@ if __name__ == "__main__":
     grad = Gradient(h=[d.step, d.step], acc=2)  # Defines gradient function in 2D
     ##################################################
 
-    BANDSR = {}  # Dictionary with wfc for all points and bands
-    BANDSG = {}  # Dictionary with wfc gradients for all points and bands
-
-    with NestablePool(processes=NPR) as pool:
-        pool.map(func_name, range(NBNDMIN, NBNDMAX))
-
-    sys.stdout.flush()
+    for banda in range(NBNDMIN, NBNDMAX):
+        func_name(banda)
 
     # sys.exit("Stop")
 
