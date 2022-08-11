@@ -37,7 +37,7 @@ def func_name(banda):
     for kp in range(d.nks):
         if signalfinal[kp, banda] == -1:  # if its a signaled wfc, choose interpolated
             infile = (
-                "/local/bn/e100_3120/wfc"
+                d.wfcdirectory
                 + "/k0"
                 + str(kp)
                 + "b0"
@@ -46,7 +46,7 @@ def func_name(banda):
             )
         else:  # else choose original
             infile = (
-                "/local/bn/e100_3120/wfc"
+                d.wfcdirectory
                 + "/k0"
                 + str(kp)
                 + "b0"
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     # Reading data needed for the run
 
     print("     Unique reference of run:", d.refname)
-    print("     Directory where the wfc are:", "/local/bn/e100_3120/wfc")
+    print("     Directory where the wfc are:", d.wfcdirectory)
     print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
     print("     Total number of k-points:", d.nks)
     print("     Total number of points in real space:", d.nr)
