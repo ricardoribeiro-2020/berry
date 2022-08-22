@@ -100,6 +100,7 @@ def func_name(banda):
     sys.stdout.flush()
 
 
+###################################################################################
 if __name__ == "__main__":
     header("R2K", d.version, time.asctime())
 
