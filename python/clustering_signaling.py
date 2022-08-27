@@ -17,7 +17,7 @@ NOT_SOLVED = 0
 def evaluate_point(k, bn, bnfinal):
     machbn = bnfinal[k, bn]
     energy = d.eigenvalues[k, machbn]
-    kneigs = d.neighbors[d.neighbors[k] != -1]
+    kneigs = d.neighbors[k, d.neighbors[k] != -1]
     energies = d.eigenvalues[kneigs, :]
 
     d_energies = np.abs(energies - energy)
@@ -73,16 +73,16 @@ if __name__ == "__main__":
     ks_pC, bnds_pC = np.where(signalfinal == POTENTIAL_CORRECT)
     ks_pM, bnds_pM = np.where(signalfinal == POTENTIAL_MISTAKE)
 
-    ks = np.concatenate(ks_pC, ks_pM)
-    bnds = np.concatenate(bnds_pC, bnds_pM)
+    ks = np.concatenate((ks_pC, ks_pM))
+    bnds = np.concatenate((bnds_pC, bnds_pM))
 
     for k, bn in zip(ks, bnds):
         correct_signalfinal[k, bn] = evaluate_point(k, bn, bandsfinal)
     
     final_report = ''
     bands_report = []
-    for bn in range(len(signalfinal[0])):
-        band_result = signalfinal[:, bn]
+    for bn in range(len(correct_signalfinal[0])):
+        band_result = correct_signalfinal[:, bn]
         report = [np.sum(band_result == s) for s in range(CORRECT+1)]
         bands_report.append(report)
 
