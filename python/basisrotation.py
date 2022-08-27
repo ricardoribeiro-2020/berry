@@ -102,6 +102,7 @@ if __name__ == "__main__":
     print("     Eigenvalues loaded")
 
     dotproduct = np.load("dpc.npy")
+    connections = np.load("dp.npy")
     print("     Dot product loaded")
 
     print("     Reading files bandsfinal.npy and signalfinal.npy")
@@ -224,6 +225,9 @@ if __name__ == "__main__":
         psinewA = psi1*ca1 + psi2*ca2
         psinewB = psi1*cb1 + psi2*cb2
 
+        signalfinal = set_new_signal(nk0, nb1, psinewA, bandsfinal, signalfinal, connections)
+        signalfinal = set_new_signal(nk0, nb2, psinewB, bandsfinal, signalfinal, connections)
+
         # Save new files
         print()
         outfile = (
@@ -251,8 +255,6 @@ if __name__ == "__main__":
             np.save(f, psinewB)
         f.close()
 
-        signalfinal = set_new_signal(nk0, nb1, psinewA, bandsfinal, signalfinal)
-        signalfinal = set_new_signal(nk0, nb2, psinewB, bandsfinal, signalfinal)
 
     #sys.exit("Stop")
     ###################################################################################
