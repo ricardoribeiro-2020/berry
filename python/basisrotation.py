@@ -14,6 +14,7 @@ import contatempo
 from headerfooter import header, footer
 import loaddata as d
 from write_k_points import bands_numbers
+from clustering_libs import evaluate_result
 
 # pylint: disable=C0103
 ###################################################################################
@@ -28,6 +29,48 @@ def func(aa, ddot):
     r1 = complex(ddot[0],ddot[1])*aa[0]*np.exp(1j*aa[1]) + complex(ddot[2],ddot[3])*np.sqrt(1 - aa[0]**2)*np.exp(1j*aa[2])
     r2 = complex(ddot[4],ddot[5])*aa[3]*np.exp(1j*aa[4]) + complex(ddot[6],ddot[7])*np.sqrt(1 - aa[3]**2)*np.exp(1j*aa[5])
     return -np.absolute(r1) - np.absolute(r2)
+
+def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections):
+    machbn = bnfinal[k, bn]
+
+    dot_products = []
+    for i_neig, kneig in enumerate(d.neighbors[k]):
+        if kneig == -1:
+            continue
+
+        bneig = bnfinal[kneig, bn]
+        infile = (
+            d.wfcdirectory
+            + "k0"
+            + str(kneig)
+            + "b0"
+            + str(bneig)
+            + ".wfc"
+        )
+        psineig = np.zeros((int(d.nr)), dtype=complex)
+        with open(infile, "rb") as f:  # Load the wfc from file
+            psineig[:] = np.load(f)
+
+        dphase = d.phase[:, k] * np.conjugate(d.phase[:, kneig])
+        dot_product = np.sum(dphase * psinew * np.conjugate(psineig)) / d.nr
+        dp = np.abs(dot_product)
+        print(f'old_dp: {connections[k, i_neig, machbn, bneig]} new_dp: {dp}')
+        dot_products.append(dp)
+
+        dot_products_neigs = []
+        for j_neig, k2_neig in enumerate(d.neighbors[kneig]):
+            if k2_neig == -1:
+                continue
+            bn2neig = bnfinal[k2_neig, bn]
+            connection = dp if k2_neig == k else connections[kneig, j_neig, bneig, bn2neig]
+            dot_products_neigs.append(connection)
+        new_signal = evaluate_result(dot_products_neigs)
+        print(f'old_signal: {sigfinal[kneig, bn]} new_signal: {new_signal}')
+        sigfinal[kneig, bn] = new_signal
+    
+    sigfinal[k, bn] = evaluate_result(dot_products)
+
+    return signalfinal
 
 ###################################################################################
 
@@ -208,6 +251,8 @@ if __name__ == "__main__":
             np.save(f, psinewB)
         f.close()
 
+        signalfinal = set_new_signal(nk0, nb1, psinewA, bandsfinal, signalfinal)
+        signalfinal = set_new_signal(nk0, nb2, psinewB, bandsfinal, signalfinal)
 
     #sys.exit("Stop")
     ###################################################################################
@@ -288,6 +333,9 @@ if __name__ == "__main__":
                 "      band ", nb, f"  signals {POTENTIAL_MISTAKE} in", nrsignal[nb, POTENTIAL_MISTAKE], " k-points"
             )
     print()
+
+    with open('signalfinal.npy', 'wb') as f:
+        np.save(f, signalfinal)
 
     ###################################################################################
     # Finished
