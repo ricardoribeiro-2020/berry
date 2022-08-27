@@ -183,33 +183,26 @@ class MATERIAL:
         def connection_component(i_start, j_end, tol=0.95):
             V = self.vectors[i_start:j_end]
             edges = []
-
-            for i, P1 in enumerate(V):
+            bands = np.repeat(np.arange(self.min_band, self.max_band+1), len(self.neighbors[0]))
+            for i,_ in enumerate(V):
                 i_ = i+i_start
                 bn1 = i_//self.nks + self.min_band  # bi
                 k1 = i_ % self.nks
-                for j, P2 in enumerate(self.vectors[i_start+i:]):
-                    j_ = j+i_
-                    bn2 = j_//self.nks + self.min_band  # bj
-                    # 1.  Same k-point, different band.
-                    if np.all(P1[:-1] == P2[:-1]) and bn1 != bn2:
-                        '''
-                        mi = mj
-                        ni = nj
-                        bi != bj
-                        '''
-                        continue
+                neighs = np.tile(self.neighbors[k1], self.nbnd)
+                ks = neighs + bands*self.nks
+                ks = ks[neighs != -1]
+                for j_ in ks:
                     k2 = j_ % self.nks
-                    if k2 in self.neighbors[k1]:
-                        i_neig = np.where(self.neighbors[k1] == k2)[0]
-                        connection = self.connections[k1, i_neig,
-                                                      bn1, bn2]  # <i|j>
-                        '''
-                        for each first neighbor
-                        Edge(i,j) = 1 iff <i, j> ~ 1
-                        '''
-                        if connection > tol:
-                            edges.append([i_, j_])
+                    bn2 = j_//self.nks + self.min_band  # bj
+                    i_neig = np.where(self.neighbors[k1] == k2)[0]
+                    connection = self.connections[k1, i_neig,
+                                                    bn1, bn2]  # <i|j>
+                    '''
+                    for each first neighbor
+                    Edge(i,j) = 1 iff <i, j> ~ 1
+                    '''
+                    if connection > tol:
+                        edges.append([i_, j_])
 
             edges = np.array(edges)
 
@@ -313,6 +306,8 @@ class MATERIAL:
                 matrix = np.load(f)
             os.remove(f'temp/{process_name}_{i_start}_{j_end}.npy')
             print(f'\t\tJoint {process_name}_{i_start}_{j_end} component')
+            if len(matrix) == 0:
+                continue
             result = np.concatenate((result,
                                      matrix)) if result is not None else matrix
         print(f'\tEND {process_name}')
@@ -619,7 +614,7 @@ class COMPONENT:
         OUTPUT
         score: It is a float that represents the similarity between components.
         '''
-        if not cluster.was_modified:
+        if cluster.was_modified:
             return self.scores[cluster.__id__]
         
         cluster.was_modified = False
