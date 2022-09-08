@@ -336,7 +336,7 @@ class MATERIAL:
               some cluster.
         '''
 
-        LOG.info('\n\nNumber of Components: ', end='')
+        LOG.info('\n\nNumber of Components: ')
         LOG.info(f'{nx.number_connected_components(self.GRAPH)}')
         self.components = [COMPONENT(self.GRAPH.subgraph(c),
                                      self.kpoints_index,
@@ -402,7 +402,7 @@ class MATERIAL:
         LOG.info(f'    Phase 2: {len(self.solved)}/{self.nbnd} Solved')
 
         if len(self.solved)/self.nbnd < 1:
-            LOG.info(f'    New clusnters: {len(clusters)}', end='')
+            LOG.info(f'    New clusnters: {len(clusters)}')
 
         labels = np.empty(self.nks*self.nbnd, int)
         count = 0

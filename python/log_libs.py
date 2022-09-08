@@ -47,7 +47,7 @@ class log:
         F = footer(tempo(self.STARTTIME, ENDTIME))
         self.info(F)
 
-    def percent_complete(step, total_steps, bar_width=60, title="", print_perc=True):
+    def percent_complete(self, step, total_steps, bar_width=60, title="", print_perc=True):
         '''
         author: WinEunuuchs2Unix
         url: https://stackoverflow.com/questions/3002085/how-to-print-out-status-bar-and-percentage
