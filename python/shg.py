@@ -1,23 +1,98 @@
 """
 # This program calculates the second harmonic generation condutivity
 """
+from multiprocessing import Pool, Array
 
 import sys
 import time
-
 import itertools
-import numpy as np
+
 from findiff import Gradient
-import joblib
+
+import ctypes
+import numpy as np
 
 # This are the subroutines and functions
-import contatempo
 from headerfooter import header, footer
-import loaddata as d
 from comutator import comute, comute3, comutederiv
+
+import contatempo
+import loaddata as d
 
 # pylint: disable=C0103
 ###################################################################################
+def func(omega):
+    sys.stdout.flush()
+    omegaarray = np.full(
+        (d.nkx, d.nky, bandempty + 1, bandempty + 1), omega + broadning
+    )  # in Ry
+    # matrix sig_xxx,sig_xxy,...,sig_yyx,sig_yyy
+    sig = np.full((d.nkx, d.nky, 2, 2, 2), 0.0 + 0j, dtype=complex)
+
+    # factor called dE/g in paper times leading constant
+    gamma1 = CONST * dE / (2 * omegaarray - dE)
+    # factor f/h^2 in paper (-) to account for change in indices in f and h
+    gamma2 = -fermi / np.square(omegaarray - dE)
+    # factor f/h in paper (index reference is of h, not f, in equation)
+    gamma3 = -fermi / (omegaarray - dE)
+
+    for s, sprime in itertools.product(
+        bandlist, bandlist
+    ):  # runs through index s, s'
+        gamma12[:, :, s, sprime] = gamma1[:, :, s, sprime] * gamma2[:, :, s, sprime]
+        gamma13[:, :, s, sprime] = gamma1[:, :, s, sprime] * gamma3[:, :, s, sprime]
+
+    ##   sys.exit("Stop")
+    # beta, alpha1, alpha2 are spatial coordinates
+    for beta, alpha1, alpha2 in itertools.product(range(2), range(2), range(2)):
+        for s, sprime in itertools.product(bandlist, bandlist):  # runs index s,s'
+            if s == sprime:
+                continue
+            sig[:, :, beta, alpha1, alpha2] += (
+                (
+                    graddE[alpha2, :, :, s, sprime]
+                    * comute(berry_connections, sprime, s, beta, alpha1)
+                    + graddE[alpha1, :, :, s, sprime]
+                    * comute(berry_connections, sprime, s, beta, alpha2)
+                )
+                * gamma12[:, :, s, sprime]
+                * 0.5
+            )
+
+            sig[:, :, beta, alpha1, alpha2] += (
+                comutederiv(berry_connections, s, sprime, beta, alpha1, alpha2, d.step)
+            ) * gamma13[:, :, s, sprime]
+
+            for r in bandlist:  # runs through index r
+                if r in (sprime, s):
+                    continue
+                sig[:, :, beta, alpha1, alpha2] += (
+                    -0.25j
+                    * gamma1[:, :, s, sprime]
+                    * (
+                        comute3(berry_connections, sprime, s, r, beta, alpha2, alpha1)
+                        + comute3(
+                            berry_connections, sprime, s, r, beta, alpha1, alpha2
+                        )
+                    )
+                    * gamma3[:, :, r, sprime]
+                    - (
+                        comute3(berry_connections, sprime, s, r, beta, alpha1, alpha2)
+                        + comute3(
+                            berry_connections, sprime, s, r, beta, alpha2, alpha1
+                        )
+                    )
+                    * gamma3[:, :, s, r]
+                )
+    ##       print(sig)
+
+    return (omega, np.sum(np.sum(sig, axis=0), axis=0) * vk)
+
+def load_berry_connections(dest: np.ndarray) -> None:
+    for i in range(bandempty + 1):
+        for j in range(bandempty + 1):
+            dest[i, j] = np.load(f"berryCon{i}_{j}.npy")
+
 if __name__ == "__main__":
     header("SHG", d.version, time.asctime())
 
@@ -103,12 +178,11 @@ if __name__ == "__main__":
     sys.stdout.flush()
     # sys.exit("Stop")
 
-    berryConnection = {}
-
-    for i, j in itertools.product(range(bandempty + 1), range(bandempty + 1)):
-        index = str(i) + " " + str(j)
-        filename = "./berryCon" + str(i) + "-" + str(j)
-        berryConnection[index] = joblib.load(filename + ".gz")  # Berry connection
+    BERRY_CONNECTIONS_SIZE = 2 * d.nkx * d.nky * (bandempty + 1) ** 2
+    BERRY_CONNECTIONS_SHAPE = (bandempty + 1, bandempty + 1, 2, d.nkx, d.nky)
+    base = Array(ctypes.c_double, BERRY_CONNECTIONS_SIZE * 2, lock=False)
+    berry_connections = np.frombuffer(base, dtype=np.complex128).reshape(BERRY_CONNECTIONS_SHAPE)
+    load_berry_connections(berry_connections)
 
     # sys.exit("Stop")
     Earray = np.zeros((d.nkx, d.nky, d.nbnd))  # Eigenvalues corrected for the new bands
@@ -126,7 +200,7 @@ if __name__ == "__main__":
 
     ################################################## Finished reading data
 
-    grad = Gradient(h=[d.step, d.step], acc=3)  # Defines gradient function in 2D
+    grad = Gradient(h=[d.step, d.step], acc=2)  # Defines gradient function in 2D
     ##################################################
 
     CONST = (
@@ -145,7 +219,7 @@ if __name__ == "__main__":
     )
     print("     Volume (area) in k space: " + str(vk))
 
-    sigma = {}  # Dictionary where the conductivity will be stored
+    sigma = {} # Dictionary where the conductivity will be stored
     fermi = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1))
     dE = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1))
     graddE = np.zeros((2, d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
@@ -167,72 +241,10 @@ if __name__ == "__main__":
     #    print(graddE[:,:,:,s,sprime])
     # e = comute(berryConnection,s,sprime,alpha,beta)
 
-    for omega in np.arange(0, enermax + enerstep, enerstep):
-        omegaarray = np.full(
-            (d.nkx, d.nky, bandempty + 1, bandempty + 1), omega + broadning
-        )  # in Ry
-        # matrix sig_xxx,sig_xxy,...,sig_yyx,sig_yyy
-        sig = np.full((d.nkx, d.nky, 2, 2, 2), 0.0 + 0j, dtype=complex)
-
-        # factor called dE/g in paper times leading constant
-        gamma1 = CONST * dE / (2 * omegaarray - dE)
-        # factor f/h^2 in paper (-) to account for change in indices in f and h
-        gamma2 = -fermi / np.square(omegaarray - dE)
-        # factor f/h in paper (index reference is of h, not f, in equation)
-        gamma3 = -fermi / (omegaarray - dE)
-
-        for s, sprime in itertools.product(
-            bandlist, bandlist
-        ):  # runs through index s, s'
-            gamma12[:, :, s, sprime] = gamma1[:, :, s, sprime] * gamma2[:, :, s, sprime]
-            gamma13[:, :, s, sprime] = gamma1[:, :, s, sprime] * gamma3[:, :, s, sprime]
-
-        ##   sys.exit("Stop")
-        # beta, alpha1, alpha2 are spatial coordinates
-        for beta, alpha1, alpha2 in itertools.product(range(2), range(2), range(2)):
-            for s, sprime in itertools.product(bandlist, bandlist):  # runs index s,s'
-                if s == sprime:
-                    continue
-                sig[:, :, beta, alpha1, alpha2] += (
-                    (
-                        graddE[alpha2, :, :, s, sprime]
-                        * comute(berryConnection, sprime, s, beta, alpha1)
-                        + graddE[alpha1, :, :, s, sprime]
-                        * comute(berryConnection, sprime, s, beta, alpha2)
-                    )
-                    * gamma12[:, :, s, sprime]
-                    * 0.5
-                )
-
-                sig[:, :, beta, alpha1, alpha2] += (
-                    comutederiv(berryConnection, s, sprime, beta, alpha1, alpha2, d.step)
-                ) * gamma13[:, :, s, sprime]
-
-                for r in bandlist:  # runs through index r
-                    if r in (sprime, s):
-                        continue
-                    sig[:, :, beta, alpha1, alpha2] += (
-                        -0.25j
-                        * gamma1[:, :, s, sprime]
-                        * (
-                            comute3(berryConnection, sprime, s, r, beta, alpha2, alpha1)
-                            + comute3(
-                                berryConnection, sprime, s, r, beta, alpha1, alpha2
-                            )
-                        )
-                        * gamma3[:, :, r, sprime]
-                        - (
-                            comute3(berryConnection, sprime, s, r, beta, alpha1, alpha2)
-                            + comute3(
-                                berryConnection, sprime, s, r, beta, alpha2, alpha1
-                            )
-                        )
-                        * gamma3[:, :, s, r]
-                    )
-
-        ##       print(sig)
-
-        sigma[omega] = np.sum(np.sum(sig, axis=0), axis=0) * vk
+    with Pool(8) as pool:
+        results = pool.map(func, (omega for omega in np.arange(0, enermax + enerstep, enerstep)))
+        for omega, result in results:
+            sigma[omega] = result
 
     ##   sys.exit("Stop")
 
