@@ -672,6 +672,8 @@ class COMPONENT:
             pol = lambda x, a, b, c: a*x**2 + b*x + c
             popt, pcov = curve_fit(pol, X, Es)
             Enew = f(new_x, *popt)
+            Ei = energies[bn1, ik1, jk1]
+            LOG.debug(f'Actual Energy: {Ei} Energy founded: {Enew} for {bn1} with {len(i)} points.')
             return difference_energy(bn1, bn2, iK1, iK2, Ei = Enew)
 
 
