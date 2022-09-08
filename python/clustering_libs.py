@@ -556,6 +556,7 @@ class COMPONENT:
     def calculate_pointsMatrix(self):
         self.positions_matrix = np.zeros(self.m_shape, int)
         index_points = self.kpoints_index[self.nodes % self.nks]
+        self.k_points = self.nodes % self.nks
         self.bands_number = dict(zip(self.nodes % self.nks,
                                      self.nodes//self.nks))
         self.positions_matrix[index_points[:, 0], index_points[:, 1]] = 1
@@ -644,6 +645,11 @@ class COMPONENT:
             i = I if ik1 == ik_n else I + np.arange(0,N+1)*np.sign(ik1-ik_n)
             j = J if jk1 == jk_n else J + np.arange(0,N+1)*np.sign(jk1-jk_n)
             
+            i = i[i >= 0]
+            i = i[i < self.m_shape[0]]
+            j = j[j >= 0]
+            j = j[j < self.m_shape[1]]
+
             ks = self.matrix[i, j]
             f = lambda e: e in self.k_points
             exist_ks = list(map(f, ks))
