@@ -16,7 +16,7 @@
         outdir = ''
        refname = date and time: it is better to keep the default
 """
-__version__ = "v0.3.1"
+__version__ = "v1.0"
 
 from multiprocessing import Pool
 from itertools import product

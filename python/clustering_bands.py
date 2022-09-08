@@ -8,7 +8,7 @@ Some flags are permitted.
     -t: set the tolerance
 
 Finally, It is possible to choose the group of bands
-to be solved given into the arguments the maximum band
+to be solved given as argument the maximum band
 or the interval of minimum and maximum band.
 The default uses all bands.
 """
