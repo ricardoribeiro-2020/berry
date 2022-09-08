@@ -9,6 +9,8 @@ import os
 from scipy.ndimage import correlate
 from write_k_points import bands_numbers
 from multiprocessing import Process
+from log_libs import log
+from loaddata import version
 
 CORRECT = 5
 POTENTIAL_CORRECT = 4
@@ -17,6 +19,7 @@ DEGENERATE = 2
 MISTAKE = 1
 NOT_SOLVED = 0
 
+LOG = log('clustering', 'Band Clustering', version)
 
 def evaluate_result(values):
     '''
@@ -115,6 +118,8 @@ class MATERIAL:
         self.energies: It contains the energy values for each band distributed
                        in a matrix.
         '''
+        title = 'Making Vectors'
+        LOG.percent_complete(0, 100, title=title)
 
         self.GRAPH = nx.Graph()
         self.min_band = min_band
@@ -122,6 +127,7 @@ class MATERIAL:
         nbnd = self.nbnd if max_band == -1 else max_band+1
         self.make_kpointsIndex()
         energies = self.make_BandsEnergy()
+        LOG.percent_complete(20, 100, title=title)
 
         n_vectors = (nbnd-min_band)*self.nks
         ik = np.tile(self.kpoints_index[:, 0], nbnd-min_band)
@@ -129,19 +135,22 @@ class MATERIAL:
         bands = np.arange(min_band, nbnd)
         eigenvalues = self.eigenvalues[:, bands].T.reshape(n_vectors)
         self.vectors = np.stack([ik, jk, eigenvalues], axis=1)
+        LOG.percent_complete(50, 100, title=title)
 
         self.GRAPH.add_nodes_from(np.arange(n_vectors))
 
         self.degenerados = []
         for i, v in enumerate(self.vectors):
+            LOG.percent_complete(50 + int(i*50/len(self.vectors)), 100, title=title)
             degenerado = np.where(np.all(np.isclose(self.vectors[i+1:]-v, 0),
                                   axis=1))[0]
             if len(degenerado) > 0:
                 self.degenerados += [[i, d+i+1] for d in degenerado]
+                LOG.debug(f'Found degenerete point for {i}')
         if len(self.degenerados) > 0:
-            print('Degenerate Points: ')
+            LOG.info('Degenerate Points: ')
             for d in self.degenerados:
-                print(f'\t{d}')
+                LOG.info(f'\t{d}')
 
         self.ENERGIES = energies
         self.nbnd = nbnd-min_band
@@ -208,7 +217,7 @@ class MATERIAL:
 
             with open(f'temp/CONNECTIONS_{i_start}_{j_end}.npy', 'wb') as f:
                 np.save(f, edges)
-                print(f'\t\tEnd Process_CONNECTIONS_{i_start}_{j_end}')
+                LOG.debug(f'End Process_CONNECTIONS_{i_start}_{j_end}')
 
         edges = self.parallel_process('CONNECTIONS',
                                       connection_component,
@@ -227,7 +236,7 @@ class MATERIAL:
             N2 = np.array(self.get_neigs(d2))
             if len(N1) == 0 or len(N2) == 0:
                 continue
-            print(f'Problem:\n\t{d1}: {N1}\n\t{d2}:{N2}')
+            LOG.info(f'Problem:\n\t{d1}: {N1}\n\t{d2}:{N2}')
             NKS = self.nks
             if len(N1) > 1 and len(N2) > 1:
                 def n2_index(n1): return np.where(N2 % NKS == n1 % NKS)
@@ -258,7 +267,7 @@ class MATERIAL:
                 N1_ = [n[np.argmin(np.abs(n-n1))] for n in N]
                 N2_ = [n[np.argmax(np.abs(n-n1))] for n in N]
 
-            print(f'Solution:\n\t{d1}: {N1_}\n\t{d2}:{N2_}')
+            LOG.info(f'Solution:\n\t{d1}: {N1_}\n\t{d2}:{N2_}')
             for k in N1:
                 self.GRAPH.remove_edge(k, d1)
             for k in N2:
@@ -276,13 +285,13 @@ class MATERIAL:
         if not os.path.exists("temp/"):
             os.mkdir('temp/')
         process = []
-        print(f'\n\tPARALLEL {process_name}')
+        LOG.debug(f'PARALLEL {process_name}')
         n = N//self.n_process
         for i_start in range(self.n_process):
             j_end = n*(i_start+1) if i_start < self.n_process-1\
                 else n*(i_start+1) + n % self.n_process
             i_start = i_start*n
-            print(f'\t\tCreating Process {process_name}: {i_start}-{j_end}')
+            LOG.debug(f'\t\tCreating Process {process_name}: {i_start}-{j_end}')
             process.append(Process(target=f, args=(i_start, j_end, *args)))
 
         print()
@@ -305,12 +314,12 @@ class MATERIAL:
             with open(f'temp/{process_name}_{i_start}_{j_end}.npy', 'rb') as f:
                 matrix = np.load(f)
             os.remove(f'temp/{process_name}_{i_start}_{j_end}.npy')
-            print(f'\t\tJoint {process_name}_{i_start}_{j_end} component')
+            LOG.debug(f'Joint {process_name}_{i_start}_{j_end} component')
             if len(matrix) == 0:
                 continue
             result = np.concatenate((result,
                                      matrix)) if result is not None else matrix
-        print(f'\tEND {process_name}')
+        LOG.debug(f'\tEND {process_name}')
 
         return result
 
@@ -327,8 +336,8 @@ class MATERIAL:
               some cluster.
         '''
 
-        print('\n\nNumber of Components: ', end='')
-        print(f'{nx.number_connected_components(self.GRAPH)}')
+        LOG.info('\n\nNumber of Components: ', end='')
+        LOG.info(f'{nx.number_connected_components(self.GRAPH)}')
         self.components = [COMPONENT(self.GRAPH.subgraph(c),
                                      self.kpoints_index,
                                      self.matrix)
@@ -353,8 +362,8 @@ class MATERIAL:
                 clusters.append(component)
             else:
                 samples.append(component)
-        print(f'    Phase 1: {len(self.solved)}/{self.nbnd} Solved')
-        print(f'    Initial clusters: {len(clusters)} Samples: {len(samples)}')
+        LOG.info(f'    Phase 1: {len(self.solved)}/{self.nbnd} Solved')
+        LOG.info(f'    Initial clusters: {len(clusters)} Samples: {len(samples)}')
 
         count = np.array([0, len(samples)])
         while len(samples) > 0:
@@ -384,15 +393,16 @@ class MATERIAL:
             count[0] += 1
             clusters[bn].join(sample)
             clusters[bn].was_modified = True
-            print(f'{count[0]}/{count[1]} Sample corrected: {score}')
+            LOG.percent_complete(count[0], count[1], title='Clustering Samples')
+            LOG.debug(f'{count[0]}/{count[1]} Sample corrected: {score}')
             if clusters[bn].N == self.nks:
                 print('Cluster Solved')
                 self.solved.append(clusters.pop(bn))
 
-        print(f'    Phase 2: {len(self.solved)}/{self.nbnd} Solved')
+        LOG.info(f'    Phase 2: {len(self.solved)}/{self.nbnd} Solved')
 
         if len(self.solved)/self.nbnd < 1:
-            print(f'    New clusnters: {len(clusters)}', end='')
+            LOG.info(f'    New clusnters: {len(clusters)}', end='')
 
         labels = np.empty(self.nks*self.nbnd, int)
         count = 0
@@ -495,7 +505,7 @@ class MATERIAL:
             report = [np.sum(band_result == s) for s in range(CORRECT+1)]
             bands_report.append(report)
 
-            print(f'\n  New Band: {bn}\tnr falis: {report[0]}')
+            LOG.info(f'\n  New Band: {bn}\tnr falis: {report[0]}')
             bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
 
         bands_report = np.array(bands_report)
@@ -518,7 +528,7 @@ class MATERIAL:
                 n_spaces = n_max - len(str(value))
                 final_report += ' '*n_spaces+str(value) + '   '
 
-        print(final_report)
+        LOG.info(final_report)
         self.final_report = final_report
 
 

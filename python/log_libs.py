@@ -8,6 +8,8 @@ from contatempo import tempo
 class log:
     def __init__(self, program, title, version):
         self.program = program
+        self.title = title
+        self.version = version
         logging.basicConfig(filename=program+'.log',
                             filemode='w',
                             encoding='utf-8',
@@ -22,8 +24,9 @@ class log:
         ch.setLevel(logging.WARNING)
         ch.setFormatter(logging.Formatter('%(asctime)s  %(levelname)s: %(message)s'))
         self.logger.addHandler(ch)
-
-        H = header(title, version, time.asctime())
+    
+    def header(self):
+        H = header(self.title, self.version, time.asctime())
         self.info(H)
 
     def debug(self, message):
