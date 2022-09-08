@@ -642,13 +642,19 @@ class COMPONENT:
             ik_n, jk_n = iK2
             I = np.full(N+1,ik1)
             J = np.full(N+1,jk1)
-            i = I if ik1 == ik_n else I + np.arange(0,N+1)*np.sign(ik1-ik_n)
-            j = J if jk1 == jk_n else J + np.arange(0,N+1)*np.sign(jk1-jk_n)
+            flag = ik1 == ik_n
+            i = I if flag else I + np.arange(0,N+1)*np.sign(ik1-ik_n)
+            j = J if not flag else J + np.arange(0,N+1)*np.sign(jk1-jk_n)
             
-            i = i[i >= 0]
-            i = i[i < self.m_shape[0]]
-            j = j[j >= 0]
-            j = j[j < self.m_shape[1]]
+            if not flag:
+                i = i[i >= 0]
+                i = i[i < self.m_shape[0]]
+                j = np.full(len(i), jk1)
+            else:
+                j = j[j >= 0]
+                j = j[j < self.m_shape[1]]
+                i = np.full(len(j), ik1)
+
 
             ks = self.matrix[i, j]
             f = lambda e: e in self.k_points
