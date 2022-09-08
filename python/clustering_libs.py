@@ -11,6 +11,7 @@ from write_k_points import bands_numbers
 from multiprocessing import Process
 from log_libs import log
 from loaddata import version
+from scipy.optimize import curve_fit
 
 CORRECT = 5
 POTENTIAL_CORRECT = 4
@@ -624,6 +625,44 @@ class COMPONENT:
         OUTPUT
         score: It is a float that represents the similarity between components.
         '''
+        def difference_energy(bn1, bn2, iK1, iK2, Ei = None):
+            ik1, jk1 = iK1
+            ik_n, jk_n = iK2
+            Ei = energies[bn1, ik1, jk1] if Ei is None else Ei
+            bands = np.arange(min_band, max_band+1)
+            min_energy = np.min([np.abs(Ei-energies[bn, ik_n, jk_n])
+                                    for bn in bands])
+            delta_energy = np.abs(Ei-energies[bn2, ik_n, jk_n])
+            return min_energy/delta_energy if delta_energy else 1
+        
+        def fit_energy(bn1, bn2, iK1, iK2):
+            N = 5 # Number of points taking in account
+            ik1, jk1 = iK1
+            ik_n, jk_n = iK2
+            I = np.full(5,ik1)
+            J = np.full(5,jk1)
+            i = I if ik1 == ik_n else I + np.arange(0,N+1)*np.sign(ik1-ik_n)
+            j = J if jk1 == jk_n else J + np.arange(0,N+1)*np.sign(jk1-jk_n)
+            
+            ks = self.matrix[i, j]
+            f = lambda e: e in self.k_points
+            exist_ks = list(map(f, ks))
+            ks = ks[exist_ks]
+            if len(ks) <= 1:
+                return difference_energy(bn1, bn2, iK1, iK2)
+            bands = self.bands_number[ks] + min_band
+            i = i[exist_ks]
+            j = j[exist_ks]
+            Es = energies[bands, i, j]
+            X = i if jk1 == jk_n else j
+            new_x = ik_n if jk1 == jk_n else jk_n
+
+            pol = lambda x, a, b, c: a*x**2 + b*x + c
+            popt, pcov = curve_fit(pol, X, Es)
+            Enew = f(new_x, *popt)
+            return difference_energy(bn1, bn2, iK1, iK2, Ei = Enew)
+
+
         if cluster.was_modified:
             return self.scores[cluster.__id__]
         
@@ -638,12 +677,7 @@ class COMPONENT:
                 ik_n, jk_n = self.kpoints_index[k_n]
                 bn2 = cluster.bands_number[k_n]+min_band
                 connection = connections[k, i_neig, bn1, bn2]
-                Ei = energies[bn1, ik1, jk1]
-                bands = np.arange(min_band, max_band+1)
-                min_energy = np.min([np.abs(Ei-energies[bn, ik_n, jk_n])
-                                     for bn in bands])
-                delta_energy = np.abs(Ei-energies[bn2, ik_n, jk_n])
-                energy_val = min_energy/delta_energy if delta_energy else 1
+                energy_val = fit_energy(bn1, bn2, (ik1, jk1), (ik_n, jk_n))
                 score += 0.5*connection + 0.5*energy_val
         score /= len(self.k_edges)*4
         self.scores[cluster.__id__] = score
