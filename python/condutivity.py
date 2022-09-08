@@ -103,8 +103,8 @@ if __name__ == "__main__":
     for i in range(bandempty + 1):
         for j in range(bandempty + 1):
             index = str(i) + " " + str(j)
-            filename = "./berryCon" + str(i) + "-" + str(j)
-            berry_connection[index] = joblib.load(filename + ".gz")  # Berry connection
+            filename = "./berryCon" + str(i) + "_" + str(j)
+            berry_connection[index] = np.load(filename + ".npy")  # Berry connection
 
     # sys.exit("Stop")
     Earray = np.zeros((d.nkx, d.nky, d.nbnd))  # Eigenvalues corrected for the new bands
