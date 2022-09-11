@@ -8,7 +8,8 @@ import networkx as nx
 import os
 from scipy.ndimage import correlate
 from write_k_points import bands_numbers
-from multiprocessing import Process
+from multiprocessing import Process, Pool, Manager, Value
+from functools import partial
 from log_libs import log
 from loaddata import version
 from scipy.optimize import curve_fit
@@ -119,8 +120,8 @@ class MATERIAL:
         self.energies: It contains the energy values for each band distributed
                        in a matrix.
         '''
-        title = 'Making Vectors'
-        LOG.percent_complete(0, 100, title=title)
+        process_name = 'Making Vectors'
+        LOG.percent_complete(0, 100, title=process_name)
 
         self.GRAPH = nx.Graph()
         self.min_band = min_band
@@ -128,7 +129,7 @@ class MATERIAL:
         nbnd = self.nbnd if max_band == -1 else max_band+1
         self.make_kpointsIndex()
         energies = self.make_BandsEnergy()
-        LOG.percent_complete(20, 100, title=title)
+        LOG.percent_complete(20, 100, title=process_name)
 
         n_vectors = (nbnd-min_band)*self.nks
         ik = np.tile(self.kpoints_index[:, 0], nbnd-min_band)
@@ -136,18 +137,34 @@ class MATERIAL:
         bands = np.arange(min_band, nbnd)
         eigenvalues = self.eigenvalues[:, bands].T.reshape(n_vectors)
         self.vectors = np.stack([ik, jk, eigenvalues], axis=1)
-        LOG.percent_complete(50, 100, title=title)
+        LOG.percent_complete(100, 100, title=process_name)
 
         self.GRAPH.add_nodes_from(np.arange(n_vectors))
 
         self.degenerados = []
+        
+        def obtain_degenerates(vectors):
+            degenerates = []
+            for i, v in vectors:
+                degenerado = np.where(np.all(np.isclose(self.vectors[i+1:]-v, 0),
+                                    axis=1))[0]
+                if len(degenerado) > 0:
+                    LOG.debug(f'Found degenerete point for {i}')
+                    degenerates += [[i, d+i+1] for d in degenerado]
+            return degenerates
+        
+        '''
         for i, v in enumerate(self.vectors):
             LOG.percent_complete(50 + int(i*50/len(self.vectors)), 100, title=title)
             degenerado = np.where(np.all(np.isclose(self.vectors[i+1:]-v, 0),
                                   axis=1))[0]
             if len(degenerado) > 0:
                 self.degenerados += [[i, d+i+1] for d in degenerado]
-                LOG.debug(f'Found degenerete point for {i}')
+                LOG.debug(f'Found degenerete point for {i}')'''
+        
+
+        self.degenerados = self.parallelize('Finding degenerate points', obtain_degenerates, enumerate(self.vectors))
+
         if len(self.degenerados) > 0:
             LOG.info('Degenerate Points: ')
             for d in self.degenerados:
@@ -190,12 +207,10 @@ class MATERIAL:
              default: 0.95
         '''
 
-        def connection_component(i_start, j_end, tol=0.95):
-            V = self.vectors[i_start:j_end]
+        def connection_component(vectors):
             edges = []
             bands = np.repeat(np.arange(self.min_band, self.max_band+1), len(self.neighbors[0]))
-            for i,_ in enumerate(V):
-                i_ = i+i_start
+            for i_ in vectors:
                 bn1 = i_//self.nks + self.min_band  # bi
                 k1 = i_ % self.nks
                 neighs = np.tile(self.neighbors[k1], self.nbnd)
@@ -213,16 +228,10 @@ class MATERIAL:
                     '''
                     if connection > tol:
                         edges.append([i_, j_])
+            return edges
 
-            edges = np.array(edges)
+        edges = self.parallelize('Computing Edges', connection_component, range(len(self.vectors)))
 
-            with open(f'temp/CONNECTIONS_{i_start}_{j_end}.npy', 'wb') as f:
-                np.save(f, edges)
-                LOG.debug(f'End Process_CONNECTIONS_{i_start}_{j_end}')
-
-        edges = self.parallel_process('CONNECTIONS',
-                                      connection_component,
-                                      len(self.vectors), (tol))
         self.GRAPH.add_edges_from(edges)
 
         for d1, d2 in self.degenerados:
@@ -279,50 +288,39 @@ class MATERIAL:
             for k in N2_:
                 self.GRAPH.add_edge(k, d2)
 
-    def clear_temp(self):
-        os.rmdir("temp")
-
-    def parallel_process(self, process_name, f, N, *args):
-        if not os.path.exists("temp/"):
-            os.mkdir('temp/')
+    def parallelize(self, process_name, f, iterator, *args):
         process = []
-        LOG.debug(f'PARALLEL {process_name}')
+        iterator = list(iterator)
+        N = len(iterator)
+        LOG.debug(f'Starting Parallelization for {process_name} with {N} values')
+        LOG.percent_complete(0, N, title=process_name)
+
+        def parallel_f(result, per, iterator, *args):
+            result += f(iterator, *args)
+            per[0] += len(iterator)
+            LOG.percent_complete(per[0], N, title=process_name)
+        
+        result = Manager().list([])
+        per = Manager().list([0])
+        f_ = partial(parallel_f,  result, per)
+
         n = N//self.n_process
         for i_start in range(self.n_process):
             j_end = n*(i_start+1) if i_start < self.n_process-1\
-                else n*(i_start+1) + n % self.n_process
+                else n*(i_start+1) + N % self.n_process
             i_start = i_start*n
-            LOG.debug(f'\t\tCreating Process {process_name}: {i_start}-{j_end}')
-            process.append(Process(target=f, args=(i_start, j_end, *args)))
+            p = Process(target=f_, args=(iterator[i_start: j_end], *args))
+            p.start()
+            process.append(p)
 
-        print()
-        join_process = []
         while len(process) > 0:
             p = process.pop(0)
-            p.start()
-            join_process.append(p)
-
-        while len(join_process) > 0:
-            p = join_process.pop(0)
             p.join()
 
         print()
-        result = None
-        for i_start in range(self.n_process):
-            j_end = n*(i_start+1) if i_start < self.n_process-1\
-                else n*(i_start+1) + n % self.n_process
-            i_start = i_start*n
-            with open(f'temp/{process_name}_{i_start}_{j_end}.npy', 'rb') as f:
-                matrix = np.load(f)
-            os.remove(f'temp/{process_name}_{i_start}_{j_end}.npy')
-            LOG.debug(f'Joint {process_name}_{i_start}_{j_end} component')
-            if len(matrix) == 0:
-                continue
-            result = np.concatenate((result,
-                                     matrix)) if result is not None else matrix
-        LOG.debug(f'\tEND {process_name}')
 
-        return result
+        return np.array(result)
+
 
     def get_components(self):
         '''
@@ -368,23 +366,28 @@ class MATERIAL:
 
         count = np.array([0, len(samples)])
         while len(samples) > 0:
-            evaluate_samples = np.zeros((len(samples), 2))
-            for i_s, sample in enumerate(samples):
-                scores = np.zeros(len(clusters))
-                for j_s, cluster in enumerate(clusters):
-                    if not cluster.validate(sample):
-                        continue
-                    if len(sample.k_edges) == 0:
-                        sample.calculate_pointsMatrix()
-                        sample.calc_boundary()
-                    scores[j_s] = sample.get_cluster_score(cluster,
-                                                           self.min_band,
-                                                           self.max_band,
-                                                           self.neighbors,
-                                                           self.ENERGIES,
-                                                           self.connections)
-                evaluate_samples[i_s] = np.array([np.max(scores),
-                                                  np.argmax(scores)])
+            def obtain_sample_score(samples):
+                for sample in samples:
+                    evaluate_samples = []
+                    scores = np.zeros(len(clusters))
+                    for j_s, cluster in enumerate(clusters):
+                        if not cluster.validate(sample):
+                            continue
+                        if len(sample.k_edges) == 0:
+                            sample.calculate_pointsMatrix()
+                            sample.calc_boundary()
+                        scores[j_s] = sample.get_cluster_score(cluster,
+                                                               self.min_band,
+                                                               self.max_band,
+                                                               self.neighbors,
+                                                               self.ENERGIES,
+                                                               self.connections)
+                    evaluate_samples.append(np.array([np.max(scores),
+                                                      np.argmax(scores)]))
+                return evaluate_samples
+            
+            evaluate_samples = self.parallelize('\tComputing Samples Score', obtain_sample_score, samples)
+
             for cluster in clusters:
                 cluster.was_modified = False
             arg_max = np.argmax(evaluate_samples[:, 0])
@@ -637,7 +640,7 @@ class COMPONENT:
             return min_energy/delta_energy if delta_energy else 1
         
         def fit_energy(bn1, bn2, iK1, iK2):
-            N = 5 # Number of points taking in account
+            N = 10 # Number of points taking in account
             ik1, jk1 = iK1
             ik_n, jk_n = iK2
             I = np.full(N+1,ik1)
@@ -660,9 +663,10 @@ class COMPONENT:
             f = lambda e: e in self.k_points
             exist_ks = list(map(f, ks))
             ks = ks[exist_ks]
-            if len(ks) <= 1:
+            if len(ks) <= 3:
                 return difference_energy(bn1, bn2, iK1, iK2)
-            bands = self.bands_number[ks] + min_band
+            aux_bands = np.array([self.bands_number[kp] for kp in ks])
+            bands = aux_bands + min_band
             i = i[exist_ks]
             j = j[exist_ks]
             Es = energies[bands, i, j]
@@ -671,7 +675,7 @@ class COMPONENT:
 
             pol = lambda x, a, b, c: a*x**2 + b*x + c
             popt, pcov = curve_fit(pol, X, Es)
-            Enew = f(new_x, *popt)
+            Enew = pol(new_x, *popt)
             Ei = energies[bn1, ik1, jk1]
             LOG.debug(f'Actual Energy: {Ei} Energy founded: {Enew} for {bn1} with {len(i)} points.')
             return difference_energy(bn1, bn2, iK1, iK2, Ei = Enew)

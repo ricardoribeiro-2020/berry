@@ -90,8 +90,6 @@ if __name__ == '__main__':
     material.make_connections(tol=TOL)
     LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
-    material.clear_temp()
-
     LOG.info('  Calculating Components Matrix')
     init_time = time.time()
     labels = material.get_components()
