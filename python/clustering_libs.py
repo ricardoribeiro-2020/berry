@@ -8,7 +8,7 @@ import networkx as nx
 import os
 from scipy.ndimage import correlate
 from write_k_points import bands_numbers
-from multiprocessing import Process, Pool, Manager, Value
+from multiprocessing import Process, Pool, Manager, Value, shared_memory
 from functools import partial
 from log_libs import log
 from loaddata import version
@@ -59,6 +59,69 @@ def evaluate_result(values):
         return POTENTIAL_MISTAKE
 
     return MISTAKE
+
+def evaluate_point(k, bn, k_index, k_matrix, signal, bands, energies):
+    N = 4 #Number of points to fit the curve
+    mach_bn = bands[k, bn]
+    sig = signal[k, bn]
+    ik, jk = k_index[k]
+    Ek = energies[k, mach_bn]
+
+    def difference_energy(Ek, Enew):
+        min_energy = np.min(np.abs(Enew-energies[k]))
+        delta_energy = np.abs(Enew-Ek)
+        return min_energy/delta_energy if delta_energy else 1
+
+    directions = np.array([[1,0], [0,1], [-1,0], [0,-1]]) # Down, Right, Up, Left
+    energy_vals = []
+    for direction in directions:
+        n = np.repeat(np.arange(1,N+1),2).reshape(N,2)
+        kn_index = n*direction + np.array([ik, jk])
+        i, j = kn_index[:, 0], kn_index[:, 1]
+        flag = len(np.unique(i)) > 1
+        if flag:
+            i = i[i >= 0]
+            i = i[i < k_matrix.shape[0]]
+            j = np.full(len(i), j[0])
+        else:
+            j = j[j >= 0]
+            j = j[j < k_matrix.shape[1]]
+            i = np.full(len(j), i[0])
+        
+        ks = k_matrix[i, j] if len(i) > 0 else []
+        if len(ks) == 0:
+            energy_vals.append(1)
+            continue
+        if len(ks) <= 3:
+            Eneig = energies[ks[0], bands[ks[0], bn]]
+            energy_vals.append(difference_energy(Ek, Eneig))
+            continue
+        
+        k_bands = bands[ks, bn]
+        Es = energies[ks, k_bands]
+        X = i if flag else j
+        new_x = ik if flag else jk
+        pol = lambda x, a, b, c: a*x**2 + b*x + c
+        popt, pcov = curve_fit(pol, X, Es)
+        Enew = pol(new_x, *popt)
+        energy_vals.append(difference_energy(Ek, Enew))
+    
+    TOL = 0.9
+    N_Neighs = 4
+    
+    energy_vals = np.array(energy_vals)
+    scores = (energy_vals > TOL)*1
+    score = np.sum(scores)
+
+    CORRECT = 4
+    MISTAKE = 1
+    OTHER = 3
+    
+    if score == N_Neighs:
+        return CORRECT, scores
+    if score == 0:
+        return MISTAKE, scores
+    return OTHER, scores
 
 
 class MATERIAL:
@@ -288,17 +351,22 @@ class MATERIAL:
             for k in N2_:
                 self.GRAPH.add_edge(k, d2)
 
-    def parallelize(self, process_name, f, iterator, *args):
+    def parallelize(self, process_name, f, iterator, *args, verbose=True):
         process = []
         iterator = list(iterator)
         N = len(iterator)
-        LOG.debug(f'Starting Parallelization for {process_name} with {N} values')
-        LOG.percent_complete(0, N, title=process_name)
+        if verbose:
+            LOG.debug(f'Starting Parallelization for {process_name} with {N} values')
+        if verbose:
+            LOG.percent_complete(0, N, title=process_name)
 
         def parallel_f(result, per, iterator, *args):
-            result += f(iterator, *args)
+            value = f(iterator, *args)
+            if value is not None:
+                result += f(iterator, *args)
             per[0] += len(iterator)
-            LOG.percent_complete(per[0], N, title=process_name)
+            if verbose:
+                LOG.percent_complete(per[0], N, title=process_name)
         
         result = Manager().list([])
         per = Manager().list([0])
@@ -317,16 +385,15 @@ class MATERIAL:
             p = process.pop(0)
             p.join()
 
-        print()
+        if verbose:
+            print()
 
         return np.array(result)
-
 
     def get_components(self):
         '''
         The make_connections function constructs the graph, in which
         it can detect components well constructed.
-
             - A component is denominated solved when it has all
               k points attributed.
             - A cluster is a significant component that can not join
@@ -366,27 +433,23 @@ class MATERIAL:
 
         count = np.array([0, len(samples)])
         while len(samples) > 0:
-            def obtain_sample_score(samples):
-                for sample in samples:
-                    evaluate_samples = []
-                    scores = np.zeros(len(clusters))
-                    for j_s, cluster in enumerate(clusters):
-                        if not cluster.validate(sample):
-                            continue
-                        if len(sample.k_edges) == 0:
-                            sample.calculate_pointsMatrix()
-                            sample.calc_boundary()
-                        scores[j_s] = sample.get_cluster_score(cluster,
-                                                               self.min_band,
-                                                               self.max_band,
-                                                               self.neighbors,
-                                                               self.ENERGIES,
-                                                               self.connections)
-                    evaluate_samples.append(np.array([np.max(scores),
-                                                      np.argmax(scores)]))
-                return evaluate_samples
-            
-            evaluate_samples = self.parallelize('\tComputing Samples Score', obtain_sample_score, samples)
+            evaluate_samples = np.zeros((len(samples), 2))
+            for i_s, sample in enumerate(samples):
+                scores = np.zeros(len(clusters))
+                for j_s, cluster in enumerate(clusters):
+                    if not cluster.validate(sample):
+                        continue
+                    if len(sample.k_edges) == 0:
+                        sample.calculate_pointsMatrix()
+                        sample.calc_boundary()
+                    scores[j_s] = sample.get_cluster_score(cluster,
+                                                        self.min_band,
+                                                        self.max_band,
+                                                        self.neighbors,
+                                                        self.ENERGIES,
+                                                        self.connections)
+                evaluate_samples[i_s] = np.array([np.max(scores),
+                                                np.argmax(scores)])
 
             for cluster in clusters:
                 cluster.was_modified = False
@@ -616,7 +679,6 @@ class COMPONENT:
         This function returns the similarity between components taking
         into account the dot product of all essential points and their
         energy value.
-
         INPUT
         cluster: It is a component with which the similarity is calculated.
         min_band: It is an integer that gives the minimum band used for clustering.
@@ -625,7 +687,6 @@ class COMPONENT:
         energies: It is an array of the energy values inside a matrix.
         connections: It is an array with the dot product between k points
                      and his neighbors.
-
         OUTPUT
         score: It is a float that represents the similarity between components.
         '''
@@ -640,7 +701,7 @@ class COMPONENT:
             return min_energy/delta_energy if delta_energy else 1
         
         def fit_energy(bn1, bn2, iK1, iK2):
-            N = 10 # Number of points taking in account
+            N = 4 # Number of points taking in account
             ik1, jk1 = iK1
             ik_n, jk_n = iK2
             I = np.full(N+1,ik1)

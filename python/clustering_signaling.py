@@ -1,7 +1,7 @@
 import numpy as np
 import loaddata as d
-import contatempo
-from headerfooter import header, footer
+from clustering_libs import evaluate_point
+from log_libs import log
 import time
 
 OLD_CORRECT = 5
@@ -14,58 +14,43 @@ DEGENERATE = 2
 MISTAKE = 1
 NOT_SOLVED = 0
 
-def evaluate_point(k, bn, bnfinal):
-    machbn = bnfinal[k, bn]
-    energy = d.eigenvalues[k, machbn]
-    kneigs = d.neighbors[k, d.neighbors[k] != -1]
-    energies = d.eigenvalues[kneigs, :]
-
-    d_energies = np.abs(energies - energy)
-    d_min = np.min(d_energies, axis=1)
-
-    scores = d_min/d_energies[np.arange(len(d_energies)), bnfinal[kneigs, bn]]
-    score = np.mean(scores)
-
-    TOL = 0.9
-    TOL_ERROR = 0.7
-
-    if score > TOL:
-        return CORRECT
-    
-    if score > TOL_ERROR:
-        return OTHER
-    
-    return MISTAKE
-
-
 if __name__ == "__main__":
-    header("BASIS ROTATION", d.version, time.asctime())
-
-    STARTTIME = time.time()  # Starts counting time
+    
+    LOG = log('signaling', 'Band Clustering Signaling', d.version)
+    LOG.header()
 
     # Reading data needed for the run
     berrypath = d.berrypath
-    print("     Unique reference of run:", d.refname)
-    print("     Path to BERRY files:", berrypath)
-    print("     Directory where the wfc are:", d.wfcdirectory)
-    print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
-    print("     Total number of k-points:", d.nks)
-    print("     Total number of points in real space:", d.nr)
-    print("     Number of bands:", d.nbnd)
+
+    LOG.info(f"     Unique reference of run:{d.refname}")
+    LOG.info(f"     Directory where the wfc are:{d.wfcdirectory}")
+    LOG.info(f"     Number of k-points in each direction:{d.nkx}, {d.nky}, {d.nkz}")
+    LOG.info(f"     Total number of k-points:{d.nks}")
+    LOG.info(f"     Number of bands:{d.nbnd}")
     print()
-    print("     Neighbors loaded")
-    print("     Eigenvalues loaded")
+    LOG.info("     Neighbors loaded")
+    LOG.info("     Eigenvalues loaded")
 
-    dotproduct = np.load("dpc.npy")
-    print("     Dot product loaded")
+    connections = np.load("dp.npy")
+    LOG.info("     Modulus of direct product loaded")
 
-    print("     Reading files bandsfinal.npy and signalfinal.npy")
+    LOG.info("     Reading files bandsfinal.npy and signalfinal.npy")
     with open("bandsfinal.npy", "rb") as fich:
         bandsfinal = np.load(fich)
     fich.close()
     with open("signalfinal.npy", "rb") as fich:
         signalfinal = np.load(fich)
     fich.close()
+
+    print()
+    LOG.info("     Finished reading data")
+    print()
+
+    My, Mx = np.meshgrid(np.arange(d.nky), np.arange(d.nkx))
+    k_matrix = My*d.nkx+Mx
+    counts = np.arange(d.nks)
+    k_index = np.stack([counts % d.nkx, counts//d.nkx], axis=1)
+
 
     correct_signalfinal = np.copy(signalfinal)
     correct_signalfinal[signalfinal == OLD_CORRECT] = CORRECT
@@ -77,7 +62,10 @@ if __name__ == "__main__":
     bnds = np.concatenate((bnds_pC, bnds_pM))
 
     for k, bn in zip(ks, bnds):
-        correct_signalfinal[k, bn] = evaluate_point(k, bn, bandsfinal)
+        correct_signalfinal[k, bn], scores = evaluate_point(k, bn, k_index, k_matrix, signalfinal, bandsfinal, d.eigenvalues)
+        LOG.debug(f'K point: {k} Band: {bn}')
+        LOG.debug(f'    New Signal: {correct_signalfinal[k, bn]}')
+        LOG.debug(f'    Directions: {scores}')
     
     final_report = ''
     bands_report = []
