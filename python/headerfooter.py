@@ -21,14 +21,14 @@ BERRY_LOGO = '''
 '''
 
 def header(title, version, time):
-    """ Header that appears in the output of the programas."""
+    """Header that appears in the output of the programas."""
 
     print()
     print(BERRY_LOGO)
-    print("     Program " + title + " " + version + " starts on " + time)
+    print(f"\tProgram {title} {version} stars on {time}")
     print()
-    print("     This program is part of the open-source BERRY suite.")
-    print("         https://ricardoribeiro-2020.github.io/berry/")
+    print("\tThis program is part of the open-source BERRY suite.")
+    print("\t\thttps://ricardoribeiro-2020.github.io/berry/")
     print()
 
 
@@ -37,13 +37,13 @@ def footer(time):
 
     print()
     print()
-    print("     " + time)
+    print(f"\t{time}")
 
     print()
     print(
         "=------------------------------------------------------------------------------="
     )
-    print("      Program finished.")
+    print("\tProgram finished.")
     print(
         "=------------------------------------------------------------------------------="
     )

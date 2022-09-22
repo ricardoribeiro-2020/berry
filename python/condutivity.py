@@ -6,7 +6,6 @@ import sys
 import time
 
 import numpy as np
-import joblib
 
 # This are the subroutines and functions
 import contatempo
@@ -22,16 +21,16 @@ if __name__ == "__main__":
 
     if len(sys.argv) < 3:
         print(
-            "     ERROR in number of arguments. Has to have two integers.\n \
+            " \tERROR in number of arguments. Has to have two integers.\n \
               If the first is negative, it will only calculate transitions between the too bands."
         )
         sys.exit("Stop")
     elif len(sys.argv) == 3:
-        bandfilled = int(sys.argv[1])  # Number of the last filled band at k=0
+        bandfilled = d.vb  # Number of the last filled band at k=0
         bandempty = int(sys.argv[2])  # Number of the last empty band at k=0
         inputfile = ""
     elif len(sys.argv) == 4:
-        bandfilled = int(sys.argv[1])  # Number of the last filled band at k=0
+        bandfilled = d.vb  # Number of the last filled band at k=0
         bandempty = int(sys.argv[2])  # Number of the last empty band at k=0
         inputfile = str(sys.argv[3])  # Name of the file where data for the graphic is
 
@@ -39,7 +38,7 @@ if __name__ == "__main__":
         bandfilled = -bandfilled
         bandlist = [bandfilled, bandempty]
         print(
-            "     Calculating just transitions from band "
+            " \tCalculating just transitions from band "
             + str(bandfilled)
             + " to "
             + str(bandempty)
@@ -47,13 +46,13 @@ if __name__ == "__main__":
     else:
         bandlist = list(range(bandempty + 1))
         print(
-            "     Calculating transitions from bands <"
+            " \tCalculating transitions from bands <"
             + str(bandfilled)
             + " to bands up to "
             + str(bandempty)
         )
 
-    print("     List of bands: ", str(bandlist))
+    print("\tList of bands: ", str(bandlist))
 
     # Default values:
     enermax = 2.5  # Maximum energy (Ry)
@@ -62,7 +61,6 @@ if __name__ == "__main__":
     if inputfile != "":
         with open(inputfile, "r") as le:
             inputvar = le.read().split("\n")
-        le.close()
         # Read that from input file
         for i in inputvar:
             ii = i.split()
@@ -77,23 +75,23 @@ if __name__ == "__main__":
 
     RY = 13.6056923  # Conversion factor from Ry to eV
     ################################################ Read data
-    print("     Start reading data")
+    print("\tStart reading data")
 
     # Reading data needed for the run
-    print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
-    print("     Number of bands:", d.nbnd)
-    print("     k-points step, dk", d.step)  # Defines the step for gradient calculation dk
+    print("\tNumber of k-points in each direction:", d.nkx, d.nky, d.nkz)
+    print("\tNumber of bands:", d.nbnd)
+    print("\tk-points step, dk", d.step)  # Defines the step for gradient calculation dk
     print()
-    print("     Occupations loaded")  # d.occupations = np.array(nks,d.nbnd)
-    print("     Eigenvalues loaded")  # d.eigenvalues = np.array(nks,d.nbnd)
+    print("\tOccupations loaded")  # d.occupations = np.array(nks,d.nbnd)
+    print("\tEigenvalues loaded")  # d.eigenvalues = np.array(nks,d.nbnd)
     with open("bandsfinal.npy", "rb") as fich:
         bandsfinal = np.load(fich)
     fich.close()
-    print("     bandsfinal.npy loaded")
+    print("\tbandsfinal.npy loaded")
     with open("signalfinal.npy", "rb") as fich:
         signalfinal = np.load(fich)
     fich.close()
-    print("     signalfinal.npy loaded")
+    print("\tsignalfinal.npy loaded")
     print()
 
     sys.stdout.flush()
@@ -103,7 +101,7 @@ if __name__ == "__main__":
     for i in range(bandempty + 1):
         for j in range(bandempty + 1):
             index = str(i) + " " + str(j)
-            filename = "./berryCon" + str(i) + "_" + str(j)
+            filename = "./berryConn" + str(i) + "_" + str(j)
             berry_connection[index] = np.load(filename + ".npy")  # Berry connection
 
     # sys.exit("Stop")
@@ -117,7 +115,7 @@ if __name__ == "__main__":
             kp += 1
     #      print(Earray[i,j,banda] )
 
-    print("     Finished reading data")
+    print("\tFinished reading data")
     # sys.exit("Stop")
 
     ################################################## Finished reading data
@@ -126,14 +124,14 @@ if __name__ == "__main__":
     # the '4' comes from spin degeneracy, that is summed in s and s'
     VK = d.step * d.step / (2 * np.pi) ** 2  # element of volume in k-space in units of bohr^-1
 
-    print("     Maximum energy (Ry): " + str(enermax))
-    print("     Energy step (Ry): " + str(enerstep))
-    print("     Energy broadning (Ry): " + str(np.imag(broadning)))
+    print("\tMaximum energy (Ry): " + str(enermax))
+    print("\tEnergy step (Ry): " + str(enerstep))
+    print("\tEnergy broadning (Ry): " + str(np.imag(broadning)))
     print(
-        "     Constant 4e^2/hslash 1/(2pi)^2     in Rydberg units: "
+        " \tConstant 4e^2/hslash 1/(2pi)^2     in Rydberg units: "
         + str(np.imag(CONST))
     )
-    print("     Volume (area) in k space: " + str(VK))
+    print("\tVolume (area) in k space: " + str(VK))
 
     sigma = {}  # Dictionary where the conductivity will be stored
     FERMI = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1))
@@ -189,8 +187,7 @@ if __name__ == "__main__":
                     np.real(sigma[omega][0, 1]),
                 )
             )
-    sigm.close()
-    print("     Real part of conductivity saved to file sigmar.dat")
+    print("\tReal part of conductivity saved to file sigmar.dat")
 
     with open("sigmai.dat", "w") as sigm:
         sigm.write("# Energy (eV), sigma_xx,  sigma_yy,  sigma_yx,  sigma_xy\n")
@@ -205,10 +202,7 @@ if __name__ == "__main__":
                     np.imag(sigma[omega][0, 1]),
                 )
             )
-    sigm.close()
-    print("     Imaginary part of conductivity saved to file sigmai.dat")
-
-    # sys.exit("Stop")
+    print("\tImaginary part of conductivity saved to file sigmai.dat")
 
     ###################################################################################
     # Finished

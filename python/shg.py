@@ -5,14 +5,13 @@ from multiprocessing import Pool, Array
 
 import sys
 import time
-import itertools
 
 from findiff import Gradient
 
 import ctypes
+import itertools
 import numpy as np
 
-# This are the subroutines and functions
 from headerfooter import header, footer
 from comutator import comute, comute3, comutederiv
 
@@ -91,7 +90,7 @@ def func(omega):
 def load_berry_connections(dest: np.ndarray) -> None:
     for i in range(bandempty + 1):
         for j in range(bandempty + 1):
-            dest[i, j] = np.load(f"berryCon{i}_{j}.npy")
+            dest[i, j] = np.load(f"berryConn{i}_{j}.npy")
 
 if __name__ == "__main__":
     header("SHG", d.version, time.asctime())
@@ -105,11 +104,11 @@ if __name__ == "__main__":
         )
         sys.exit("Stop")
     elif len(sys.argv) == 3:
-        bandfilled = int(sys.argv[1])  # Number of the last filled band at k=0
+        bandfilled = d.vb  # Number of the last filled band at k=0
         bandempty = int(sys.argv[2])  # Number of the last empty band at k=0
         inputfile = ""
     elif len(sys.argv) == 4:
-        bandfilled = int(sys.argv[1])  # Number of the last filled band at k=0
+        bandfilled = d.vb  # Number of the last filled band at k=0
         bandempty = int(sys.argv[2])  # Number of the last empty band at k=0
         inputfile = str(sys.argv[3])  # Name of the file where data for the graphic is
 
@@ -241,7 +240,7 @@ if __name__ == "__main__":
     #    print(graddE[:,:,:,s,sprime])
     # e = comute(berryConnection,s,sprime,alpha,beta)
 
-    with Pool(8) as pool:
+    with Pool(d.npr) as pool:
         results = pool.map(func, (omega for omega in np.arange(0, enermax + enerstep, enerstep)))
         for omega, result in results:
             sigma[omega] = result

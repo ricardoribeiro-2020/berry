@@ -6,7 +6,6 @@ import sys
 import time
 
 import numpy as np
-import joblib
 
 # This are the subroutines and functions
 from contatempo import tempo, inter_time
@@ -16,7 +15,7 @@ import loaddata as d
 # pylint: disable=C0103
 ###################################################################################
 if __name__ == "__main__":
-    header("ANAOMALOUS VELOCITY", d.version, time.asctime())
+    header("ANOMALOUS VELOCITY", d.version, time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
 

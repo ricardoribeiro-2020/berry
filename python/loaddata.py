@@ -6,7 +6,6 @@ import numpy as np
 
 # pylint: disable=C0103
 ###################################################################################
-
 # To read the data from file:
 with open("datafile.npy", "rb") as fich:
     k0 = np.load(fich)
@@ -45,73 +44,57 @@ with open("datafile.npy", "rb") as fich:
     wfck2r = str(np.load(fich))
     version = str(np.load(fich))
     refname = str(np.load(fich))
-fich.close()
+    vb = int(np.load(fich))
 
 
 # Read eigenvalues from file   eigenvalues = np.array(nks,nbnd)
 try:
-    with open("eigenvalues.npy", "rb") as fich:
-        eigenvalues = np.load(fich)
-    fich.close()
+    eigenvalues = np.load("eigenvalues.npy")
 except IOError:
     print("  WARNING: No eigenvalues.npy file.")
 
 # Read occupations from file   occupations = np.array(nks,nbnd)
 try:
-    with open("occupations.npy", "rb") as fich:
-        occupations = np.load(fich)
-    fich.close()
+    occupations = np.load("occupations.npy")
 except IOError:
     print("  WARNING: No occupations.npy file.")
 
 
 # Read phase from file         phase = np.zeros((nr,nks),dtype=complex)
 try:
-    with open("phase.npy", "rb") as fich:
-        phase = np.load(fich)
-    fich.close()
+    phase = np.load("phase.npy")
 except IOError:
     print("  WARNING: No phase.npy file.")
 
 # Read neighbors from file     neig = np.full((nks,4),-1,dtype=int)
 try:
-    with open("neighbors.npy", "rb") as fich:
-        neighbors = np.load(fich)
-    fich.close()
+    neighbors = np.load("neighbors.npy")
 except IOError:
     print("  WARNING: No neighbors.npy file.")
 
 
 # Read kpoints from file       kpoints = np.zeros((nks,3), dtype=float)
 try:
-    with open("kpoints.npy", "rb") as fich:
-        kpoints = np.load(fich)
-    fich.close()
+    kpoints = np.load("kpoints.npy")
 except IOError:
     print("  WARNING: No kpoints.npy file.")
 
 # Read nktoijl from file       nktoijl = np.zeros((nks,3),dtype=int)
 try:
-    with open("nktoijl.npy", "rb") as fich:
-        nktoijl = np.load(fich)
-    fich.close()
+    nktoijl = np.load("nktoijl.npy")
 except IOError:
     print("  WARNING: No nktoijl.npy file.")
 
 # Read ijltonk from file       ijltonk = np.zeros((nkx,nky,nkz),dtype=int)
 try:
-    with open("ijltonk.npy", "rb") as fich:
-        ijltonk = np.load(fich)
-    fich.close()
+    ijltonk = np.load("ijltonk.npy")
 except IOError:
     print("  WARNING: No ijltonk.npy file.")
 
 
 # Read positions from file     r = np.zeros((nr,3), dtype=float)
 try:
-    with open("positions.npy", "rb") as fich:
-        r = np.load(fich)
-    fich.close()
+    r = np.load("positions.npy")
 except IOError:
     print("  WARNING: No positions.npy file.")
 

@@ -10,10 +10,10 @@ import os
 import sys
 import time
 
-# This are the subroutines and functions
-import contatempo
-import dft
+from contatempo import tempo
 from headerfooter import header, footer
+
+import dft
 import loaddata as d
 
 # pylint: disable=C0103
@@ -50,22 +50,22 @@ if __name__ == "__main__":
         print("     There are", d.nks, "k-points and", d.nbnd, "bands.")
         for nk in range(d.nks):
             print("     Calculating wfc for k-point", nk)
-            dft.wfck2r(nk, 0, d.nbnd - 1)
+            dft._wfck2r(nk, 0, d.nbnd - 1)
     elif len(sys.argv) == 2:  # Will run just for k-point nk
         nk = int(sys.argv[1])
         print("     Will run just for k-point", nk)
         print("     There are", d.nbnd, "bands.")
         for nb in range(d.nbnd):
             print("     Calculating wfc for k-point", nk, "and band", nb)
-            dft.wfck2r(nk, nb)
+            dft._wfck2r(nk, nb)
     elif len(sys.argv) == 3:  # Will run just for k-point nk and band nb
         nk = int(sys.argv[1])
         nb = int(sys.argv[2])
         print("     Will run just for k-point", nk, "and band", nb)
         print("     Calculating wfc for k-point", nk, "and band", nb)
-        dft.wfck2r(nk, nb)
+        dft._wfck2r(nk, nb)
     print()
 
     ###################################################################################
     # Finished
-    footer(contatempo.tempo(STARTTIME, time.time()))
+    footer(tempo(STARTTIME, time.time()))

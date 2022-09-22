@@ -3,78 +3,58 @@
 
 """
 from itertools import product
-from typing import Tuple, Optional
+from typing import Tuple
 from multiprocessing import Array, Pool
 
-import os
-import sys
 import time
 import ctypes
 
 import numpy as np
+import numba
 
-# This are the subroutines and functions
+from cli import dotproduct_cli
+from jit import numba_njit
 from headerfooter import header, footer
-from NestablePool import NestablePool
+from contatempo import time_fn
 
 import contatempo
 import loaddata as d
 
 # pylint: disable=C0103
 ###################################################################################
-def _connect(nk, j, neighbor, jNeighbor, dphase, band0, band1):
-    "Reads the data from file and "
-
-    with open(f"{d.wfcdirectory}k0{nk}b0{band0}.wfc", "rb") as fichconn:
-        wfc0 = np.load(fichconn)
-    with open(f"{d.wfcdirectory}k0{neighbor}b0{band1}.wfc", "rb") as fichconn:
-        wfc1 = np.load(fichconn)
-
-    dpc[nk, j, band0, band1] = np.sum(dphase * wfc0 * np.conjugate(wfc1)) / d.nr
-    dpc[neighbor, jNeighbor, band1, band0] = np.conjugate(dpc[nk, j, band0, band1])
+@numba_njit
+def aux(dphase, wfc0, wfc1):
+    return np.sum(dphase * wfc0 * wfc1) / d.nr
 
 
-def connection(nkconn, j, neighborconn, jNeighbor, dphaseconn):
-    """Calculates the dot product of all combinations of wfc in nkconn and neighborconn."""
-    params = {
-        "nkconn": (nkconn,),
-        "j": (j,),
-        "neighborconn": (neighborconn,),
-        "jNeighbor": (jNeighbor,),
-        "dphaseconn": (dphaseconn,),
-        "banda0": range(d.nbnd),
-        "banda1": range(d.nbnd),
-    }
+@time_fn(0, 2, prefix="\t")
+def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
 
-    with Pool(1) as pool: #TODO Add Some sort of logic behind the number of cores
-        pool.starmap(_connect, product(*params.values()))
+    dphase = d.phase[:, nk] * d.phase[:, neighbor].conj()
+
+    for band0 in range(d.nbnd):
+        for band1 in range(d.nbnd):
+            wfc0 = np.load(f"{d.wfcdirectory}wfc/k0{nk}b0{band0}.wfc")
+            wfc1 = np.load(f"{d.wfcdirectory}wfc/k0{neighbor}b0{band1}.wfc").conj()
+
+            dpc[nk, j, band0, band1] = aux(dphase, wfc0, wfc1)
+            dpc[neighbor, jNeighbor, band1, band0] = dpc[nk, j, band0, band1].conj()
 
 
-def pre_connection(
-    nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]
-) -> None:
-
-    dphase = d.phase[:, nk] * np.conjugate(d.phase[:, neighbor])
-
-    print("      Calculating   nk = " + str(nk) + "  neighbor = " + str(neighbor))
-    sys.stdout.flush()
-
-    connection(nk, j, neighbor, jNeighbor, dphase)
-
-
-def generate_pre_connection_args(
-    nk: int, j: int
-) -> Optional[Tuple[int, int, int, Tuple[np.ndarray]]]:
+def generate_connection_args(nk: int, j: int) -> None:
     """Generates the arguments for the pre_connection function."""
     neighbor = d.neighbors[nk, j]
     if neighbor != -1 and neighbor > nk:
         jNeighbor = np.where(d.neighbors[neighbor] == nk)
+
         return (nk, j, neighbor, jNeighbor)
     return None
 
 
 ###################################################################################
 if __name__ == "__main__":
+    args = dotproduct_cli()
+
     header("DOTPRODUCT", d.version, time.asctime())
 
     STARTTIME = time.time()  # Starts counting time
@@ -84,67 +64,37 @@ if __name__ == "__main__":
         "nk_points": range(d.nks),
         "num_neibhors": range(4),  # TODO Fix Hardcoded value
     }
-    NPR = d.npr
-    if "-np" in sys.argv:
-        NPR = int(sys.argv[sys.argv.index("-np") + 1])
-    if NPR > os.cpu_count():
-        print("Warning: Number of processors is greater than the number of available processors")
-        print("Setting number of processors to the number of available processors")
-        NPR = os.cpu_count() // 2 # Hyperthreading is not considered
-        if input("Do you want to continue? ([y]/n)? ") == "n":
-            sys.exit(0)
-    if NPR < 1:
-        print("Error: Number of processors must be greater than 0")
-        sys.exit(0)
-    if NPR > d.nks:
-        print("Warning: Number of processors is greater than the number of k-points")
-        if input("Should the number of processors be set to the number of k-points ([y]/n)? ") != "n":
-            NPR = d.nks
-    SUFFIX = "" # Append to the output file name - for dubbuging purposes
-    if "-o" in sys.argv:
-        SUFFIX = sys.argv[sys.argv.index("-o") + 1]
+    NPR = args["NPR"]
 
     # Reading data needed for the run
-
-    print("     Unique reference of run:", d.refname)
-    print("     Directory where the wfc are:", d.wfcdirectory)
-    print("     Total number of k-points:", d.nks)
-    print("     Total number of points in real space:", d.nr)
-    print("     Number of processors to use", NPR)
-    print("     Number of bands:", d.nbnd)
-    print()
-    print("     Phases loaded")
-    print("     Neighbors loaded")
-
-    # Finished reading data needed for the run
+    print(f"\tUnique reference of run: {d.refname}")
+    print(f"\tDirectory where the wfc are: {d.wfcdirectory}")
+    print(f"\tTotal number of k-points: {d.nks}")
+    print(f"\tTotal number of points in real space: {d.nr}")
+    print(f"\tNumber of processors to use: {NPR}")
+    print(f"\tNumber of bands: {d.nbnd}")
     print()
     ##########################################################
 
-    # Creating a buffer for the dpc np.ndarray
     dpc_base = Array(ctypes.c_double, 2 * DPC_SIZE, lock=False)
-    # Initializing shared instance of np.ndarray 'dpc'
-    dpc = np.frombuffer(dpc_base, dtype=complex).reshape(DPC_SHAPE)
+    dpc = np.frombuffer(dpc_base, dtype=np.complex128).reshape(DPC_SHAPE)
 
-    ##########################################################
-
-    # Creating a list of tuples with the neighbors of each k-point
-    #! A Bigger Pool here seems to be better 
-    #TODO Add some sort of logic behind the number of cores
-    with NestablePool(NPR) as pool:
-        pre_connection_args = list(filter(None, pool.starmap(generate_pre_connection_args, product(*RUN_PARAMS.values()))))
-        pool.starmap(pre_connection, pre_connection_args)
+    with Pool(NPR) as pool:
+        pre_connection_args = (
+            list(
+                filter(
+                    None, pool.starmap(generate_connection_args, product(*RUN_PARAMS.values()))
+                )
+            )
+        )
+        pool.starmap(dot, pre_connection_args)
 
     dp = np.abs(dpc)
 
-    # Save dot products to file
-    with open(f"dpc{SUFFIX}.npy", "wb") as fich:
-        np.save(fich, dpc)
-    print(f"     Dot products saved to file dpc{SUFFIX}.npy")
-
-    # Save dot products modulus to file
-    with open(f"dp{SUFFIX}.npy", "wb") as fich:
-        np.save(fich, dp)
-    print(f"     Dot products modulus saved to file dp{SUFFIX}.npy")
+    np.save("dpc.npy", dpc)
+    np.save("dp.npy", dp)
+    print(f"\n\tDot products saved to file dpc.npy")
+    print(f"\tDot products modulus saved to file dp.npy")
 
     ###################################################################################
     # Finished
