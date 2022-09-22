@@ -26,9 +26,9 @@ def read_wfc_files(banda: int) -> None:
 
     def read_wfc_kp(kp):
         if signalfinal[kp, banda] == -1:  # if its a signaled wfc, choose interpolated
-            infile = f"{d.DIR}wfc/k0{kp}b0{bandsfinal[kp, banda]}.wfc1"
+            infile = f"{d.wfcdirectory}wfc/k0{kp}b0{bandsfinal[kp, banda]}.wfc1"
         else:  # else choose original
-            infile = f"{d.DIR}wfc/k0{kp}b0{bandsfinal[kp, banda]}.wfc"
+            infile = f"{d.wfcdirectory}wfc/k0{kp}b0{bandsfinal[kp, banda]}.wfc"
 
         wfct_k[:, kp] = np.load(infile)
 
@@ -59,7 +59,7 @@ def calculate_wfcgra() -> np.ndarray:
 
 
 @time_fn(0, prefix="\t\t")
-def func_name(banda: int) -> None:
+def r_to_k(banda: int) -> None:
     read_wfc_files(banda)
 
     calculate_wfcpos()
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     wfcgra = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCGRA_SHAPE)
 
     for banda in range(MIN_BAND, MAX_BAND + 1):
-        func_name(banda)
+        r_to_k(banda)
 
     ###################################################################################
     # Finished
