@@ -14,7 +14,7 @@
         program = 'QE'
         prefix = ''
         outdir = ''
-       refname = date and time: it is better to keep the default
+        refname = date and time: it is better to keep the default
 """
 __version__ = "v1.0"
 
@@ -32,7 +32,7 @@ import contatempo
 import dft
 from headerfooter import header, footer
 from parserQE import parser
-from write_k_points import list_kpoints
+from write_k_points import _list_kpoints
 
 # pylint: disable=C0103
 ###################################################################################
@@ -56,11 +56,11 @@ if __name__ == "__main__":
 
     # Check python version
     python_version = (
-                   str(sys.version_info[0])
-                   + '.'
-                   + str(sys.version_info[1])
-                   + '.'
-                   + str(sys.version_info[2])
+                str(sys.version_info[0])
+                + '.'
+                + str(sys.version_info[1])
+                + '.'
+                + str(sys.version_info[2])
     )
     if not sys.version_info > (2, 7):
         print(" *!*!*!*!*!*!*!*!*!*!*!")
@@ -90,7 +90,6 @@ if __name__ == "__main__":
     # Open input file for the run
     with open(sys.argv[1], "r") as inputfile:
         INPUTVAR = inputfile.read().split("\n")
-    inputfile.close()
 
     # Read that from input file
     for i in INPUTVAR:
@@ -123,7 +122,7 @@ if __name__ == "__main__":
             PROGRAM = str(ii[1])
         if ii[0] == "prefix":
             PREFIX = ii[1]
-        if ii[0] == "outdir":
+        if ii[0] == "outdir":   
             OUTDIR = ii[1]
         if ii[0] == "refname":
             OUTDIR = ii[1]
@@ -232,13 +231,13 @@ if __name__ == "__main__":
 
     # Starts DFT calculations ##############################
     # Runs scf calculation  ** DFT
-    dft.scf(MPI, DFTDIRECTORY, NAMESCF, OUTDIR, PSEUDODIR)
+    dft._scf(MPI, DFTDIRECTORY, NAMESCF, OUTDIR, PSEUDODIR)
 
     # Creates template for nscf calculation  ** DFT
-    NSCF = dft.template(DFTDIRECTORY, NAMESCF)
+    NSCF = dft._template(DFTDIRECTORY, NAMESCF)
 
     # Runs nscf calculations for all k-points  ** DFT **
-    dft.nscf(MPI, DFTDIRECTORY, NAMENSCF, NSCF, NKS, NSCFKPOINTS, NBND)
+    dft._nscf(MPI, DFTDIRECTORY, NAMENSCF, NSCF, NKS, NSCFKPOINTS, NBND)
     sys.stdout.flush()
 
     print("     Extracting data from DFT calculations")
@@ -316,6 +315,11 @@ if __name__ == "__main__":
         LSDA = True
     print("     Spin polarized calculation: ", LSDA)
 
+    VB = NELEC - 2 if NONCOLINEAR  or LSDA else (NELEC / 2) - 1
+    if VB - int(VB) != 0:
+        print("[WARNING]\tThe system is a metal!")
+    VB = int(VB)
+    print("     Valence band is: ", VB)
     print()
 
     # for child in ROOT[3][9]:
@@ -480,7 +484,7 @@ if __name__ == "__main__":
         np.save(fich, WFCK2R)  # File for extracting DFT wfc to real space
         np.save(fich, __version__)  # Version of berry where data was created
         np.save(fich, refname)  # Unique reference for the run
-        np.save(fich, "dummy")  # Saving space for future values and compatibility
+        np.save(fich, VB)  # Valence band number 
         np.save(fich, "dummy")  # Saving space for future values and compatibility
         np.save(fich, "dummy")  # Saving space for future values and compatibility
         np.save(fich, "dummy")  # Saving space for future values and compatibility
@@ -488,7 +492,7 @@ if __name__ == "__main__":
     fich.close()
     print("     Data saved to file datafile.npy")
 
-    list_kpoints(nkx, nky)
+    _list_kpoints(nkx, nky)
 
     ###################################################################################
     # Finished
