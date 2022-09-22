@@ -25,5 +25,5 @@ under project  **QUEST2D - Excitations in quantum 2D materials**
 PTDC/FIS-MAC/2045/2021 and in the framework of the Strategic Funding UIDB/04650/2020.
 
 - **Requirements** To install requiremnts, run:
-```console pip install -r requirements.txt```
+```pip install -r requirements.txt```
 
