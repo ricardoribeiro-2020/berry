@@ -26,9 +26,9 @@ def read_wfc_files(banda: int) -> None:
 
     def read_wfc_kp(kp):
         if signalfinal[kp, banda] == -1:  # if its a signaled wfc, choose interpolated
-            infile = f"{d.wfcdirectory}wfc/k0{kp}b0{bandsfinal[kp, banda]}.wfc1"
+            infile = f"{d.wfcdirectory}k0{kp}b0{bandsfinal[kp, banda]}.wfc1"
         else:  # else choose original
-            infile = f"{d.wfcdirectory}wfc/k0{kp}b0{bandsfinal[kp, banda]}.wfc"
+            infile = f"{d.wfcdirectory}k0{kp}b0{bandsfinal[kp, banda]}.wfc"
 
         wfct_k[:, kp] = np.load(infile)
 
