@@ -21,7 +21,7 @@ def berry_connection(n_pos: int, n_gra: int):
     """
     Calculates the Berry connection.
     """ 
-    wfcpos = np.load(f"{d.DIR}wfcpos{n_pos}.npy", mmap_mode="r").conj()
+    wfcpos = np.load(f"wfcpos{n_pos}.npy", mmap_mode="r").conj()
     
     @numba_njit
     def aux_connection() -> np.ndarray:
@@ -50,7 +50,7 @@ def berry_curvature(idx: int, idx_: int) -> None:
     if idx == idx_:
         wfcgra_ = wfcgra.conj()
     else:
-        wfcgra_ = np.load(f"{d.DIR}wfcgra{idx_}.npy", mmap_mode="r").conj()
+        wfcgra_ = np.load(f"wfcgra{idx_}.npy", mmap_mode="r").conj()
 
     @numba_njit
     def aux_curvature() -> np.ndarray:
@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
     if PROP == "both" or PROP == "connection":
         for idx in range(MIN_BAND, MAX_BAND + 1):
-            wfcgra[:] = np.load(f"{d.DIR}wfcgra{idx}.npy")
+            wfcgra[:] = np.load(f"wfcgra{idx}.npy")
 
             berry_conn = time_fn(0, 1, prefix="\t")(berry_connection)
             work_load = ((idx_pos, idx) for idx_pos in range(MIN_BAND, MAX_BAND + 1))
@@ -103,7 +103,7 @@ if __name__ == "__main__":
 
     if PROP == "both" or PROP == "curvature":
         for idx in range(MIN_BAND, MAX_BAND + 1):
-            wfcgra[:] = np.load(f"{d.DIR}wfcgra{idx}.npy")
+            wfcgra[:] = np.load(f"wfcgra{idx}.npy")
 
             berry_curv = time_fn(0, 1, prefix="\t")(berry_curvature)
             work_load = ((idx, idx_) for idx_ in range(MIN_BAND, MAX_BAND + 1))

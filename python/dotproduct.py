@@ -34,8 +34,8 @@ def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
 
     for band0 in range(d.nbnd):
         for band1 in range(d.nbnd):
-            wfc0 = np.load(f"{d.wfcdirectory}wfc/k0{nk}b0{band0}.wfc")
-            wfc1 = np.load(f"{d.wfcdirectory}wfc/k0{neighbor}b0{band1}.wfc").conj()
+            wfc0 = np.load(f"{d.wfcdirectory}k0{nk}b0{band0}.wfc")
+            wfc1 = np.load(f"{d.wfcdirectory}k0{neighbor}b0{band1}.wfc").conj()
 
             dpc[nk, j, band0, band1] = aux(dphase, wfc0, wfc1)
             dpc[neighbor, jNeighbor, band1, band0] = dpc[nk, j, band0, band1].conj()
