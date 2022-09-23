@@ -628,14 +628,13 @@ class MATERIAL:
             LOG.debug(f'    New Signal: {signal}')
             LOG.debug(f'    Directions: {scores}')
 
-        k_non, bn_non = np.where(self.correct_signal == NOT_SOLVED)
         k_error, bn_error = np.where(self.correct_signal == MISTAKE)
         k_other, bn_other = np.where(self.correct_signal == OTHER)
 
         ks = np.concatenate((k_error, k_other))
         bnds = np.concatenate((bn_error, bn_other))
 
-        bands_signaling = np.zeros((self.nbnd, *self.matrix.shape), int)
+        bands_signaling = np.zeros((self.total_bands, *self.matrix.shape), int)
         k_index = self.kpoints_index[ks]
         ik, jk = k_index[:, 0], k_index[:, 1]
         bands_signaling[bnds, ik, jk] = 1
@@ -647,7 +646,7 @@ class MATERIAL:
 
         directions = np.array([[1, 0], [0, 1]])
 
-        for bn, band in enumerate(bands_signaling):
+        for bn, band in enumerate(bands_signaling[self.min_band: self.max_band+1]):
             if np.sum(band) > 3:
                 identify_points = correlate(band, mean_fitler, output=None,
                                             mode='reflect', cval=0.0, origin=0) > 0
