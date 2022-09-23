@@ -181,7 +181,7 @@ if __name__ == "__main__":
     print("     Name of nscf file:", NAMENSCF)
     print("     DFT prefix:", PREFIX)
     print("     DFT outdir:", OUTDIR)
-    DFTDATAFILE = OUTDIR + PREFIX + ".xml"
+    DFTDATAFILE = "/local/bn/e100_3120/dft/out/" + PREFIX + ".xml"
     print("     DFT data file:", DFTDATAFILE)
     print()
     print("     Finished reading input file")
@@ -360,9 +360,7 @@ if __name__ == "__main__":
     PHASE = np.exp(1j * np.dot(RPOINT, KPOINTS.T))
 
     # Start saving data to files ##################################
-    with open("phase.npy", "wb") as fich:
-        np.save(fich, PHASE)
-    fich.close()
+    np.save("phase.npy", PHASE)
     print("     PHASE saved to file phase.npy")
 
     NEIG = np.full((NKS, 4), -1, dtype=int)
@@ -403,47 +401,32 @@ if __name__ == "__main__":
                 NEIG[nk, 1] = n1
                 NEIG[nk, 2] = n2
                 NEIG[nk, 3] = n3
-    nei.close()
     print("     Neighbors saved to file neighbors.dat")
-    with open("neighbors.npy", "wb") as nnn:
-        np.save(nnn, NEIG)
-    nnn.close()
+    np.save("neighbors.npy", NEIG)
     print("     Neighbors saved to file neighbors.npy")
 
     # Save EIGENVALUES to file (in Ha)
-    with open("eigenvalues.npy", "wb") as fich:
-        np.save(fich, EIGENVALUES)
-    fich.close()
+    np.save("eigenvalues.npy", EIGENVALUES)
     print("     EIGENVALUES saved to file eigenvalues.npy (Ry)")
 
     # Save OCCUPATIONS to file
-    with open("occupations.npy", "wb") as fich:
-        np.save(fich, OCCUPATIONS)
-    fich.close()
+    np.save("occupations.npy", OCCUPATIONS)
     print("     OCCUPATIONS saved to file occupations.npy")
 
     # Save positions to file
-    with open("positions.npy", "wb") as fich:
-        np.save(fich, RPOINT)
-    fich.close()
+    np.save("positions.npy", RPOINT)
     print("     Positions saved to file positions.npy (bohr)")
 
     # Save kpoints to file
-    with open("kpoints.npy", "wb") as fich:
-        np.save(fich, KPOINTS)
-    fich.close()
+    np.save("kpoints.npy", KPOINTS)
     print("     KPOINTS saved to file kpoints.npy (2pi/bohr)")
 
     # Save nktoijl to file
-    with open("nktoijl.npy", "wb") as fich:
-        np.save(fich, NKTOIJL)
-    fich.close()
+    np.save("nktoijl.npy", NKTOIJL)
     print("     NKTOIJL saved to file nktoijl.npy, with convertion from nk to ijl")
 
     # Save ijltonk to file
-    with open("ijltonk.npy", "wb") as fich:
-        np.save(fich, IJLTONK)
-    fich.close()
+    np.save("ijltonk.npy", IJLTONK)
     print("     IJLTONK saved to file ijltonk.npy, with convertion from ijl to nk")
 
     # Save data to file 'datafile.npy'
@@ -489,7 +472,6 @@ if __name__ == "__main__":
         np.save(fich, "dummy")  # Saving space for future values and compatibility
         np.save(fich, "dummy")  # Saving space for future values and compatibility
         np.save(fich, "dummy")  # Saving space for future values and compatibility
-    fich.close()
     print("     Data saved to file datafile.npy")
 
     _list_kpoints(nkx, nky)
