@@ -61,12 +61,38 @@ if __name__ == "__main__":
     ks = np.concatenate((ks_pC, ks_pM))
     bnds = np.concatenate((bnds_pC, bnds_pM))
 
+    error_directions = []
+    directions = []
+
     for k, bn in zip(ks, bnds):
-        correct_signalfinal[k, bn], scores = evaluate_point(k, bn, k_index, k_matrix, signalfinal, bandsfinal, d.eigenvalues)
+        signal, scores = evaluate_point(k, bn, k_index, k_matrix, signalfinal, bandsfinal, d.eigenvalues)
+        correct_signalfinal[k, bn] = signal
+        if signal < CORRECT:
+            error_directions.append([k, bn])
+            directions.append(scores)
         LOG.debug(f'K point: {k} Band: {bn}')
-        LOG.debug(f'    New Signal: {correct_signalfinal[k, bn]}')
+        LOG.debug(f'    New Signal: {signal}')
         LOG.debug(f'    Directions: {scores}')
     
+    error_directions = np.array(error_directions)
+    directions = np.array(directions)
+
+    bands_signaling = np.zeros((d.nbnd, 4, *k_matrix.shape), int)
+    k_index = k_index[error_directions[:, 0]]
+    ik, jk = k_index[:, 0], k_index[:, 1]
+    bnds = error_directions[:, 1]
+    repeat_scores = np.sum(directions == 0, axis=1)
+    bnds = np.repeat(bnds, repeat_scores)
+    ik = np.repeat(ik, repeat_scores)
+    jk = np.repeat(jk, repeat_scores)
+    scores = np.where(directions == 0)[1]
+    bands_signaling[bnds, scores, ik, jk] = 1
+    for bn, band in enumerate(bands_signaling):
+        with open(f'signaling/bn_{bn}_signaling.npy', 'wb') as f:
+            np.save(f, band)
+
+
+
     final_report = ''
     bands_report = []
     for bn in range(len(correct_signalfinal[0])):
@@ -93,6 +119,6 @@ if __name__ == "__main__":
             n_spaces = n_max - len(str(value))
             final_report += ' '*n_spaces+str(value) + '   '
 
-    print(final_report)
+    LOG.info(final_report)
 
             

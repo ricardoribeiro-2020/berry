@@ -111,6 +111,16 @@ if __name__ == '__main__':
     material.obtain_output()
     LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
+    material.print_report()
+
+    with open('output/final.report', 'w') as f:
+        f.write(material.final_report)
+
+    LOG.info('Correcting signals and getting new Output')
+    init_time = time.time()
+    material.correct_signal()
+    LOG.info(f'{contatempo.tempo(init_time, time.time())}')
+
     with open('output/bandsfinal.npy', 'wb') as f:
         np.save(f, material.bands_final)
 
@@ -119,11 +129,6 @@ if __name__ == '__main__':
 
     with open('output/degeneratefinal.npy', 'wb') as f:
         np.save(f, material.degenerate_final)
-
-    material.print_report()
-
-    with open('output/final.report', 'w') as f:
-        f.write(material.final_report)
 
     LOG.footer()
 

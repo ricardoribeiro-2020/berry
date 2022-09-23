@@ -471,6 +471,7 @@ class MATERIAL:
         if len(self.solved)/self.nbnd < 1:
             LOG.info(f'    New clusnters: {len(clusters)}')
 
+
         labels = np.empty(self.nks*self.nbnd, int)
         count = 0
         for solved in self.solved:
@@ -481,8 +482,6 @@ class MATERIAL:
             # cluster.save_boundary(f'cluster_{count}') # Used for analysis
             labels[cluster.nodes] = count
             count += 1
-
-        self.clusters = clusters
 
         return labels
 
@@ -565,7 +564,7 @@ class MATERIAL:
         self.degenerate_final = np.array(self.degenerate_final)
 
     def print_report(self):
-        final_report = '\t====== FINAL REPORT ======\n\n'
+        final_report = '\t====== REPORT ======\n\n'
         bands_report = []
         for bn in range(self.min_band, self.min_band+self.nbnd):
             band_result = self.signal_final[:, bn]
@@ -597,7 +596,83 @@ class MATERIAL:
 
         LOG.info(final_report)
         self.final_report = final_report
+    
+    def correct_signal(self):
+        self.obtain_output()
+        del self.GRAPH
+        OTHER = 3
+        MISTAKE = 1
+        NOT_SOLVED = 0
 
+        self.correct_signalfinal = np.copy(self.signal_final)
+        self.correct_signalfinal[self.signal_final == CORRECT] = CORRECT-1
+
+        ks_pC, bnds_pC = np.where(self.signal_final == POTENTIAL_CORRECT)
+        ks_pM, bnds_pM = np.where(self.signal_final == POTENTIAL_MISTAKE)
+
+        ks = np.concatenate((ks_pC, ks_pM))
+        bnds = np.concatenate((bnds_pC, bnds_pM))
+
+        error_directions = []
+        directions = []
+
+        for k, bn in zip(ks, bnds):
+            signal, scores = evaluate_point(k, bn, self.kpoints_index,
+                                            self.matrix, self.signal_final, 
+                                            self.bands_final, self.eigenvalues)
+            self.correct_signalfinal[k, bn] = signal
+            if signal == OTHER:
+                error_directions.append([k, bn])
+                directions.append(scores)
+            LOG.debug(f'K point: {k} Band: {bn}')
+            LOG.debug(f'    New Signal: {signal}')
+            LOG.debug(f'    Directions: {scores}')
+
+        k_non, bn_non = np.where(self.correct_signal == NOT_SOLVED)
+        k_error, bn_error = np.where(self.correct_signal == MISTAKE)
+        k_other, bn_other = np.where(self.correct_signal == OTHER)
+
+        ks = np.concatenate((k_error, k_other))
+        bnds = np.concatenate((bn_error, bn_other))
+
+        bands_signaling = np.zeros((self.nbnd, *self.matrix.shape), int)
+        k_index = self.kpoints_index[ks]
+        ik, jk = k_index[:, 0], k_index[:, 1]
+        bands_signaling[bnds, ik, jk] = 1
+
+        mean_fitler = np.ones((3,3))
+
+        self.GRAPH = nx.Graph()
+        self.GRAPH.add_nodes_from(np.arange(len(self.vectors)))
+
+        directions = np.array([[1, 0], [0, 1]])
+
+        for bn, band in enumerate(bands_signaling):
+            if np.sum(band) > 3:
+                identify_points = correlate(band, mean_fitler, output=None,
+                                            mode='reflect', cval=0.0, origin=0) > 0
+            else:
+                identify_points = band > 0
+
+            edges = []
+            for ik, row in enumerate(identify_points):
+                for jk, val in enumerate(row):
+                    if val:
+                        continue
+                    kp = self.matrix[ik, jk]
+                    for direction in directions:
+                        ikn, jkn = np.array([ik, jk]) + direction
+                        kneig = self.matrix[ikn, jkn]
+                        if not identify_points[ikn, jkn]:
+                            p = kp + self.bands_final[kp]*self.nks
+                            pn = kneig + self.bands_final[kneig]*self.nks
+                            edges.append([p, pn])
+            self.GRAPH.add_edges_from(edges)
+
+        self.get_components()
+        self.obtain_output()
+        self.print_report()
+        
 
 class COMPONENT:
     '''
