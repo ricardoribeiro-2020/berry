@@ -1,8 +1,9 @@
 """
   This program calculates the linear conductivity from the Berry connections
 """
-from multiprocessing import Array
-from typing import Tuple, Dict
+from multiprocessing import Array, Pool
+from typing import Tuple
+from itertools import product
 
 import sys
 import time
@@ -60,33 +61,28 @@ def get_delta_eigen_array_and_fermi(eigen_array: np.ndarray) -> Tuple[np.ndarray
 
     return delta_eigen_array, fermi
 
-@time_fn(prefix="\t")
-def compute_condutivity(delta_eigen_array: np.ndarray) -> Dict[float, np.ndarray]:
-    sigma = {}
-    for omega in np.arange(0, ENERMAX + ENERSTEP, ENERSTEP):
+@time_fn(0, prefix="\t", display_arg_name=True)
+def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.ndarray) -> Tuple[float, np.ndarray]:
+    omegaarray = np.full(OMEGA_SHAPE, omega + BROADING)
+    gamma = CONST * delta_eigen_array / (omegaarray - delta_eigen_array)        # factor that multiplies
+    sig = np.full((2, 2), 0.0 + 0j)                                             # matrix sig_xx, sig_xy, sig_yy, sig_yx
 
-        omegaarray = np.full(OMEGA_SHAPE, omega + BROADING)
-        gamma = CONST * delta_eigen_array / (omegaarray - delta_eigen_array)    # factor that multiplies
-        sig = np.full((2, 2), 0.0 + 0j)                                         # matrix sig_xx, sig_xy, sig_yy, sig_yx
+    for s in BANDLIST:                                                          # runs through index s
+        for sprime in BANDLIST:                                                 # runs through index s'
+            if s == sprime:
+                continue
 
-        for s in BANDLIST:                                                      # runs through index s
-            for sprime in BANDLIST:                                             # runs through index s'
-                if s == sprime:
-                    continue
+            for beta in range(2):                                               # beta is spatial coordinate
+                for alpha in range(2):                                          # alpha is spatial coordinate
 
-                for beta in range(2):                                           # beta is spatial coordinate
-                    for alpha in range(2):                                      # alpha is spatial coordinate
+                    sig[alpha, beta] += np.sum(
+                        gamma[:, :, sprime, s]
+                        * berry_connections[s][sprime][alpha]
+                        * berry_connections[sprime][s][beta]
+                        * fermi[:, :, s, sprime]
+                    )
 
-                        sig[alpha, beta] += np.sum(
-                            gamma[:, :, sprime, s]
-                            * berry_connections[s][sprime][alpha]
-                            * berry_connections[sprime][s][beta]
-                            * fermi[:, :, s, sprime]
-                        )
-
-        sigma[omega] = sig * VK
-
-    return sigma
+    return (omega, sig * VK)
 
 if __name__ == "__main__":
     args = conductivity_cli()
@@ -106,11 +102,12 @@ if __name__ == "__main__":
     BANDEMPTY  = args["BANDEMPTY"]
     BANDLIST   = list(range(BANDEMPTY + 1))
 
+    NPR = args["NPR"]
     ENERMAX  = args["ENERMAX"]                                                  # Maximum energy (Ry)
     ENERSTEP = args["ENERSTEP"]                                                 # Energy step (Ry)
     BROADING = args["BROADNING"]                                                # energy broading (Ry)
 
-    OMEGA_SHAPE             =(d.nkx, d.nky, BANDEMPTY + 1, BANDEMPTY + 1)
+    OMEGA_SHAPE             = (d.nkx, d.nky, BANDEMPTY + 1, BANDEMPTY + 1)
     BERRY_CONNECTIONS_SIZE  = 2 * d.nkx * d.nky * (BANDEMPTY + 1) ** 2
     BERRY_CONNECTIONS_SHAPE = (BANDEMPTY + 1, BANDEMPTY + 1, 2, d.nkx, d.nky)
     ###########################################################################
@@ -131,14 +128,15 @@ if __name__ == "__main__":
     # 3. CREATE ALL THE ARRAYS
     ###########################################################################
     bandsfinal               = np.load("bandsfinal.npy")
-    signalfinal              = np.load("signalfinal.npy")
+    signalfinal              = np.load("signalfinal.npy")                       # Not used
     eigen_array              = correct_eigenvalues(bandsfinal)
     berry_connections        = load_berry_connections()
     delta_eigen_array, fermi = get_delta_eigen_array_and_fermi(eigen_array)
     ###########################################################################
     # 4. CALCULATE THE CONDUCTIVITY
     ###########################################################################
-    sigma = compute_condutivity(delta_eigen_array)
+    with Pool(NPR) as pool:
+        sigma = dict(pool.starmap(compute_condutivity, product(np.arange(0, ENERMAX + ENERSTEP, ENERSTEP), [delta_eigen_array], [fermi])))
     ###########################################################################
     # 5. SAVE OUTPUT
     ###########################################################################
