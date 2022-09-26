@@ -702,6 +702,7 @@ class MATERIAL:
             LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
             bands_final_flag = np.sum(np.abs(bands_final_prev - self.bands_final)) != 0
+            bands_final_prev = self.bands_final
             TOL -= step
 
 class COMPONENT:
