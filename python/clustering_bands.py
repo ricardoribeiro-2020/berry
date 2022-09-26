@@ -53,6 +53,9 @@ if __name__ == '__main__':
                       + '\n\tThe program will use the default settings.'\
                       + f'BANDS: 0-{d.nbnd-1}'
         print(warning_msg)
+    
+    if not os.path.exists('output/'):
+        os.mkdir('output/')
 
     min_band, max_band = bands
     n_bands = max_band-min_band+1
@@ -90,36 +93,15 @@ if __name__ == '__main__':
     material.make_connections(tol=TOL)
     LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
-    LOG.info('  Calculating Components Matrix')
+    LOG.info('  Solving problem')
     init_time = time.time()
-    labels = material.get_components()
+    labels = material.solve()
     LOG.info(f'{contatempo.tempo(init_time, time.time())}')
-
-    if not os.path.exists('output/'):
-        os.mkdir('output/')
-
-    with open('output/VECTORS.npy', 'wb') as f:
-        np.save(f, material.nkx)
-        np.save(f, material.nky)
-        np.save(f, material.vectors)
-        np.save(f, labels)
 
     LOG.info('Clustering Done')
 
-    LOG.info('Computing Output')
-    init_time = time.time()
-    material.obtain_output()
-    LOG.info(f'{contatempo.tempo(init_time, time.time())}')
-
-    material.print_report()
-
     with open('output/final.report', 'w') as f:
         f.write(material.final_report)
-
-    LOG.info('Correcting signals and getting new Output')
-    init_time = time.time()
-    material.correct_signal()
-    LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
     with open('output/bandsfinal.npy', 'wb') as f:
         np.save(f, material.bands_final)

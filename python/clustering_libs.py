@@ -5,6 +5,8 @@ The algorithm uses machine learning techniques to cluster the data.
 
 import numpy as np
 import networkx as nx
+import contatempo
+import time
 import os
 from scipy.ndimage import correlate
 from write_k_points import bands_numbers
@@ -236,6 +238,8 @@ class MATERIAL:
         self.ENERGIES = energies
         self.nbnd = nbnd-min_band
 
+        self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
+
     def get_neigs(self, i):
         return list(self.GRAPH.neighbors(i))
 
@@ -390,7 +394,7 @@ class MATERIAL:
 
         return np.array(result)
 
-    def get_components(self):
+    def get_components(self, tol=0.5):
         '''
         The make_connections function constructs the graph, in which
         it can detect components well constructed.
@@ -443,11 +447,12 @@ class MATERIAL:
                         sample.calculate_pointsMatrix()
                         sample.calc_boundary()
                     scores[j_s] = sample.get_cluster_score(cluster,
-                                                        self.min_band,
-                                                        self.max_band,
-                                                        self.neighbors,
-                                                        self.ENERGIES,
-                                                        self.connections)
+                                                           self.min_band,
+                                                           self.max_band,
+                                                           self.neighbors,
+                                                           self.ENERGIES,
+                                                           self.connections,
+                                                           tol=tol)
                 evaluate_samples[i_s] = np.array([np.max(scores),
                                                 np.argmax(scores)])
 
@@ -482,7 +487,8 @@ class MATERIAL:
             # cluster.save_boundary(f'cluster_{count}') # Used for analysis
             labels[cluster.nodes] = count
             count += 1
-
+        
+        self.clusters = clusters
         return labels
 
     def obtain_output(self):
@@ -491,7 +497,6 @@ class MATERIAL:
         that are essential to other programs.
         '''
 
-        self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
         self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
         self.degenerate_final = []
 
@@ -572,7 +577,7 @@ class MATERIAL:
             bands_report.append(report)
 
             LOG.info(f'\n  New Band: {bn}\tnr falis: {report[0]}')
-            bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
+            # bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
 
         bands_report = np.array(bands_report)
         final_report += '\n Signaling: how many events ' + \
@@ -602,7 +607,6 @@ class MATERIAL:
         del self.GRAPH
         OTHER = 3
         MISTAKE = 1
-        NOT_SOLVED = 0
 
         self.correct_signalfinal = np.copy(self.signal_final)
         self.correct_signalfinal[self.signal_final == CORRECT] = CORRECT-1
@@ -628,8 +632,8 @@ class MATERIAL:
             LOG.debug(f'    New Signal: {signal}')
             LOG.debug(f'    Directions: {scores}')
 
-        k_error, bn_error = np.where(self.correct_signal == MISTAKE)
-        k_other, bn_other = np.where(self.correct_signal == OTHER)
+        k_error, bn_error = np.where(self.correct_signalfinal == MISTAKE)
+        k_other, bn_other = np.where(self.correct_signalfinal == OTHER)
 
         ks = np.concatenate((k_error, k_other))
         bnds = np.concatenate((bn_error, bn_other))
@@ -647,6 +651,7 @@ class MATERIAL:
         directions = np.array([[1, 0], [0, 1]])
 
         for bn, band in enumerate(bands_signaling[self.min_band: self.max_band+1]):
+            bn += self.min_band
             if np.sum(band) > 3:
                 identify_points = correlate(band, mean_fitler, output=None,
                                             mode='reflect', cval=0.0, origin=0) > 0
@@ -661,17 +666,43 @@ class MATERIAL:
                     kp = self.matrix[ik, jk]
                     for direction in directions:
                         ikn, jkn = np.array([ik, jk]) + direction
+                        if ikn >= self.matrix.shape[0] or jkn >= self.matrix.shape[1]:
+                            continue
                         kneig = self.matrix[ikn, jkn]
                         if not identify_points[ikn, jkn]:
-                            p = kp + self.bands_final[kp]*self.nks
-                            pn = kneig + self.bands_final[kneig]*self.nks
+                            p = kp + (self.bands_final[kp, bn] - self.min_band)*self.nks
+                            pn = kneig + (self.bands_final[kneig, bn] - self.min_band)*self.nks
                             edges.append([p, pn])
+            edges = np.array(edges)
             self.GRAPH.add_edges_from(edges)
 
         self.get_components()
         self.obtain_output()
         self.print_report()
-        
+    
+    def solve(self, step=0.1, min_tol=0):
+        TOL = 0.5
+        bands_final_flag = True
+        bands_final_prev = np.copy(self.bands_final)
+        while bands_final_flag and TOL >= min_tol:
+            LOG.info(f'  Clustering samples for tolerance {TOL}')
+            init_time = time.time()
+            self.get_components(tol=TOL)
+            LOG.info(f'{contatempo.tempo(init_time, time.time())}')
+
+            LOG.info('  Calculating output')
+            init_time = time.time()
+            self.obtain_output()
+            self.print_report()
+            LOG.info(f'{contatempo.tempo(init_time, time.time())}')
+
+            LOG.info('  Validating result')
+            init_time = time.time()
+            self.correct_signal()
+            LOG.info(f'{contatempo.tempo(init_time, time.time())}')
+
+            bands_final_flag = np.sum(np.abs(bands_final_prev - self.bands_final)) != 0
+            TOL -= step
 
 class COMPONENT:
     '''
@@ -748,7 +779,7 @@ class COMPONENT:
             self.k_edges = self.nodes % self.nks
 
     def get_cluster_score(self, cluster, min_band, max_band,
-                          neighbors, energies, connections):
+                          neighbors, energies, connections, tol = 0.5):
         '''
         This function returns the similarity between components taking
         into account the dot product of all essential points and their
@@ -831,7 +862,7 @@ class COMPONENT:
                 bn2 = cluster.bands_number[k_n]+min_band
                 connection = connections[k, i_neig, bn1, bn2]
                 energy_val = fit_energy(bn1, bn2, (ik1, jk1), (ik_n, jk_n))
-                score += 0.5*connection + 0.5*energy_val
+                score += tol*connection + (1-tol)*energy_val
         score /= len(self.k_edges)*4
         self.scores[cluster.__id__] = score
         return score
