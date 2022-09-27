@@ -676,16 +676,14 @@ class MATERIAL:
             edges = np.array(edges)
             self.GRAPH.add_edges_from(edges)
 
-        self.get_components()
-        self.obtain_output()
-        self.print_report()
     
     def solve(self, step=0.1, min_tol=0):
         TOL = 0.5
         bands_final_flag = True
         bands_final_prev = np.copy(self.bands_final)
+
         while bands_final_flag and TOL >= min_tol:
-            LOG.info(f'  Clustering samples for tolerance {TOL}')
+            LOG.info(f'  Clustering samples')
             init_time = time.time()
             self.get_components(tol=TOL)
             LOG.info(f'{contatempo.tempo(init_time, time.time())}')
