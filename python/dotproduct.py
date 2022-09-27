@@ -10,7 +10,6 @@ import time
 import ctypes
 
 import numpy as np
-import numba
 
 from cli import dotproduct_cli
 from jit import numba_njit
