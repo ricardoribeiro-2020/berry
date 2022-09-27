@@ -92,13 +92,13 @@ if __name__ == "__main__":
 
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
-    ###########################################################################
+    ########################################################################### 
     RY    = 13.6056923                                                          # Conversion factor from Ry to eV
     VK    = d.step * d.step / (2 * np.pi) ** 2                                  # element of volume in k-space in units of bohr^-1
     # the '4' comes from spin degeneracy, that is summed in s and s'
     CONST = 4 * 2j / (2 * np.pi) ** 2                                           # = i2e^2/hslash 1/(2pi)^2     in Rydberg units
 
-    BANDFILLED = 3
+    BANDFILLED = d.vb
     BANDEMPTY  = args["BANDEMPTY"]
     BANDLIST   = list(range(BANDEMPTY + 1))
 
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     BERRY_CONNECTIONS_SHAPE = (BANDEMPTY + 1, BANDEMPTY + 1, 2, d.nkx, d.nky)
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
-    ###########################################################################
+    ########################################################################### 
     print(f"\tList of bands: {BANDLIST}")
     print(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
     print(f"\tNumber of bands: {d.nbnd}")
