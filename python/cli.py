@@ -95,17 +95,20 @@ def shg_cli() -> argparse.Namespace:
     # Define all cli arguments
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("bandempty", type=int, help="Index of the conduction band.")
-    parser.add_argument("-enermax", type=float, default=2.5, help="Maximum energy in Ry units (default: 2.5).")
+    parser.add_argument("-np", type=int, default=1, help="Number of processes to use (default: 1)")
+    parser.add_argument("-enermax",  type=float, default=2.5, help="Maximum energy in Ry units (default: 2.5).")
     parser.add_argument("-enerstep", type=float, default=0.001, help="Energy step in Ry units (default: 0.001).")
-    parser.add_argument("-broadning", type=float, default=0.01j, help="Energy broading in Ry units (default: 0.01).")
+    parser.add_argument("-broadning",type=float, default=0.01j, help="Energy broading in Ry units (default: 0.01).")
     args = parser.parse_args()
 
     # Process the arguments given
     args_dict = {}
+
+    args_dict["NPR"] = max(args.np, 1)
     args_dict["ENERMAX"] = args.enermax
     args_dict["ENERSTEP"] = args.enerstep
-    args_dict["BROADNING"] = args.broadning
-    args_dict["BANDEMPTY"] = args.bandempty
+    args_dict["BROADNING"]= args.broadning
+    args_dict["BANDEMPTY"]= args.bandempty
 
     # Save them in a dict and return
     return args_dict
