@@ -136,7 +136,8 @@ if __name__ == "__main__":
     # 4. CALCULATE THE CONDUCTIVITY
     ###########################################################################
     with Pool(NPR) as pool:
-        sigma = dict(pool.starmap(compute_condutivity, product(np.arange(0, ENERMAX + ENERSTEP, ENERSTEP), [delta_eigen_array], [fermi])))
+        work_load = product(np.arange(0, ENERMAX + ENERSTEP, ENERSTEP), [delta_eigen_array], [fermi])
+        sigma = dict(pool.starmap(compute_condutivity, work_load))
     ###########################################################################
     # 5. SAVE OUTPUT
     ###########################################################################
