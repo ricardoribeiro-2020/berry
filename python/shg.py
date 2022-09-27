@@ -90,30 +90,23 @@ def calculate_shg(omega):
                 * 0.5
             )
 
-            sig[:, :, beta, alpha1, alpha2] += (
-                comutederiv(berry_connections, s, sprime, beta, alpha1, alpha2, d.step)
-            ) * gamma13[:, :, s, sprime]
+            sig[:, :, beta, alpha1, alpha2] += (comutederiv(berry_connections, s, sprime, beta, alpha1, alpha2, d.step)) * gamma13[:, :, s, sprime]
 
             for r in BANDLIST:                                                   # runs through index r
                 if r in (sprime, s):
                     continue
                 sig[:, :, beta, alpha1, alpha2] += (
-                    -0.25j
-                    * gamma1[:, :, s, sprime]
-                    * (
-                        comute3(berry_connections, sprime, s, r, beta, alpha2, alpha1)
-                        + comute3(
-                            berry_connections, sprime, s, r, beta, alpha1, alpha2
-                        )
-                    )
-                    * gamma3[:, :, r, sprime]
-                    - (
+                    -0.25j * gamma1[:, :, s, sprime] * 
+                    (
+                        comute3(berry_connections, sprime, s, r, beta, alpha2, alpha1) + 
                         comute3(berry_connections, sprime, s, r, beta, alpha1, alpha2)
-                        + comute3(
-                            berry_connections, sprime, s, r, beta, alpha2, alpha1
-                        )
-                    )
-                    * gamma3[:, :, s, r]
+                    ) * 
+                    gamma3[:, :, r, sprime] - 
+                    (
+                        comute3(berry_connections, sprime, s, r, beta, alpha1, alpha2) +
+                        comute3(berry_connections, sprime, s, r, beta, alpha2, alpha1)
+                    ) * 
+                    gamma3[:, :, s, r]
                 )
 
     return (omega, np.sum(np.sum(sig, axis=0), axis=0) * VK)
@@ -204,7 +197,7 @@ if __name__ == "__main__":
                     np.real(sigma[omega][1, 0, 0]),
                 )
             )
-    print("\tReal part of SHG saved to file sigma2r.dat")
+    print("\n\tReal part of SHG saved to file sigma2r.dat")
 
     with open("sigma2i.dat", "w") as sigm:
         sigm.write("# Energy (eV), sigma_xxx, sigma_yyy, sigma_xxy, sigma_xyx, sigma_xyy, sigma_yyx, sigma_yxy, sigma_yxx\n")
