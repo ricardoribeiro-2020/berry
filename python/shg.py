@@ -2,6 +2,8 @@
 # This program calculates the second harmonic generation condutivity
 """
 from multiprocessing import Pool, Array
+from itertools import product
+from typing import Tuple
 
 import sys
 import time
@@ -9,49 +11,79 @@ import time
 from findiff import Gradient
 
 import ctypes
-import itertools
 import numpy as np
 
+from cli import shg_cli
+from contatempo import time_fn, tempo
 from headerfooter import header, footer
 from comutator import comute, comute3, comutederiv
 
-import contatempo
 import loaddata as d
 
 # pylint: disable=C0103
 ###################################################################################
-def func(omega):
-    sys.stdout.flush()
-    omegaarray = np.full(
-        (d.nkx, d.nky, bandempty + 1, bandempty + 1), omega + broadning
-    )  # in Ry
-    # matrix sig_xxx,sig_xxy,...,sig_yyx,sig_yyy
-    sig = np.full((d.nkx, d.nky, 2, 2, 2), 0.0 + 0j, dtype=complex)
+@time_fn(prefix="\t")
+def load_berry_connections() -> np.ndarray:
+    base = Array(ctypes.c_double, BERRY_CONNECTIONS_SIZE * 2, lock=False)
+    berry_connections = np.frombuffer(base, dtype=np.complex128).reshape(BERRY_CONNECTIONS_SHAPE)
 
-    # factor called dE/g in paper times leading constant
-    gamma1 = CONST * dE / (2 * omegaarray - dE)
-    # factor f/h^2 in paper (-) to account for change in indices in f and h
-    gamma2 = -fermi / np.square(omegaarray - dE)
-    # factor f/h in paper (index reference is of h, not f, in equation)
-    gamma3 = -fermi / (omegaarray - dE)
+    for i in range(BANDEMPTY + 1):
+        for j in range(BANDEMPTY + 1):
+            berry_connections[i, j] = np.load(f"berryConn{i}_{j}.npy")
 
-    for s, sprime in itertools.product(
-        bandlist, bandlist
-    ):  # runs through index s, s'
+    return berry_connections
+
+@time_fn(prefix="\t")
+def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
+    kp = 0
+    eigen_array = np.zeros((d.nkx, d.nky, d.nbnd))
+
+    for j in range(d.nky):
+        for i in range(d.nkx):
+            for banda in range(d.nbnd):
+                eigen_array[i, j, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
+            kp += 1
+
+    return eigen_array
+
+@time_fn(prefix="\t")
+def get_fermi_delta_ea_grad_ea(grad: Gradient, eigen_array: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    grad_dea = np.zeros((2, d.nkx, d.nky, BANDEMPTY + 1, BANDEMPTY + 1), dtype=np.complex128)
+    delta_ea = np.zeros((d.nkx, d.nky, BANDEMPTY + 1, BANDEMPTY + 1))
+    fermi = np.zeros((d.nkx, d.nky, BANDEMPTY + 1, BANDEMPTY + 1))
+
+    for s, sprime in product(BANDLIST, repeat=2):
+        delta_ea[:, :, s, sprime] = eigen_array[:, :, s] - eigen_array[:, :, sprime]
+        grad_dea[:, :, :, s, sprime] = grad(delta_ea[:, :, s, sprime])
+        if s <= BANDFILLED < sprime:
+            fermi[:, :, s, sprime] = 1
+        elif sprime <= BANDFILLED < s:
+            fermi[:, :, s, sprime] = -1
+
+    return fermi, delta_ea, grad_dea
+
+def calculate_shg(omega):
+    omega_array = np.full(OMEGA_SHAPE, omega + BROADNING)                        # in Ry
+    sig = np.full((d.nkx, d.nky, 2, 2, 2), 0, dtype=np.complex128)               # matrix sig_xxx,sig_xxy,...,sig_yyx,sig_yyy
+
+    gamma1 = CONST * delta_ea / (2 * omega_array - delta_ea)                     # factor called dE/g in paper times leading constant
+    gamma2 = -fermi / np.square(omega_array - delta_ea)                          # factor f/h^2 in paper (-) to account for change in indices in f and h
+    gamma3 = -fermi / (omega_array - delta_ea)                                   # factor f/h in paper (index reference is of h, not f, in equation)
+
+    for s, sprime in product(BANDLIST, repeat=2):                                # runs through index s, s'
         gamma12[:, :, s, sprime] = gamma1[:, :, s, sprime] * gamma2[:, :, s, sprime]
         gamma13[:, :, s, sprime] = gamma1[:, :, s, sprime] * gamma3[:, :, s, sprime]
 
-    ##   sys.exit("Stop")
     # beta, alpha1, alpha2 are spatial coordinates
-    for beta, alpha1, alpha2 in itertools.product(range(2), range(2), range(2)):
-        for s, sprime in itertools.product(bandlist, bandlist):  # runs index s,s'
+    for beta, alpha1, alpha2 in product(range(2), range(2), range(2)):
+        for s, sprime in product(BANDLIST, BANDLIST):                            # runs through index s, s'
             if s == sprime:
                 continue
             sig[:, :, beta, alpha1, alpha2] += (
                 (
-                    graddE[alpha2, :, :, s, sprime]
+                    grad_dea[alpha2, :, :, s, sprime]
                     * comute(berry_connections, sprime, s, beta, alpha1)
-                    + graddE[alpha1, :, :, s, sprime]
+                    + grad_dea[alpha1, :, :, s, sprime]
                     * comute(berry_connections, sprime, s, beta, alpha2)
                 )
                 * gamma12[:, :, s, sprime]
@@ -62,7 +94,7 @@ def func(omega):
                 comutederiv(berry_connections, s, sprime, beta, alpha1, alpha2, d.step)
             ) * gamma13[:, :, s, sprime]
 
-            for r in bandlist:  # runs through index r
+            for r in BANDLIST:                                                   # runs through index r
                 if r in (sprime, s):
                     continue
                 sig[:, :, beta, alpha1, alpha2] += (
@@ -83,178 +115,82 @@ def func(omega):
                     )
                     * gamma3[:, :, s, r]
                 )
-    ##       print(sig)
 
-    return (omega, np.sum(np.sum(sig, axis=0), axis=0) * vk)
-
-def load_berry_connections(dest: np.ndarray) -> None:
-    for i in range(bandempty + 1):
-        for j in range(bandempty + 1):
-            dest[i, j] = np.load(f"berryConn{i}_{j}.npy")
+    return (omega, np.sum(np.sum(sig, axis=0), axis=0) * VK)
 
 if __name__ == "__main__":
+    args = shg_cli()
+
     header("SHG", d.version, time.asctime())
+    STARTTIME = time.time() 
 
-    STARTTIME = time.time()  # Starts counting time
+    ###########################################################################
+    # 1. DEFINING THE CONSTANTS
+    ###########################################################################
+    RY    = 13.6056923                                                          # Conversion factor from Ry to eV
+    VK    = d.step * d.step / (2 * np.pi) ** 2                                  # element of volume in k-space in units of bohr^-1
+                                                                                # it is actually an area, because we have a 2D crystal
+    CONST = 2 * np.sqrt(2) * 2 / (2 * np.pi) ** 2                               # = -2e^3/hslash 1/(2pi)^2     in Rydberg units
+                                                                                # the 2e comes from having two electrons per band
+                                                                                # another minus comes from the negative charge
 
-    if len(sys.argv) < 3:
-        print(
-            "     ERROR in number of arguments. Has to have two integers.\n \
-               If the first is negative, it will only calculate transitions between the too bands."
-        )
-        sys.exit("Stop")
-    elif len(sys.argv) == 3:
-        bandfilled = d.vb  # Number of the last filled band at k=0
-        bandempty = int(sys.argv[2])  # Number of the last empty band at k=0
-        inputfile = ""
-    elif len(sys.argv) == 4:
-        bandfilled = d.vb  # Number of the last filled band at k=0
-        bandempty = int(sys.argv[2])  # Number of the last empty band at k=0
-        inputfile = str(sys.argv[3])  # Name of the file where data for the graphic is
+    BANDFILLED = d.vb
+    BANDEMPTY  = args["BANDEMPTY"]
+    BANDLIST   = list(range(BANDEMPTY + 1))
 
-    if bandfilled < 0:
-        bandfilled = -bandfilled
-        bandlist = [bandfilled, bandempty]
-        print(
-            "     Calculating just transitions from band "
-            + str(bandfilled)
-            + " to "
-            + str(bandempty)
-        )
-    else:
-        bandlist = list(range(bandempty + 1))
-        print(
-            "     Calculating transitions from bands <"
-            + str(bandfilled)
-            + " to bands up to "
-            + str(bandempty)
-        )
+    NPR = args["NPR"]
+    ENERMAX  = args["ENERMAX"]                                                  # Maximum energy (Ry)
+    ENERSTEP = args["ENERSTEP"]                                                 # Energy step (Ry)
+    BROADNING = args["BROADNING"]                                               # energy broading (Ry)
 
-    print("     List of bands: ", str(bandlist))
+    GAMMA_SHAPE             = (d.nkx, d.nky, BANDEMPTY + 1, BANDEMPTY + 1)
+    OMEGA_SHAPE             = (d.nkx, d.nky, BANDEMPTY + 1, BANDEMPTY + 1)
+    BERRY_CONNECTIONS_SIZE  = 2 * d.nkx * d.nky * (BANDEMPTY + 1) ** 2
+    BERRY_CONNECTIONS_SHAPE = (BANDEMPTY + 1, BANDEMPTY + 1, 2, d.nkx, d.nky)
+    ###########################################################################
+    # 2. STDOUT THE PARAMETERS
+    ###########################################################################
+    print(f"\tList of bands: {BANDLIST}")
+    print(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
+    print(f"\tNumber of bands: {d.nbnd}")
+    print(f"\tk-points step, dk {d.step}")                                      # Defines the step for gradient calculation dk
 
-    # Default values:
-    enermax = 2.5  # Maximum energy (Ry)
-    enerstep = 0.001  # Energy step (Ry)
-    broadning = 0.01j  # energy broadning (Ry)
-    if inputfile != "":
-        with open(inputfile, "r") as le:
-            inputvar = le.read().split("\n")
-        le.close()
-        # Read that from input file
-        for i in inputvar:
-            ii = i.split()
-            if len(ii) == 0:
-                continue
-            if ii[0] == "enermax":
-                enermax = float(ii[1])
-            if ii[0] == "enerstep":
-                enerstep = float(ii[1])
-            if ii[0] == "broadning":
-                broadning = 1j * float(ii[1])
-
-    RY = 13.6056923  # Conversion factor from Ry to eV
-    ################################################ Read data
-    print("     Start reading data")
-
-    # Reading data needed for the run
-
-    print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
-    print("     Number of bands:", d.nbnd)
-    print("     k-points step, dk", d.step)  # Defines the step for gradient calculation
-    print()
-    print("     Occupations loaded")  # d.occupations = np.array(nks,d.nbnd)
-    print("     Eigenvalues loaded")  # d.eigenvalues = np.array(nks,d.nbnd)
-    with open("bandsfinal.npy", "rb") as f:
-        bandsfinal = np.load(f)
-    f.close()
-    print("     bandsfinal.npy loaded")
-    with open("signalfinal.npy", "rb") as f:
-        signalfinal = np.load(f)
-    f.close()
-    print("     signalfinal.npy loaded")
-    print()
-
+    print(f"\n\tMaximum energy (Ry): {ENERMAX}")
+    print(f"\tEnergy step (Ry): {ENERSTEP}")
+    print(f"\tEnergy broadning (Ry): {np.imag(BROADNING)}")
+    print(f"\tConstant 4e^2/hslash 1/(2pi)^2 in Rydberg units: {np.imag(CONST)}")
+    print(f"\tVolume (area) in k space: {VK}\n")
     sys.stdout.flush()
-    # sys.exit("Stop")
+    ###########################################################################
+    # 3. CREATE ALL THE ARRAYS
+    ###########################################################################
+    grad                        = Gradient(h=[d.step, d.step], acc=2)           # Defines gradient function in 2D
+    bandsfinal                  = np.load("bandsfinal.npy")
+    signalfinal                 = np.load("signalfinal.npy")                       
+    eigen_array                 = correct_eigenvalues(bandsfinal)
+    berry_connections           = load_berry_connections()
+    fermi, delta_ea, grad_dea   = get_fermi_delta_ea_grad_ea(grad, eigen_array)
 
-    BERRY_CONNECTIONS_SIZE = 2 * d.nkx * d.nky * (bandempty + 1) ** 2
-    BERRY_CONNECTIONS_SHAPE = (bandempty + 1, bandempty + 1, 2, d.nkx, d.nky)
-    base = Array(ctypes.c_double, BERRY_CONNECTIONS_SIZE * 2, lock=False)
-    berry_connections = np.frombuffer(base, dtype=np.complex128).reshape(BERRY_CONNECTIONS_SHAPE)
-    load_berry_connections(berry_connections)
-
-    # sys.exit("Stop")
-    Earray = np.zeros((d.nkx, d.nky, d.nbnd))  # Eigenvalues corrected for the new bands
-
-    kp = 0
-    for j in range(d.nky):  # Energy in Ry
-        for i in range(d.nkx):
-            for banda in range(d.nbnd):
-                Earray[i, j, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
-            kp += 1
-    #        print(Earray[i,j,banda] )
-
-    print("     Finished reading data")
-    # sys.exit("Stop")
-
-    ################################################## Finished reading data
-
-    grad = Gradient(h=[d.step, d.step], acc=2)  # Defines gradient function in 2D
-    ##################################################
-
-    CONST = (
-        2 * np.sqrt(2) * 2 / (2 * np.pi) ** 2
-    )  # = -2e^3/hslash 1/(2pi)^2     in Rydberg units
-    # the 2e comes from having two electrons per band
-    # another minus comes from the negative charge
-    vk = d.step * d.step / (2 * np.pi) ** 2  # element of volume in k-space in units of bohr^-1
-    # it is actually an area, because we have a 2D crystal
-    print("     Maximum energy (Ry): " + str(enermax))
-    print("     Energy step (Ry): " + str(enerstep))
-    print("     Energy broadning (Ry): " + str(np.imag(broadning)))
-    print(
-        "     Constant -2e^3/hslash 1/(2pi)^2     in Rydberg units: "
-        + str(np.real(CONST))
-    )
-    print("     Volume (area) in k space: " + str(vk))
-
-    sigma = {} # Dictionary where the conductivity will be stored
-    fermi = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1))
-    dE = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1))
-    graddE = np.zeros((2, d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
-    gamma1 = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
-    gamma2 = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
-    gamma3 = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
-    gamma12 = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
-    gamma13 = np.zeros((d.nkx, d.nky, bandempty + 1, bandempty + 1), dtype=complex)
-
-    for s, sprime in itertools.product(bandlist, bandlist):
-        dE[:, :, s, sprime] = Earray[:, :, s] - Earray[:, :, sprime]
-        graddE[:, :, :, s, sprime] = grad(dE[:, :, s, sprime])
-        if s <= bandfilled < sprime:
-            fermi[:, :, s, sprime] = 1
-        elif sprime <= bandfilled < s:
-            fermi[:, :, s, sprime] = -1
-
-    #    print(dE[:,:,s,sprime])
-    #    print(graddE[:,:,:,s,sprime])
-    # e = comute(berryConnection,s,sprime,alpha,beta)
-
-    with Pool(d.npr) as pool:
-        results = pool.map(func, (omega for omega in np.arange(0, enermax + enerstep, enerstep)))
+    gamma1                      = np.zeros(GAMMA_SHAPE, dtype=np.complex128)
+    gamma2                      = np.zeros(GAMMA_SHAPE, dtype=np.complex128)
+    gamma3                      = np.zeros(GAMMA_SHAPE, dtype=np.complex128)
+    gamma12                     = np.zeros(GAMMA_SHAPE, dtype=np.complex128)
+    gamma13                     = np.zeros(GAMMA_SHAPE, dtype=np.complex128)
+    ###########################################################################
+    # 4. SECONG HARMONIC GENERATION
+    ###########################################################################
+    sigma = {}
+    with Pool(NPR) as pool:
+        results = pool.map(calculate_shg, (omega for omega in np.arange(0, ENERMAX + ENERSTEP, ENERSTEP)))
         for omega, result in results:
             sigma[omega] = result
-
-    ##   sys.exit("Stop")
-
+    ###########################################################################
+    # 5. SAVE OUTPUT
+    ###########################################################################
     with open("sigma2r.dat", "w") as sigm:
-        sigm.write(
-            "# Energy (eV), sigma_xxx, sigma_yyy, sigma_xxy, sigma_xyx, sigma_xyy, \
-                                   sigma_yyx, sigma_yxy, sigma_yxx\n"
-        )
-        for omega in np.arange(0, enermax + enerstep, enerstep):
-            outp = "{0:.4f}  {1:.4e}  {2:.4e}  {3:.4e}  {4:.4e}  {5:.4e}  \
-                    {6:.4e}  {7:.4e}  {8:.4e}\n"
+        sigm.write("# Energy (eV), sigma_xxx, sigma_yyy, sigma_xxy, sigma_xyx, sigma_xyy, sigma_yyx, sigma_yxy, sigma_yxx\n")
+        for omega in np.arange(0, ENERMAX + ENERSTEP, ENERSTEP):
+            outp = "{0:.4f}  {1:.4e}  {2:.4e}  {3:.4e}  {4:.4e}  {5:.4e}  {6:.4e}  {7:.4e}  {8:.4e}\n"
             sigm.write(
                 outp.format(
                     omega * RY,
@@ -268,17 +204,12 @@ if __name__ == "__main__":
                     np.real(sigma[omega][1, 0, 0]),
                 )
             )
-    sigm.close()
-    print("     Real part of SHG saved to file sigma2r.dat")
+    print("\tReal part of SHG saved to file sigma2r.dat")
 
     with open("sigma2i.dat", "w") as sigm:
-        sigm.write(
-            "# Energy (eV), sigma_xxx, sigma_yyy, sigma_xxy, sigma_xyx, sigma_xyy, \
-                                 sigma_yyx, sigma_yxy, sigma_yxx\n"
-        )
-        for omega in np.arange(0, enermax + enerstep, enerstep):
-            outp = "{0:.4f}  {1:.4e}  {2:.4e}  {3:.4e}  {4:.4e}  {5:.4e}  \
-                    {6:.4e}  {7:.4e}  {8:.4e}\n"
+        sigm.write("# Energy (eV), sigma_xxx, sigma_yyy, sigma_xxy, sigma_xyx, sigma_xyy, sigma_yyx, sigma_yxy, sigma_yxx\n")
+        for omega in np.arange(0, ENERMAX + ENERSTEP, ENERSTEP):
+            outp = "{0:.4f}  {1:.4e}  {2:.4e}  {3:.4e}  {4:.4e}  {5:.4e}  {6:.4e}  {7:.4e}  {8:.4e}\n"
             sigm.write(
                 outp.format(
                     omega * RY,
@@ -292,11 +223,8 @@ if __name__ == "__main__":
                     np.imag(sigma[omega][1, 0, 0]),
                 )
             )
-    sigm.close()
-    print("     Imaginary part of SHG saved to file sigma2i.dat")
-
-    # sys.exit("Stop")
-
+    print("\tImaginary part of SHG saved to file sigma2i.dat")
     ###################################################################################
     # Finished
-    footer(contatempo.tempo(STARTTIME, time.time()))
+    ###################################################################################
+    footer(tempo(STARTTIME, time.time()))
