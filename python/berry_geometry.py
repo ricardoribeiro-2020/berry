@@ -4,6 +4,7 @@ Calculates the Berry connections and Berry curvatures.
 
 from multiprocessing import Pool, Array
 
+import sys
 import time
 import ctypes
 
@@ -76,21 +77,39 @@ def berry_curvature(idx: int, idx_: int) -> None:
 if __name__ == "__main__":
     args = berry_props_cli()
 
-    header("BERRY CONNECTION/CURVATURE", d.version, time.asctime())
-
+    header("BERRY GEOMETRY", d.version, time.asctime())
     STARTTIME = time.time()
     
-    NPR = args["NPR"]
+    ###########################################################################
+    # 1. DEFINING THE CONSTANTS
+    ########################################################################### 
+    NPR      = args["NPR"]
+    PROP     = args["PROP"]
     MIN_BAND = args["MIN_BAND"]
     MAX_BAND = args["MAX_BAND"]
-    PROP = args["PROP"]
 
-    GRA_SIZE = d.nr * 2 * d.nkx * d.nky
+    GRA_SIZE  = d.nr * 2 * d.nkx * d.nky
     GRA_SHAPE = (d.nr, 2, d.nkx, d.nky)
 
-    arr_shell = Array(ctypes.c_double, 2 * GRA_SIZE, lock=False)
-    wfcgra = np.frombuffer(arr_shell, dtype=np.complex128).reshape(GRA_SHAPE)
+    ###########################################################################
+    # 2. STDOUT THE PARAMETERS
+    ########################################################################### 
+    print(f"\tUnique reference of run: {d.refname}")
+    print(f"\tProperties to calculate: {PROP}")
+    print(f"\tMinimum band: {MIN_BAND}")
+    print(f"\tMaximum band: {MAX_BAND}")
+    print(f"\tNumber of processes: {NPR}\n")
+    sys.stdout.flush()
 
+    ###########################################################################
+    # 3. CREATE ALL THE ARRAYS
+    ###########################################################################
+    arr_shell = Array(ctypes.c_double, 2 * GRA_SIZE, lock=False)
+    wfcgra    = np.frombuffer(arr_shell, dtype=np.complex128).reshape(GRA_SHAPE)
+
+    ###########################################################################
+    # 4. CALCULATE BERRY GEOMETRY
+    ###########################################################################
     if PROP == "both" or PROP == "connection":
         for idx in range(MIN_BAND, MAX_BAND + 1):
             wfcgra[:] = np.load(f"wfcgra{idx}.npy")
@@ -111,6 +130,8 @@ if __name__ == "__main__":
             with Pool(NPR) as pool:
                 pool.starmap(berry_curv, work_load)
 
-    ##################################################################################
+    ###########################################################################
     # Finished
+    ###########################################################################
+
     footer(tempo(STARTTIME, time.time()))

@@ -21,7 +21,7 @@ from comutator import comute, comute3, comutederiv
 import loaddata as d
 
 # pylint: disable=C0103
-###################################################################################
+###############################################################################
 @time_fn(prefix="\t")
 def load_berry_connections() -> np.ndarray:
     base = Array(ctypes.c_double, BERRY_CONNECTIONS_SIZE * 2, lock=False)
@@ -127,7 +127,7 @@ if __name__ == "__main__":
                                                                                 # the 2e comes from having two electrons per band
                                                                                 # another minus comes from the negative charge
 
-    BANDFILLED = d.vb
+    BANDFILLED = 3
     BANDEMPTY  = args["BANDEMPTY"]
     BANDLIST   = list(range(BANDEMPTY + 1))
 
@@ -140,6 +140,7 @@ if __name__ == "__main__":
     OMEGA_SHAPE             = (d.nkx, d.nky, BANDEMPTY + 1, BANDEMPTY + 1)
     BERRY_CONNECTIONS_SIZE  = 2 * d.nkx * d.nky * (BANDEMPTY + 1) ** 2
     BERRY_CONNECTIONS_SHAPE = (BANDEMPTY + 1, BANDEMPTY + 1, 2, d.nkx, d.nky)
+
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ###########################################################################
@@ -154,6 +155,7 @@ if __name__ == "__main__":
     print(f"\tConstant 4e^2/hslash 1/(2pi)^2 in Rydberg units: {np.imag(CONST)}")
     print(f"\tVolume (area) in k space: {VK}\n")
     sys.stdout.flush()
+
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS
     ###########################################################################
@@ -169,6 +171,7 @@ if __name__ == "__main__":
     gamma3                      = np.zeros(GAMMA_SHAPE, dtype=np.complex128)
     gamma12                     = np.zeros(GAMMA_SHAPE, dtype=np.complex128)
     gamma13                     = np.zeros(GAMMA_SHAPE, dtype=np.complex128)
+
     ###########################################################################
     # 4. SECONG HARMONIC GENERATION
     ###########################################################################
@@ -177,6 +180,7 @@ if __name__ == "__main__":
         results = pool.map(calculate_shg, (omega for omega in np.arange(0, ENERMAX + ENERSTEP, ENERSTEP)))
         for omega, result in results:
             sigma[omega] = result
+
     ###########################################################################
     # 5. SAVE OUTPUT
     ###########################################################################
@@ -217,7 +221,9 @@ if __name__ == "__main__":
                 )
             )
     print("\tImaginary part of SHG saved to file sigma2i.dat")
+
     ###################################################################################
     # Finished
     ###################################################################################
+
     footer(tempo(STARTTIME, time.time()))

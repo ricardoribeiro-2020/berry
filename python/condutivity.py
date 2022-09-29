@@ -98,7 +98,7 @@ if __name__ == "__main__":
     # the '4' comes from spin degeneracy, that is summed in s and s'
     CONST = 4 * 2j / (2 * np.pi) ** 2                                           # = i2e^2/hslash 1/(2pi)^2     in Rydberg units
 
-    BANDFILLED = d.vb
+    BANDFILLED = 3
     BANDEMPTY  = args["BANDEMPTY"]
     BANDLIST   = list(range(BANDEMPTY + 1))
 
@@ -170,7 +170,7 @@ if __name__ == "__main__":
                 )
             )
     print("\tImaginary part of conductivity saved to file sigmai.dat")
-    ###################################################################################
+    ###########################################################################
     # Finished
-    ###################################################################################
+    ###########################################################################
     footer(contatempo.tempo(STARTTIME, time.time()))

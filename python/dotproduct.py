@@ -6,6 +6,7 @@ from itertools import product
 from typing import Tuple
 from multiprocessing import Array, Pool
 
+import sys
 import time
 import ctypes
 
@@ -40,7 +41,7 @@ def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
             dpc[neighbor, jNeighbor, band1, band0] = dpc[nk, j, band0, band1].conj()
 
 
-def generate_connection_args(nk: int, j: int) -> None:
+def get_point_neighbors(nk: int, j: int) -> None:
     """Generates the arguments for the pre_connection function."""
     neighbor = d.neighbors[nk, j]
     if neighbor != -1 and neighbor > nk:
@@ -55,46 +56,60 @@ if __name__ == "__main__":
     args = dotproduct_cli()
 
     header("DOTPRODUCT", d.version, time.asctime())
-
     STARTTIME = time.time()  # Starts counting time
-    DPC_SIZE = d.nks * 4 * d.nbnd * d.nbnd
-    DPC_SHAPE = (d.nks, 4, d.nbnd, d.nbnd)
-    RUN_PARAMS = {
-        "nk_points": range(d.nks),
-        "num_neibhors": range(4),  # TODO Fix Hardcoded value
-    }
+
+    ###########################################################################
+    # 1. DEFINING THE CONSTANTS
+    ########################################################################### 
     NPR = args["NPR"]
 
-    # Reading data needed for the run
+    RUN_PARAMS = {"nk_points": range(d.nks),"num_neibhors": range(4)}
+
+    DPC_SIZE = d.nks * 4 * d.nbnd * d.nbnd
+    DPC_SHAPE = (d.nks, 4, d.nbnd, d.nbnd)
+
+    ###########################################################################
+    # 2. STDOUT THE PARAMETERS
+    ########################################################################### 
     print(f"\tUnique reference of run: {d.refname}")
-    print(f"\tDirectory where the wfc are: {d.wfcdirectory}")
-    print(f"\tTotal number of k-points: {d.nks}")
-    print(f"\tTotal number of points in real space: {d.nr}")
     print(f"\tNumber of processors to use: {NPR}")
     print(f"\tNumber of bands: {d.nbnd}")
-    print()
-    ##########################################################
+    print(f"\tTotal number of k-points: {d.nks}")
+    print(f"\tTotal number of points in real space: {d.nr}")
+    print(f"\tDirectory where the wfc are: {d.wfcdirectory}\n")
+    sys.stdout.flush()
 
+    ###########################################################################
+    # 3. CREATE ALL THE ARRAYS
+    ###########################################################################
     dpc_base = Array(ctypes.c_double, 2 * DPC_SIZE, lock=False)
     dpc = np.frombuffer(dpc_base, dtype=np.complex128).reshape(DPC_SHAPE)
+    dp = np.zeros(DPC_SHAPE, dtype=np.float64)
 
+    ###########################################################################
+    # 4. CALCULATE THE CONDUCTIVITY
+    ###########################################################################
     with Pool(NPR) as pool:
         pre_connection_args = (
             list(
                 filter(
-                    None, pool.starmap(generate_connection_args, product(*RUN_PARAMS.values()))
+                    None, pool.starmap(get_point_neighbors, product(*RUN_PARAMS.values()))
                 )
             )
         )
         pool.starmap(dot, pre_connection_args)
-
     dp = np.abs(dpc)
 
+    ###########################################################################
+    # 5. SAVE OUTPUT
+    ###########################################################################
     np.save("dpc.npy", dpc)
     np.save("dp.npy", dp)
     print(f"\n\tDot products saved to file dpc.npy")
     print(f"\tDot products modulus saved to file dp.npy")
 
-    ###################################################################################
+    ###########################################################################
     # Finished
+    ###########################################################################
+
     footer(contatempo.tempo(STARTTIME, time.time()))

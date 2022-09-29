@@ -5,6 +5,7 @@
 """
 from multiprocessing import Pool, Array
 
+import sys
 import time
 import ctypes
 
@@ -25,9 +26,9 @@ def read_wfc_files(banda: int) -> None:
     global read_wfc_kp
 
     def read_wfc_kp(kp):
-        if signalfinal[kp, banda] == -1:  # if its a signaled wfc, choose interpolated
+        if signalfinal[kp, banda] == -1:                                        # if its a signaled wfc, choose interpolated
             infile = f"{d.wfcdirectory}k0{kp}b0{bandsfinal[kp, banda]}.wfc1"
-        else:  # else choose original
+        else:                                                                   # else choose original
             infile = f"{d.wfcdirectory}k0{kp}b0{bandsfinal[kp, banda]}.wfc"
 
         wfct_k[:, kp] = np.load(infile)
@@ -70,49 +71,47 @@ def r_to_k(banda: int) -> None:
     np.save(f"wfcgra{banda}.npy", wfcgra)
 
 
-###################################################################################
 if __name__ == "__main__":
     args = r2k_cli()
 
     header("R2K", d.version, time.asctime())
-
     STARTTIME = time.time()
-    
-    WFCT_K_SHAPE = (d.nr, d.nks)
-    WFCPOS_SHAPE = (d.nr, d.nkx, d.nky)
-    WFCGRA_SHAPE = (d.nr, 2, d.nkx, d.nky)
-    
-    WFCT_K_SIZE = d.nr * d.nks
-    WFCPOS_SIZE = d.nr * d.nkx * d.nky
-    WFCGRA_SIZE = d.nr * 2 * d.nkx * d.nky
 
+    ###########################################################################
+    # 1. DEFINING THE CONSTANTS
+    ########################################################################### 
     NPR = args["NPR"]
     MIN_BAND = args["MIN_BAND"]
     MAX_BAND = args["MAX_BAND"]
 
+    WFCT_K_SHAPE = (d.nr, d.nks)
+    WFCPOS_SHAPE = (d.nr, d.nkx, d.nky)
+    WFCGRA_SHAPE = (d.nr, 2, d.nkx, d.nky)
+
+    WFCT_K_SIZE = d.nr * d.nks
+    WFCPOS_SIZE = d.nr * d.nkx * d.nky
+    WFCGRA_SIZE = d.nr * 2 * d.nkx * d.nky
+
+    ###########################################################################
+    # 2. STDOUT THE PARAMETERS
+    ########################################################################### 
     print(f"\tUnique reference of run: {d.refname}")
-    print(f"\tDirectory where the wfc are: {d.wfcdirectory}")
-    print(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
+    print(f"\tNumber of processors to use: {NPR}")
+    print(f"\tMinimum band: {MIN_BAND}")
+    print(f"\tMaximum band: {MAX_BAND}")
+    print(f"\tk-points step, dk: {d.step}")
     print(f"\tTotal number of k-points: {d.nks}")
     print(f"\tTotal number of points in real space: {d.nr}")
-    print(f"\tNumber of processors to use: {NPR}")
-    print(f"\tNumber of bands: {d.nbnd}")
-    print(f"\tk-points step, dk {d.step}")  # Defines the step for gradient calculation
-    print()
-    print("\tkpoints loaded")       # d.kpoints = np.zeros((d.nks,3), dtype=float)
-    print("\trpoints loaded")       # d.r = np.zeros((d.nr,3), dtype=float)
-    print("\tOccupations loaded")   # d.occupations = np.array(occupat)
-    print("\tEigenvalues loaded")   # d.eigenvalues = np.array(eigenval)
-    print("\tPhases loaded")        # d.phase = np.zeros((d.nr,d.nks),dtype=complex)
+    print(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
+    print(f"\tDirectory where the wfc are: {d.wfcdirectory}\n")
+    sys.stdout.flush()
 
-    bandsfinal = np.load("bandsfinal.npy")
+    ###########################################################################
+    # 3. CREATE ALL THE ARRAYS AND GRADIENT
+    ###########################################################################
+    grad = Gradient(h=[d.step, d.step], acc=2)                                  # Defines gradient function in 2D
     signalfinal = np.load("signalfinal.npy")
-    print()
-    ################################################################################### 
-    # Finished reading data
-
-    grad = Gradient(h=[d.step, d.step], acc=2)  # Defines gradient function in 2D
-    ###################################################################################
+    bandsfinal = np.load("bandsfinal.npy")
 
     buffer = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)
     wfct_k = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCT_K_SHAPE)
@@ -123,9 +122,14 @@ if __name__ == "__main__":
     buffer = Array(ctypes.c_double, 2 * WFCGRA_SIZE, lock=False)
     wfcgra = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCGRA_SHAPE)
 
+    ###########################################################################
+    # 4. CALCULATE
+    ###########################################################################
     for banda in range(MIN_BAND, MAX_BAND + 1):
         r_to_k(banda)
 
-    ###################################################################################
+    ###########################################################################
     # Finished
+    ###########################################################################
+
     footer(tempo(STARTTIME, time.time()))
