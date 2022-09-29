@@ -98,7 +98,7 @@ if __name__ == "__main__":
     # the '4' comes from spin degeneracy, that is summed in s and s'
     CONST = 4 * 2j / (2 * np.pi) ** 2                                           # = i2e^2/hslash 1/(2pi)^2     in Rydberg units
 
-    BANDFILLED = 3
+    BANDFILLED = d.vb
     BANDEMPTY  = args["BANDEMPTY"]
     BANDLIST   = list(range(BANDEMPTY + 1))
 

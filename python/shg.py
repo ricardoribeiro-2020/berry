@@ -127,7 +127,7 @@ if __name__ == "__main__":
                                                                                 # the 2e comes from having two electrons per band
                                                                                 # another minus comes from the negative charge
 
-    BANDFILLED = 3
+    BANDFILLED = d.vb
     BANDEMPTY  = args["BANDEMPTY"]
     BANDLIST   = list(range(BANDEMPTY + 1))
 
