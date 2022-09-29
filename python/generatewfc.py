@@ -11,6 +11,7 @@ import sys
 import time
 
 from contatempo import tempo
+from cli import generatewfc_cli
 from headerfooter import header, footer
 
 import dft
@@ -19,53 +20,55 @@ import loaddata as d
 # pylint: disable=C0103
 ###################################################################################
 if __name__ == "__main__":
+    args = generatewfc_cli()
+
     header("GENERATEWFC", d.version, time.asctime())
+    os.system("mkdir -p " + d.wfcdirectory)
+    STARTTIME = time.time()
 
-    STARTTIME = time.time()  # Starts counting time
+    ###########################################################################
+    # 1. DEFINING THE CONSTANTS
+    ###########################################################################
+    NK_POINTS = args["NK"]
+    BANDS = args["BAND"]
 
-    WFCDIRECTORY = str(d.wfcdirectory)
-    DFTDIRECTORY = str(d.dftdirectory)
+    ###########################################################################
+    # 2. STDOUT THE PARAMETERS
+    ###########################################################################
+    print(f"\tUnique reference of run: {d.refname}", d.refname)
+    print(f"\tThis program will run in {d.npr} processors")
+    print(f"\tTotal number of k-points: {d.nks}")
+    print(f"\tNumber of bands: {d.nbnd}")
+    print(f"\tNumber of r-points in each direction: {d.nr1} {d.nr2} {d.nr3}")
+    print(f"\tPoint choosen for sincronizing phases: {d.rpoint}")
+    print(f"\tTotal number of points in real space: {d.nr}")
+    print(f"\tDFT files are in {d.dftdirectory}")
+    print(f"\tWavefunctions will be saved in {d.wfcdirectory}\n")
+    sys.stdout.flush()
 
-    # Creates directory for wfc
-    os.system("mkdir -p " + WFCDIRECTORY)
-    print("     Unique reference of run:", d.refname)
-    print("     Wavefunctions will be saved in directory", WFCDIRECTORY)
-    print("     DFT files are in directory", DFTDIRECTORY)
-    print("     This program will run in " + str(d.npr) + " processors")
-    print()
-    print("     Total number of k-points:", d.nks)
-    print("     Number of r-points in each direction:", d.nr1, d.nr2, d.nr3)
-    print("     Total number of points in real space:", d.nr)
-    print("     Number of bands:", d.nbnd)
-    print()
-    print("     Point choosen for sincronizing phases: ", d.rpoint)
-    print()
+    ###########################################################################
+    # 4. SECONG HARMONIC GENERATION
+    ###########################################################################
+    if isinstance(NK_POINTS, range):
+        print("\tWill run for all k-points and bands")
+        print(f"\tThere are {d.nks} k-points and {d.nbnd} bands.\n")
 
-    ##########################################################################
-    # Creates files with wfc of bands at nk  ** DFT **
-    nk = -1
-    nb = -1
-    if len(sys.argv) == 1:  # Will run for all k-points and bands
-        print("     Will run for all k-points and bands")
-        print("     There are", d.nks, "k-points and", d.nbnd, "bands.")
-        for nk in range(d.nks):
-            print("     Calculating wfc for k-point", nk)
+        for nk in NK_POINTS:
+            print(f"\tCalculating wfc for k-point {nk}")
             dft._wfck2r(nk, 0, d.nbnd - 1)
-    elif len(sys.argv) == 2:  # Will run just for k-point nk
-        nk = int(sys.argv[1])
-        print("     Will run just for k-point", nk)
-        print("     There are", d.nbnd, "bands.")
-        for nb in range(d.nbnd):
-            print("     Calculating wfc for k-point", nk, "and band", nb)
-            dft._wfck2r(nk, nb)
-    elif len(sys.argv) == 3:  # Will run just for k-point nk and band nb
-        nk = int(sys.argv[1])
-        nb = int(sys.argv[2])
-        print("     Will run just for k-point", nk, "and band", nb)
-        print("     Calculating wfc for k-point", nk, "and band", nb)
-        dft._wfck2r(nk, nb)
-    print()
+    else:
+        if isinstance(BANDS, range):
+            print(f"\tWill run just for k-point {NK_POINTS}.")
+            print(f"\tThere are {d.nks} k-points and {d.nbnd} bands.\n")
+        else:
+            print(f"\tWill run just for k-point {NK_POINTS} and band {BANDS[0]}.\n")
 
-    ###################################################################################
+        for band in BANDS:
+            print(f"\tCalculating wfc for k-point {NK_POINTS} and band {band}")
+            dft._wfck2r(NK_POINTS, band)
+
+    ###########################################################################
     # Finished
+    ###########################################################################
+
     footer(tempo(STARTTIME, time.time()))
