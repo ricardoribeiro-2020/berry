@@ -33,7 +33,7 @@ def header(title, version, time):
 
 
 def footer(time):
-    """ Footer that appears in the output of the programas."""
+    """Footer that appears in the output of the programas."""
 
     print()
     print()
