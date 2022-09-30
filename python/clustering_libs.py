@@ -3,6 +3,7 @@ It determines which points belong to each band used for posterior calculations.
 The algorithm uses machine learning techniques to cluster the data.
 """
 
+import enum
 import numpy as np
 import networkx as nx
 import contatempo
@@ -578,10 +579,12 @@ class MATERIAL:
                 continue
             for k in range(self.nks):
                 kneigs = self.neighbors[k]
-                i_neigs = np.arange(N_NEIGS)[k_neig != -1]
+                i_neigs = np.arange(N_NEIGS)[kneigs != -1]
                 kneigs = kneigs[kneigs != -1]
                 bn_k = self.bands_final[k, bn]
                 bn_neighs = self.bands_final[kneigs, bn]
+                k = np.repeat(k, len(kneigs))
+                bn_k = np.repeat(bn_k, len(kneigs))
                 dps = self.connections[k, i_neigs, bn_k, bn_neighs]
                 score += np.mean(dps)
             score /= self.nks
@@ -593,7 +596,7 @@ class MATERIAL:
         for bn in range(self.min_band, self.min_band+self.nbnd):
             band_result = self.signal_final[:, bn]
             report = [np.sum(band_result == s) for s in range(CORRECT+1)]
-            report.append(self.final_score[bn])
+            report.append(np.round(self.final_score[bn], 2))
             bands_report.append(report)
 
             LOG.info(f'\n  New Band: {bn}\tnr falis: {report[0]}')
@@ -604,10 +607,10 @@ class MATERIAL:
                         'in each band signaled.\n'
         bands_header = '\n Band | '
 
-        header = list(range(CORRECT+1)) + ['Score']
-        for signal in header:
+        header = list(range(CORRECT+1)) + [' ']
+        for signal, value in enumerate(header):
             n_spaces = len(str(np.max(bands_report[:, signal])))-1
-            bands_header += ' '*n_spaces+str(signal) + '   '
+            bands_header += ' '*n_spaces+str(value) + '   '
 
         final_report += bands_header + '\n'
         final_report += '-'*len(bands_header)
@@ -616,6 +619,8 @@ class MATERIAL:
             bn += self.min_band
             final_report += f'\n {bn}{" "*(4-len(str(bn)))} |' + ' '
             for signal, value in enumerate(report):
+                if signal <= CORRECT:
+                    value = int(value)
                 n_max = len(str(np.max(bands_report[:, signal])))
                 n_spaces = n_max - len(str(value))
                 final_report += ' '*n_spaces+str(value) + '   '
