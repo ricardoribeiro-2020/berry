@@ -23,6 +23,8 @@ DEGENERATE = 2
 MISTAKE = 1
 NOT_SOLVED = 0
 
+N_NEIGS = 4
+
 LOG = log('clustering', 'Band Clustering', version)
 
 def evaluate_result(values):
@@ -498,6 +500,7 @@ class MATERIAL:
         '''
 
         self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
+        self.final_score = np.zeros(self.total_bands, dtype=float)
         self.degenerate_final = []
 
         solved_bands = []
@@ -568,12 +571,29 @@ class MATERIAL:
 
         self.degenerate_final = np.array(self.degenerate_final)
 
+        for bn in range(self.total_bands):
+            score = 0
+            not_solved = np.sum(self.signal_final[:, bn] == NOT_SOLVED)
+            if not_solved != 0:
+                continue
+            for k in range(self.nks):
+                kneigs = self.neighbors[k]
+                i_neigs = np.arange(N_NEIGS)[k_neig != -1]
+                kneigs = kneigs[kneigs != -1]
+                bn_k = self.bands_final[k, bn]
+                bn_neighs = self.bands_final[kneigs, bn]
+                dps = self.connections[k, i_neigs, bn_k, bn_neighs]
+                score += np.mean(dps)
+            score /= self.nks
+            self.final_score[bn] = score
+
     def print_report(self):
         final_report = '\t====== REPORT ======\n\n'
         bands_report = []
         for bn in range(self.min_band, self.min_band+self.nbnd):
             band_result = self.signal_final[:, bn]
             report = [np.sum(band_result == s) for s in range(CORRECT+1)]
+            report.append(self.final_score[bn])
             bands_report.append(report)
 
             LOG.info(f'\n  New Band: {bn}\tnr falis: {report[0]}')
@@ -584,7 +604,8 @@ class MATERIAL:
                         'in each band signaled.\n'
         bands_header = '\n Band | '
 
-        for signal in range(CORRECT+1):
+        header = list(range(CORRECT+1)) + ['Score']
+        for signal in header:
             n_spaces = len(str(np.max(bands_report[:, signal])))-1
             bands_header += ' '*n_spaces+str(signal) + '   '
 
@@ -683,7 +704,8 @@ class MATERIAL:
         bands_final_prev = np.copy(self.bands_final)
 
         while bands_final_flag and TOL >= min_tol:
-            LOG.info(f'  Clustering samples')
+            print()
+            LOG.info(f'  Clustering samples for TOL: {TOL}')
             init_time = time.time()
             self.get_components(tol=TOL)
             LOG.info(f'{contatempo.tempo(init_time, time.time())}')
@@ -700,7 +722,7 @@ class MATERIAL:
             LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
             bands_final_flag = np.sum(np.abs(bands_final_prev - self.bands_final)) != 0
-            bands_final_prev = self.bands_final
+            bands_final_prev = np.copy(self.bands_final)
             TOL -= step
 
 class COMPONENT:
@@ -842,7 +864,7 @@ class COMPONENT:
             popt, pcov = curve_fit(pol, X, Es)
             Enew = pol(new_x, *popt)
             Ei = energies[bn1, ik1, jk1]
-            LOG.debug(f'Actual Energy: {Ei} Energy founded: {Enew} for {bn1} with {len(i)} points.')
+            # LOG.debug(f'Actual Energy: {Ei} Energy founded: {Enew} for {bn1} with {len(i)} points.')
             return difference_energy(bn1, bn2, iK1, iK2, Ei = Enew)
 
 
