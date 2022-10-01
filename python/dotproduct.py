@@ -22,22 +22,17 @@ import loaddata as d
 
 # pylint: disable=C0103
 ###################################################################################
-@numba_njit
-def aux(dphase, wfc0, wfc1):
-    return np.sum(dphase * wfc0 * wfc1) / d.nr
-
-
 @time_fn(0, 2, prefix="\t")
 def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
 
     dphase = d.phase[:, nk] * d.phase[:, neighbor].conj()
 
     for band0 in range(d.nbnd):
+        wfc0 = np.load(f"{d.wfcdirectory}k0{nk}b0{band0}.wfc")
         for band1 in range(d.nbnd):
-            wfc0 = np.load(f"{d.wfcdirectory}k0{nk}b0{band0}.wfc")
             wfc1 = np.load(f"{d.wfcdirectory}k0{neighbor}b0{band1}.wfc").conj()
 
-            dpc[nk, j, band0, band1] = aux(dphase, wfc0, wfc1)
+            dpc[nk, j, band0, band1] = np.einsum("k,k,k->", dphase, wfc0, wfc1) / d.nr
             dpc[neighbor, jNeighbor, band1, band0] = dpc[nk, j, band0, band1].conj()
 
 
@@ -91,11 +86,10 @@ if __name__ == "__main__":
     ###########################################################################
     with Pool(NPR) as pool:
         pre_connection_args = (
-            list(
-                filter(
-                    None, pool.starmap(get_point_neighbors, product(*RUN_PARAMS.values()))
-                )
-            )
+            args
+            for nk in range(d.nks)
+            for j in range(4)
+            if (args := get_point_neighbors(nk, j)) is not None
         )
         pool.starmap(dot, pre_connection_args)
     dp = np.abs(dpc)
