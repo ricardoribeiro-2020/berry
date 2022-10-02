@@ -662,6 +662,8 @@ class MATERIAL:
         k_error, bn_error = np.where(self.correct_signalfinal == MISTAKE)
         k_other, bn_other = np.where(self.correct_signalfinal == OTHER)
         other_same = self.correct_signalfinal_prev[k_other, bn_other] == OTHER
+        k_ot = k_other[other_same]
+        bn_ot = bn_other[other_same]
         not_same = np.logical_not(other_same)
         k_other = k_other[not_same]
         bn_other = bn_other[not_same]
@@ -705,7 +707,7 @@ class MATERIAL:
             edges = np.array(edges)
             self.GRAPH.add_edges_from(edges)
             self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)
-            self.correct_signalfinal[k_other[other_same], bn_other[other_same]] = CORRECT-1
+            self.correct_signalfinal[k_ot, bn_ot] = CORRECT-1
 
     def solve(self, step=0.1, min_tol=0):
         TOL = 0.5
