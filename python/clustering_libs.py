@@ -3,7 +3,6 @@ It determines which points belong to each band used for posterior calculations.
 The algorithm uses machine learning techniques to cluster the data.
 """
 
-import enum
 import numpy as np
 import networkx as nx
 import contatempo
@@ -663,7 +662,6 @@ class MATERIAL:
         k_error, bn_error = np.where(self.correct_signalfinal == MISTAKE)
         k_other, bn_other = np.where(self.correct_signalfinal == OTHER)
         other_same = self.correct_signalfinal_prev[k_other, bn_other] == OTHER
-        self.correct_signalfinal[k_other[other_same], bn_other[other_same]] = CORRECT-1
         not_same = np.logical_not(other_same)
         k_other = k_other[not_same]
         bn_other = bn_other[not_same]
@@ -706,14 +704,19 @@ class MATERIAL:
                             edges.append([p, pn])
             edges = np.array(edges)
             self.GRAPH.add_edges_from(edges)
+            self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)
+            self.correct_signalfinal[k_other[other_same], bn_other[other_same]] = CORRECT-1
 
     def solve(self, step=0.1, min_tol=0):
         TOL = 0.5
         bands_final_flag = True
         self.bands_final_prev = np.copy(self.bands_final)
+        self.best_bands_final = np.copy(self.bands_final)
+        self.best_score = np.zeros(self.total_bands, dtype=float)
         self.final_score = np.zeros(self.total_bands, dtype=float)
         self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
         self.correct_signalfinal_prev = np.full(self.signal_final.shape, -1, int)
+        max_solved = 0
 
         while bands_final_flag and TOL >= min_tol:
             print()
@@ -732,12 +735,30 @@ class MATERIAL:
             init_time = time.time()
             self.correct_signal()
             self.print_report(self.correct_signalfinal)
-            self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)
             LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
             bands_final_flag = np.sum(np.abs(self.bands_final_prev - self.bands_final)) != 0
             self.bands_final_prev = np.copy(self.bands_final)
+
+            solved = 0
+            for bn, score in enumerate(self.final_score):
+                best_score = self.best_score[bn]
+                not_solved = np.sum(self.signal_final[:, bn] == NOT_SOLVED)
+                if score >= best_score and not_solved == 0:
+                    solved += 1
+                else:
+                    break
+            if solved >= max_solved:
+                self.best_bands_final = np.copy(self.bands_final)
+                self.best_score = np.copy(self.final_score)
+                self.best_signal_final = np.copy(self.signal_final)
             TOL -= step
+        
+        self.bands_final = np.copy(self.best_bands_final)
+        self.final_score = np.copy(self.best_score)
+        self.signal_final = np.copy(self.best_signal_final)
+        
+        self.print_report(self.signal_final)
 
 class COMPONENT:
     '''

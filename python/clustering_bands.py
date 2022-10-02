@@ -109,6 +109,9 @@ if __name__ == '__main__':
     with open('output/signalfinal.npy', 'wb') as f:
         np.save(f, material.signal_final)
 
+    with open('output/correct_signalfinal.npy', 'wb') as f:
+        np.save(f, material.correct_signalfinal)
+
     with open('output/degeneratefinal.npy', 'wb') as f:
         np.save(f, material.degenerate_final)
 
