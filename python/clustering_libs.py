@@ -500,7 +500,6 @@ class MATERIAL:
         that are essential to other programs.
         '''
 
-        self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
         self.degenerate_final = []
 
         solved_bands = []
@@ -581,8 +580,10 @@ class MATERIAL:
                 i_neigs = np.arange(N_NEIGS)[flag_neig]
                 kneigs = kneigs[flag_neig]
                 flag_neig = self.signal_final[kneigs, bn] != NOT_SOLVED
-                i_neigs = np.arange(N_NEIGS)[flag_neig]
+                i_neigs = i_neigs[flag_neig]
                 kneigs = kneigs[flag_neig]
+                if len(kneigs) == 0:
+                    continue
                 bn_k = self.bands_final[k, bn]
                 bn_neighs = self.bands_final[kneigs, bn]
                 k = np.repeat(k, len(kneigs))
@@ -595,7 +596,7 @@ class MATERIAL:
     def print_report(self, signal_report):
         final_report = '\t====== REPORT ======\n\n'
         bands_report = []
-        MAX = np.max(signal_report)
+        MAX = np.max(signal_report) + 1
         for bn in range(self.min_band, self.min_band+self.nbnd):
             band_result = signal_report[:, bn]
             report = [np.sum(band_result == s) for s in range(MAX)]
@@ -622,7 +623,7 @@ class MATERIAL:
             bn += self.min_band
             final_report += f'\n {bn}{" "*(4-len(str(bn)))} |' + ' '
             for signal, value in enumerate(report):
-                if signal <= CORRECT:
+                if signal < MAX:
                     value = int(value)
                 n_max = len(str(np.max(bands_report[:, signal])))
                 n_spaces = n_max - len(str(value))
@@ -661,6 +662,11 @@ class MATERIAL:
 
         k_error, bn_error = np.where(self.correct_signalfinal == MISTAKE)
         k_other, bn_other = np.where(self.correct_signalfinal == OTHER)
+        other_same = self.correct_signalfinal_prev[k_other, bn_other] == OTHER
+        self.correct_signalfinal[k_other[other_same], bn_other[other_same]] = CORRECT-1
+        not_same = np.logical_not(other_same)
+        k_other = k_other[not_same]
+        bn_other = bn_other[not_same]
 
         ks = np.concatenate((k_error, k_other))
         bnds = np.concatenate((bn_error, bn_other))
@@ -672,18 +678,13 @@ class MATERIAL:
 
         mean_fitler = np.ones((3,3))
         self.GRAPH = nx.Graph()
+        self.GRAPH.add_nodes_from(np.arange(len(self.vectors)))
         directions = np.array([[1, 0], [0, 1]])
-        TOL_SCORE = 0.99
 
         for bn, band in enumerate(bands_signaling[self.min_band: self.max_band+1]):
             _bn = bn
             bn += self.min_band
-            nodes = np.arange(self.nks) + _bn*self.nks
-            self.GRAPH.add_nodes_from(nodes)
-            if self.final_score >= TOL_SCORE and np.all(self.correct_signalfinal_prev == self.correct_signalfinal):
-                identify_points = band*0 > 0
-                self.correct_signalfinal[self.correct_signalfinal == OTHER] = CORRECT-1
-            elif np.sum(band) > self.nks*0.05:
+            if np.sum(band) > self.nks*0.05:
                 identify_points = correlate(band, mean_fitler, output=None,
                                             mode='reflect', cval=0.0, origin=0) > 0
             else:
@@ -711,6 +712,7 @@ class MATERIAL:
         bands_final_flag = True
         self.bands_final_prev = np.copy(self.bands_final)
         self.final_score = np.zeros(self.total_bands, dtype=float)
+        self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
         self.correct_signalfinal_prev = np.full(self.signal_final.shape, -1, int)
 
         while bands_final_flag and TOL >= min_tol:
