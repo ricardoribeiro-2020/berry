@@ -501,7 +501,6 @@ class MATERIAL:
         '''
 
         self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
-        self.final_score = np.zeros(self.total_bands, dtype=float)
         self.degenerate_final = []
 
         solved_bands = []
@@ -574,13 +573,16 @@ class MATERIAL:
 
         for bn in range(self.total_bands):
             score = 0
-            not_solved = np.sum(self.signal_final[:, bn] == NOT_SOLVED)
-            if not_solved != 0:
-                continue
             for k in range(self.nks):
+                if self.signal_final[k, bn] == NOT_SOLVED:
+                    continue
                 kneigs = self.neighbors[k]
-                i_neigs = np.arange(N_NEIGS)[kneigs != -1]
-                kneigs = kneigs[kneigs != -1]
+                flag_neig = kneigs != -1
+                i_neigs = np.arange(N_NEIGS)[flag_neig]
+                kneigs = kneigs[flag_neig]
+                flag_neig = self.signal_final[kneigs, bn] != NOT_SOLVED
+                i_neigs = np.arange(N_NEIGS)[flag_neig]
+                kneigs = kneigs[flag_neig]
                 bn_k = self.bands_final[k, bn]
                 bn_neighs = self.bands_final[kneigs, bn]
                 k = np.repeat(k, len(kneigs))
@@ -590,13 +592,14 @@ class MATERIAL:
             score /= self.nks
             self.final_score[bn] = score
 
-    def print_report(self):
+    def print_report(self, signal_report):
         final_report = '\t====== REPORT ======\n\n'
         bands_report = []
+        MAX = np.max(signal_report)
         for bn in range(self.min_band, self.min_band+self.nbnd):
-            band_result = self.signal_final[:, bn]
-            report = [np.sum(band_result == s) for s in range(CORRECT+1)]
-            report.append(np.round(self.final_score[bn], 2))
+            band_result = signal_report[:, bn]
+            report = [np.sum(band_result == s) for s in range(MAX)]
+            report.append(np.round(self.final_score[bn], 4))
             bands_report.append(report)
 
             LOG.info(f'\n  New Band: {bn}\tnr falis: {report[0]}')
@@ -607,7 +610,7 @@ class MATERIAL:
                         'in each band signaled.\n'
         bands_header = '\n Band | '
 
-        header = list(range(CORRECT+1)) + [' ']
+        header = list(range(MAX)) + [' ']
         for signal, value in enumerate(header):
             n_spaces = len(str(np.max(bands_report[:, signal])))-1
             bands_header += ' '*n_spaces+str(value) + '   '
@@ -654,9 +657,7 @@ class MATERIAL:
             if signal == OTHER:
                 error_directions.append([k, bn])
                 directions.append(scores)
-            LOG.debug(f'K point: {k} Band: {bn}')
-            LOG.debug(f'    New Signal: {signal}')
-            LOG.debug(f'    Directions: {scores}')
+            LOG.debug(f'K point: {k} Band: {bn}    New Signal: {signal} Directions: {scores}')
 
         k_error, bn_error = np.where(self.correct_signalfinal == MISTAKE)
         k_other, bn_other = np.where(self.correct_signalfinal == OTHER)
@@ -670,26 +671,29 @@ class MATERIAL:
         bands_signaling[bnds, ik, jk] = 1
 
         mean_fitler = np.ones((3,3))
-
         self.GRAPH = nx.Graph()
-        self.GRAPH.add_nodes_from(np.arange(len(self.vectors)))
-
         directions = np.array([[1, 0], [0, 1]])
+        TOL_SCORE = 0.99
 
         for bn, band in enumerate(bands_signaling[self.min_band: self.max_band+1]):
+            _bn = bn
             bn += self.min_band
-            if np.sum(band) > 3:
+            nodes = np.arange(self.nks) + _bn*self.nks
+            self.GRAPH.add_nodes_from(nodes)
+            if self.final_score >= TOL_SCORE and np.all(self.correct_signalfinal_prev == self.correct_signalfinal):
+                identify_points = band*0 > 0
+                self.correct_signalfinal[self.correct_signalfinal == OTHER] = CORRECT-1
+            elif np.sum(band) > self.nks*0.05:
                 identify_points = correlate(band, mean_fitler, output=None,
                                             mode='reflect', cval=0.0, origin=0) > 0
             else:
                 identify_points = band > 0
-
             edges = []
             for ik, row in enumerate(identify_points):
-                for jk, val in enumerate(row):
-                    if val:
-                        continue
+                for jk, need_correction in enumerate(row):
                     kp = self.matrix[ik, jk]
+                    if need_correction and kp not in self.degenerate_final:
+                        continue
                     for direction in directions:
                         ikn, jkn = np.array([ik, jk]) + direction
                         if ikn >= self.matrix.shape[0] or jkn >= self.matrix.shape[1]:
@@ -702,15 +706,16 @@ class MATERIAL:
             edges = np.array(edges)
             self.GRAPH.add_edges_from(edges)
 
-    
     def solve(self, step=0.1, min_tol=0):
         TOL = 0.5
         bands_final_flag = True
-        bands_final_prev = np.copy(self.bands_final)
+        self.bands_final_prev = np.copy(self.bands_final)
+        self.final_score = np.zeros(self.total_bands, dtype=float)
+        self.correct_signalfinal_prev = np.full(self.signal_final.shape, -1, int)
 
         while bands_final_flag and TOL >= min_tol:
             print()
-            LOG.info(f'  Clustering samples for TOL: {TOL}')
+            LOG.info(f'\n\n  Clustering samples for TOL: {TOL}')
             init_time = time.time()
             self.get_components(tol=TOL)
             LOG.info(f'{contatempo.tempo(init_time, time.time())}')
@@ -718,16 +723,18 @@ class MATERIAL:
             LOG.info('  Calculating output')
             init_time = time.time()
             self.obtain_output()
-            self.print_report()
+            self.print_report(self.signal_final)
             LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
             LOG.info('  Validating result')
             init_time = time.time()
             self.correct_signal()
+            self.print_report(self.correct_signalfinal)
+            self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)
             LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
-            bands_final_flag = np.sum(np.abs(bands_final_prev - self.bands_final)) != 0
-            bands_final_prev = np.copy(self.bands_final)
+            bands_final_flag = np.sum(np.abs(self.bands_final_prev - self.bands_final)) != 0
+            self.bands_final_prev = np.copy(self.bands_final)
             TOL -= step
 
 class COMPONENT:
