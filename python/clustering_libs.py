@@ -3,18 +3,18 @@ It determines which points belong to each band used for posterior calculations.
 The algorithm uses machine learning techniques to cluster the data.
 """
 
+import os
 import numpy as np
 import networkx as nx
-import contatempo
-import time
-import os
-from scipy.ndimage import correlate
-from write_k_points import _bands_numbers
-from multiprocessing import Process, Pool, Manager, Value, shared_memory
-from functools import partial
 from log_libs import log
 from loaddata import version
+from functools import partial
+from scipy.ndimage import correlate
+from multiprocessing import Process
+from multiprocessing import Manager
 from scipy.optimize import curve_fit
+from contatempo import time_fn
+from write_k_points import _bands_numbers
 
 CORRECT = 5
 POTENTIAL_CORRECT = 4
@@ -65,7 +65,7 @@ def evaluate_result(values):
     return MISTAKE
 
 def evaluate_point(k, bn, k_index, k_matrix, signal, bands, energies):
-    N = 4 #Number of points to fit the curve
+    N = 4 # Number of points to fit the curve
     mach_bn = bands[k, bn]
     sig = signal[k, bn]
     ik, jk = k_index[k]
@@ -168,6 +168,7 @@ class MATERIAL:
         self.kpoints_index = np.stack([counts % self.nkx, counts//self.nkx],
                                       axis=1)
 
+    @time_fn(prefix="\t")
     def make_vectors(self, min_band=0, max_band=-1):
         '''
         It transforms the information into more convenient data structures.
@@ -262,6 +263,7 @@ class MATERIAL:
             neigh = neighs.pop(0) if len(neighs) > 0 else None
         return neigh == j if neigh is not None else False
 
+    @time_fn(prefix="\t")
     def make_connections(self, tol=0.95):
         '''
         This function evaluates the connection between each k point,
@@ -396,6 +398,7 @@ class MATERIAL:
 
         return np.array(result)
 
+    @time_fn(prefix="\t")
     def get_components(self, tol=0.5):
         '''
         The make_connections function constructs the graph, in which
@@ -493,6 +496,7 @@ class MATERIAL:
         self.clusters = clusters
         return labels
 
+    @time_fn(prefix="\t")
     def obtain_output(self):
         '''
         This function prepares the final data structures
@@ -569,6 +573,8 @@ class MATERIAL:
 
         self.degenerate_final = np.array(self.degenerate_final)
 
+        self.k_basis_rotation = []
+
         for bn in range(self.total_bands):
             score = 0
             for k in range(self.nks):
@@ -588,12 +594,17 @@ class MATERIAL:
                 k = np.repeat(k, len(kneigs))
                 bn_k = np.repeat(bn_k, len(kneigs))
                 dps = self.connections[k, i_neigs, bn_k, bn_neighs]
+                if np.any(np.logical_and(dps >= 0.5, dps <= 0.8)):
+                    self.k_basis_rotation.append([k, bn_k])
                 score += np.mean(dps)
             score /= self.nks
             self.final_score[bn] = score
 
+        self.k_basis_rotation = np.array(self.k_basis_rotation)
+
+    @time_fn(prefix="\t")
     def print_report(self, signal_report):
-        final_report = '\t====== REPORT ======\n\n'
+        final_report = '\n\t====== REPORT ======\n\n'
         bands_report = []
         MAX = np.max(signal_report) + 1
         for bn in range(self.min_band, self.min_band+self.nbnd):
@@ -603,7 +614,7 @@ class MATERIAL:
             bands_report.append(report)
 
             LOG.info(f'\n  New Band: {bn}\tnr falis: {report[0]}')
-            # _bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
+            _bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
 
         bands_report = np.array(bands_report)
         final_report += '\n Signaling: how many events ' + \
@@ -631,6 +642,7 @@ class MATERIAL:
         LOG.info(final_report)
         self.final_report = final_report
     
+    @time_fn(prefix="\t")
     def correct_signal(self):
         self.obtain_output()
         del self.GRAPH
@@ -682,7 +694,6 @@ class MATERIAL:
         directions = np.array([[1, 0], [0, 1]])
 
         for bn, band in enumerate(bands_signaling[self.min_band: self.max_band+1]):
-            _bn = bn
             bn += self.min_band
             if np.sum(band) > self.nks*0.05:
                 identify_points = correlate(band, mean_fitler, output=None,
@@ -709,6 +720,7 @@ class MATERIAL:
             self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)
             self.correct_signalfinal[k_ot, bn_ot] = CORRECT-1
 
+    @time_fn(prefix="\t")
     def solve(self, step=0.1, min_tol=0):
         TOL = 0.5
         bands_final_flag = True
@@ -723,21 +735,15 @@ class MATERIAL:
         while bands_final_flag and TOL >= min_tol:
             print()
             LOG.info(f'\n\n  Clustering samples for TOL: {TOL}')
-            init_time = time.time()
             self.get_components(tol=TOL)
-            LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
             LOG.info('  Calculating output')
-            init_time = time.time()
             self.obtain_output()
             self.print_report(self.signal_final)
-            LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
             LOG.info('  Validating result')
-            init_time = time.time()
             self.correct_signal()
             self.print_report(self.correct_signalfinal)
-            LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
             bands_final_flag = np.sum(np.abs(self.bands_final_prev - self.bands_final)) != 0
             self.bands_final_prev = np.copy(self.bands_final)
@@ -754,6 +760,12 @@ class MATERIAL:
                 self.best_bands_final = np.copy(self.bands_final)
                 self.best_score = np.copy(self.final_score)
                 self.best_signal_final = np.copy(self.signal_final)
+                max_solved = solved
+            else:
+                self.bands_final = np.copy(self.best_bands_final)
+                self.final_score = np.copy(self.best_score)
+                self.signal_final = np.copy(self.best_signal_final)
+                self.correct_signal()
             TOL -= step
         
         self.bands_final = np.copy(self.best_bands_final)
@@ -761,6 +773,7 @@ class MATERIAL:
         self.signal_final = np.copy(self.best_signal_final)
         
         self.print_report(self.signal_final)
+        self.print_report(self.correct_signalfinal)
 
 class COMPONENT:
     '''

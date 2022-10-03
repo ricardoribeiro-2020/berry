@@ -17,7 +17,6 @@ import sys
 import getopt
 import os
 import numpy as np
-import contatempo
 import time
 import loaddata as d
 from clustering_libs import MATERIAL
@@ -84,19 +83,13 @@ if __name__ == '__main__':
                         connections, d.neighbors, n_process=N_PROCESS)
 
     LOG.info('\n  Calculating Vectors')
-    init_time = time.time()
     material.make_vectors(min_band=min_band, max_band=max_band)
-    LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
     LOG.info('  Calculating Connections')
-    init_time = time.time()
     material.make_connections(tol=TOL)
-    LOG.info(f'{contatempo.tempo(init_time, time.time())}')
 
     LOG.info('  Solving problem')
-    init_time = time.time()
-    labels = material.solve()
-    LOG.info(f'{contatempo.tempo(init_time, time.time())}')
+    material.solve()
 
     LOG.info('Clustering Done')
 
