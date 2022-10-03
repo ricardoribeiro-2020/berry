@@ -11,7 +11,7 @@ import numpy as np
 # pylint: disable=C0103
 ###################################################################################
 # SCF calculation
-def scf(mpi, directory, name_scf, outdir, pseudodir):
+def _scf(mpi, directory, name_scf, outdir, pseudodir):
     """Run the scf calculation of QE."""
 
     scffile = directory + name_scf
@@ -62,7 +62,7 @@ def scf(mpi, directory, name_scf, outdir, pseudodir):
 
 
 # Creates template for nscf calculation
-def template(directory, name_scf):
+def _template(directory, name_scf):
     """Creates a template for the input file of a nscf calculation of QE."""
     # opens the template file from which it will do nscf calculations
     scffile = directory + name_scf
@@ -82,7 +82,7 @@ def template(directory, name_scf):
 
 
 # NSCF calculation ****************************************************
-def nscf(mpi, directory, name_nscf, nscftemplate, nkps, kpoints, nbands):
+def _nscf(mpi, directory, name_nscf, nscftemplate, nkps, kpoints, nbands):
     """Runs nscf calculation."""
 
     nscffile = directory + name_nscf
@@ -128,7 +128,7 @@ def nscf(mpi, directory, name_nscf, nscftemplate, nkps, kpoints, nbands):
 
 
 # wfck2r calculation and wavefunctions extraction *********************
-def wfck2r(nk1, nb1, total_bands=0):
+def _wfck2r(nk1, nb1, total_bands=0):
     """Extracts wfc in r-space using softawre from DFT suite."""
     import loaddata as d
 

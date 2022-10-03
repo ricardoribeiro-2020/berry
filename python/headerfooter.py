@@ -21,7 +21,7 @@ BERRY_LOGO = '''
 '''
 
 def header(title, version, time):
-    """ Header that appears in the output of the programas."""
+    """Header that appears in the output of the programas."""
 
     H = BERRY_LOGO \
         + f'''
@@ -36,7 +36,7 @@ def header(title, version, time):
 
 
 def footer(time):
-    """ Footer that appears in the output of the programas."""
+    """Footer that appears in the output of the programas."""
 
     F = f'''
     

@@ -20,3 +20,10 @@ The list of TODOs is already large.
 
 - **Source code:** https://github.com/berry
 
+- **Aknowledgement:** We aknowledge the Fundação para a Ciência e a Tecnologia (FCT)
+under project  **QUEST2D - Excitations in quantum 2D materials**
+PTDC/FIS-MAC/2045/2021 and in the framework of the Strategic Funding UIDB/04650/2020.
+
+- **Requirements** To install requiremnts, run:
+```pip install -r requirements.txt```
+

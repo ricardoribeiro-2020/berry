@@ -9,7 +9,7 @@ import contatempo
 import time
 import os
 from scipy.ndimage import correlate
-from write_k_points import bands_numbers
+from write_k_points import _bands_numbers
 from multiprocessing import Process, Pool, Manager, Value, shared_memory
 from functools import partial
 from log_libs import log
@@ -603,7 +603,7 @@ class MATERIAL:
             bands_report.append(report)
 
             LOG.info(f'\n  New Band: {bn}\tnr falis: {report[0]}')
-            # bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
+            # _bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
 
         bands_report = np.array(bands_report)
         final_report += '\n Signaling: how many events ' + \

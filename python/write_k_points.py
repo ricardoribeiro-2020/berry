@@ -6,7 +6,7 @@
 ###################################################################################
 
 
-def list_kpoints(nkx, nky):
+def _list_kpoints(nkx, nky):
     """Output the list of k-points in a convenient way."""
     print()
     nk = -1
@@ -28,7 +28,7 @@ def list_kpoints(nkx, nky):
         print(lin)
 
 
-def bands_numbers(nkx, nky, valuesarray):
+def _bands_numbers(nkx, nky, valuesarray):
     """Output the valuesarray numbers."""
     nk = -1
     SEP = " "
@@ -47,7 +47,7 @@ def bands_numbers(nkx, nky, valuesarray):
         print(lin)
 
 
-def float_numbers(nkx, nky, valuesarray, precision):
+def _float_numbers(nkx, nky, valuesarray, precision):
     """Outputs the valuesarray float numbers with the precision number of decimal places."""
     nk = -1
     SEP = " "

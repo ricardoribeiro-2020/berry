@@ -14,9 +14,9 @@
         program = 'QE'
         prefix = ''
         outdir = ''
-       refname = date and time: it is better to keep the default
+        refname = date and time: it is better to keep the default
 """
-__version__ = "v0.3.1"
+__version__ = "v1.0"
 
 from multiprocessing import Pool
 from itertools import product
@@ -32,7 +32,7 @@ import contatempo
 import dft
 from headerfooter import header, footer
 from parserQE import parser
-from write_k_points import list_kpoints
+from write_k_points import _list_kpoints
 
 # pylint: disable=C0103
 ###################################################################################
@@ -56,11 +56,11 @@ if __name__ == "__main__":
 
     # Check python version
     python_version = (
-                   str(sys.version_info[0])
-                   + '.'
-                   + str(sys.version_info[1])
-                   + '.'
-                   + str(sys.version_info[2])
+                str(sys.version_info[0])
+                + '.'
+                + str(sys.version_info[1])
+                + '.'
+                + str(sys.version_info[2])
     )
     if not sys.version_info > (2, 7):
         print(" *!*!*!*!*!*!*!*!*!*!*!")
@@ -90,7 +90,6 @@ if __name__ == "__main__":
     # Open input file for the run
     with open(sys.argv[1], "r") as inputfile:
         INPUTVAR = inputfile.read().split("\n")
-    inputfile.close()
 
     # Read that from input file
     for i in INPUTVAR:
@@ -123,7 +122,7 @@ if __name__ == "__main__":
             PROGRAM = str(ii[1])
         if ii[0] == "prefix":
             PREFIX = ii[1]
-        if ii[0] == "outdir":
+        if ii[0] == "outdir":   
             OUTDIR = ii[1]
         if ii[0] == "refname":
             OUTDIR = ii[1]
@@ -182,7 +181,7 @@ if __name__ == "__main__":
     print("     Name of nscf file:", NAMENSCF)
     print("     DFT prefix:", PREFIX)
     print("     DFT outdir:", OUTDIR)
-    DFTDATAFILE = OUTDIR + PREFIX + ".xml"
+    DFTDATAFILE = "/local/bn/e100_3120/dft/out/" + PREFIX + ".xml"
     print("     DFT data file:", DFTDATAFILE)
     print()
     print("     Finished reading input file")
@@ -232,13 +231,13 @@ if __name__ == "__main__":
 
     # Starts DFT calculations ##############################
     # Runs scf calculation  ** DFT
-    dft.scf(MPI, DFTDIRECTORY, NAMESCF, OUTDIR, PSEUDODIR)
+    dft._scf(MPI, DFTDIRECTORY, NAMESCF, OUTDIR, PSEUDODIR)
 
     # Creates template for nscf calculation  ** DFT
-    NSCF = dft.template(DFTDIRECTORY, NAMESCF)
+    NSCF = dft._template(DFTDIRECTORY, NAMESCF)
 
     # Runs nscf calculations for all k-points  ** DFT **
-    dft.nscf(MPI, DFTDIRECTORY, NAMENSCF, NSCF, NKS, NSCFKPOINTS, NBND)
+    dft._nscf(MPI, DFTDIRECTORY, NAMENSCF, NSCF, NKS, NSCFKPOINTS, NBND)
     sys.stdout.flush()
 
     print("     Extracting data from DFT calculations")
@@ -316,6 +315,11 @@ if __name__ == "__main__":
         LSDA = True
     print("     Spin polarized calculation: ", LSDA)
 
+    VB = NELEC - 2 if NONCOLINEAR  or LSDA else (NELEC / 2) - 1
+    if VB - int(VB) != 0:
+        print("[WARNING]\tThe system is a metal!")
+    VB = int(VB)
+    print("     Valence band is: ", VB)
     print()
 
     # for child in ROOT[3][9]:
@@ -356,9 +360,7 @@ if __name__ == "__main__":
     PHASE = np.exp(1j * np.dot(RPOINT, KPOINTS.T))
 
     # Start saving data to files ##################################
-    with open("phase.npy", "wb") as fich:
-        np.save(fich, PHASE)
-    fich.close()
+    np.save("phase.npy", PHASE)
     print("     PHASE saved to file phase.npy")
 
     NEIG = np.full((NKS, 4), -1, dtype=int)
@@ -399,47 +401,32 @@ if __name__ == "__main__":
                 NEIG[nk, 1] = n1
                 NEIG[nk, 2] = n2
                 NEIG[nk, 3] = n3
-    nei.close()
     print("     Neighbors saved to file neighbors.dat")
-    with open("neighbors.npy", "wb") as nnn:
-        np.save(nnn, NEIG)
-    nnn.close()
+    np.save("neighbors.npy", NEIG)
     print("     Neighbors saved to file neighbors.npy")
 
     # Save EIGENVALUES to file (in Ha)
-    with open("eigenvalues.npy", "wb") as fich:
-        np.save(fich, EIGENVALUES)
-    fich.close()
+    np.save("eigenvalues.npy", EIGENVALUES)
     print("     EIGENVALUES saved to file eigenvalues.npy (Ry)")
 
     # Save OCCUPATIONS to file
-    with open("occupations.npy", "wb") as fich:
-        np.save(fich, OCCUPATIONS)
-    fich.close()
+    np.save("occupations.npy", OCCUPATIONS)
     print("     OCCUPATIONS saved to file occupations.npy")
 
     # Save positions to file
-    with open("positions.npy", "wb") as fich:
-        np.save(fich, RPOINT)
-    fich.close()
+    np.save("positions.npy", RPOINT)
     print("     Positions saved to file positions.npy (bohr)")
 
     # Save kpoints to file
-    with open("kpoints.npy", "wb") as fich:
-        np.save(fich, KPOINTS)
-    fich.close()
+    np.save("kpoints.npy", KPOINTS)
     print("     KPOINTS saved to file kpoints.npy (2pi/bohr)")
 
     # Save nktoijl to file
-    with open("nktoijl.npy", "wb") as fich:
-        np.save(fich, NKTOIJL)
-    fich.close()
+    np.save("nktoijl.npy", NKTOIJL)
     print("     NKTOIJL saved to file nktoijl.npy, with convertion from nk to ijl")
 
     # Save ijltonk to file
-    with open("ijltonk.npy", "wb") as fich:
-        np.save(fich, IJLTONK)
-    fich.close()
+    np.save("ijltonk.npy", IJLTONK)
     print("     IJLTONK saved to file ijltonk.npy, with convertion from ijl to nk")
 
     # Save data to file 'datafile.npy'
@@ -480,15 +467,14 @@ if __name__ == "__main__":
         np.save(fich, WFCK2R)  # File for extracting DFT wfc to real space
         np.save(fich, __version__)  # Version of berry where data was created
         np.save(fich, refname)  # Unique reference for the run
+        np.save(fich, VB)  # Valence band number 
         np.save(fich, "dummy")  # Saving space for future values and compatibility
         np.save(fich, "dummy")  # Saving space for future values and compatibility
         np.save(fich, "dummy")  # Saving space for future values and compatibility
         np.save(fich, "dummy")  # Saving space for future values and compatibility
-        np.save(fich, "dummy")  # Saving space for future values and compatibility
-    fich.close()
     print("     Data saved to file datafile.npy")
 
-    list_kpoints(nkx, nky)
+    _list_kpoints(nkx, nky)
 
     ###################################################################################
     # Finished

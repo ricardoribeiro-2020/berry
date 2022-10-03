@@ -1,59 +1,15 @@
-RELEASE NOTES for berry v.0.3.1
+RELEASE NOTES for berry v.1.0
 
-New in 0.3.2 version:
+New in 1.0 version:
 
-- dotproduct.py was not running, now is corrected
+This version is the first release for production, and it has many changes relative to previous ones.
+Therefore, the input and output of most programs may not be compatible with older versions.
 
-New in 0.3.1 version:
+The main differences in this version are:
 
-- Serious bug corrected in the script preprocessing.py
+- Implementation of a machine learning algorithm to improve the selection of the bands.
 
-- Parallelization added to scripts preprocessing.py and dotproduct.py
+- Paralelization of most the code, which resulted in a large decrease in wall clock running time.
 
-
-New in 0.3 version:
-
-- Added a directory to store all scripts to view and analise data
-
-- Added an alternative to the interpolation, to rotate locally the basis
-
-- Added a unique run number, for consistency
-
-- Added a logo to the project
-
-
-New in 0.2.1 version:
-
-- Added drawcurvature.py for drawing Berry curvatures
-
-- Fixed serious bugs on compara.py
-
-- Added flow chart to the documentation
-
-
-New in 0.2 version:
-
-- Improved velocity up to 10x in generate.py and other programs
-
-- More reliable preprocessing.py and resilient to QE changes
-
-- Calculates the Berry curvature
-
-- Uses less disk space
-
-- All programs are now written in python
-
-- Output from programs more readable, and more information
-
-- Conformity to PEP8 was achieved
-
-
-Incompatible changes in 0.2 version:
-
-- Since most of the files are now saved in a different format, the new version cannot read the old data files in general
-
-- The numbering of the bands is now from 0 to n-1 while in the previous version it was from 1 to n.
-
-- The some extensions of the output files are different
-
+- Code more conformed with PEP8 and usual practices.
 

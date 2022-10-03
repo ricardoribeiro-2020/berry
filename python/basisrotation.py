@@ -13,7 +13,7 @@ from scipy.optimize import NonlinearConstraint, minimize
 import contatempo
 from headerfooter import header, footer
 import loaddata as d
-from write_k_points import bands_numbers
+from write_k_points import _bands_numbers
 from clustering_libs import evaluate_result
 
 # pylint: disable=C0103
@@ -274,7 +274,7 @@ if __name__ == "__main__":
             + "         nr of fails: "
             + str(nrnotattrib[nb])
         )
-        bands_numbers(d.nkx, d.nky, bandsfinal[:, nb])
+        _bands_numbers(d.nkx, d.nky, bandsfinal[:, nb])
     print()
     print(" Signaling")
     nrsignal = np.zeros((d.nbnd, CORRECT+1), dtype=int)
@@ -290,7 +290,7 @@ if __name__ == "__main__":
             + f"         {NOT_SOLVED}: "
             + str(nrsignal[nb, NOT_SOLVED])
         )
-        bands_numbers(d.nkx, d.nky, signalfinal[:, nb])
+        _bands_numbers(d.nkx, d.nky, signalfinal[:, nb])
 
     print()
     print("     Resume of results")
