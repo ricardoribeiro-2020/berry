@@ -33,6 +33,25 @@ def dotproduct_cli() -> argparse.Namespace:
     # Save them in a dict and return
     return args_dict
 
+def clustering_cli() -> argparse.Namespace:
+    # Define all cli arguments
+    parser = argparse.ArgumentParser(description="Classify the k points to solve band crossing problem.")
+    parser.add_argument("Mb", nargs='?', default=-1, type=int, help="Maximum band to consider (>0)")
+    parser.add_argument("-mb", type=int, default=0, help="Minimum band to consider (>0; default: 0)")
+    parser.add_argument("-np", type=int, default=1, help="Number of processes to use (default: 1)")
+    parser.add_argument("-t", type=float, default=0.95, help="Tolerance used for grpah construction (default: 0.95)")
+    args = parser.parse_args()
+
+    # Process the arguments given
+    args_dict = {}
+    args_dict["NPR"] = max(args.np, 1)
+    args_dict["TOL"] = args.t
+    args_dict["MIN_BAND"] = max(args.mb, 0)
+    args_dict["MAX_BAND"] = args.Mb
+
+    # Save them in a dict and return
+    return args_dict
+
 def r2k_cli() -> argparse.Namespace:
     # Define all cli arguments
     parser = argparse.ArgumentParser(description="Calculates the grid of points in the k-space")

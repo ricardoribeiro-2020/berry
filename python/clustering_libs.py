@@ -3,6 +3,7 @@ It determines which points belong to each band used for posterior calculations.
 The algorithm uses machine learning techniques to cluster the data.
 """
 
+from array import array
 import os
 import numpy as np
 import networkx as nx
@@ -15,7 +16,19 @@ from multiprocessing import Manager
 from scipy.optimize import curve_fit
 from contatempo import time_fn
 from write_k_points import _bands_numbers
+from typing import Tuple, Union
 
+
+###########################################################################
+# Type Definition
+###########################################################################
+Kpoint = int
+Connection = float
+Band = int
+
+###########################################################################
+# Constant Definition
+###########################################################################
 CORRECT = 5
 POTENTIAL_CORRECT = 4
 POTENTIAL_MISTAKE = 3
@@ -27,32 +40,34 @@ N_NEIGS = 4
 
 LOG = log('clustering', 'Band Clustering', version)
 
-def evaluate_result(values):
+def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
     '''
     This function attributes the correspondent signal using
     the dot product between each neighbor.
 
-    INPUT
-    values: It is an array that contains the dot product
+    Parameters
+        values: array_like
+            It is an array that contains the dot product
             between the k point and all neighbors.
 
-    C -> Mean connection of each k point
-
-    OUTPUT
-    Value :                              Description
-    0     :                        The point is not solved
-    1     :  MISTAKE               c <= 0.2
-    2     :  DEGENERATE            It is a degenerate point.
-    3     :  POTENTIAL_MISTAKE     C <= 0.8
-    4     :  POTENTIAL_CORRECT     0.8 < C < 0.9
-    5     :  CORRECT               C > 0.9
+    Returns
+        signal: int
+            C -> Mean connection of each k point
+            Value :                              Description
+            0     :                        The point is not solved
+            1     :  MISTAKE               C <= 0.2
+            2     :  DEGENERATE            It is a degenerate point.
+            3     :  POTENTIAL_MISTAKE     C <= 0.8
+            4     :  POTENTIAL_CORRECT     0.8 < C < 0.9
+            5     :  CORRECT               C > 0.9
     '''
 
-    TOL = 0.9
-    TOL_DEG = 0.8
-    TOL_MIN = 0.2
+    TOL = 0.9       # Tolerance for CORRECT output
+    TOL_DEG = 0.8   # Tolerance for POTENTIAL_CORRECT output
+    TOL_MIN = 0.2   # Tolerance for POTENTIAL_MISTAKE output
 
-    value = np.mean(values)
+    value = np.mean(values) # Mean conection of each k point
+
     if value > TOL:
         return CORRECT
 
@@ -64,25 +79,85 @@ def evaluate_result(values):
 
     return MISTAKE
 
-def evaluate_point(k, bn, k_index, k_matrix, signal, bands, energies):
-    N = 4 # Number of points to fit the curve
-    mach_bn = bands[k, bn]
-    sig = signal[k, bn]
-    ik, jk = k_index[k]
-    Ek = energies[k, mach_bn]
+def evaluate_point(k: Kpoint, bn: Band, k_index: np.ndarray, k_matrix: np.ndarray,
+                   signal: np.ndarray, bands: np.ndarray, energies: np.ndarray) -> Tuple[int, list[int]]:
+    '''
+    Assign a signal value depending on energy continuity.
 
-    def difference_energy(Ek, Enew):
-        min_energy = np.min(np.abs(Enew-energies[k]))
-        delta_energy = np.abs(Enew-Ek)
-        return min_energy/delta_energy if delta_energy else 1
+    Parameters
+        k: Kpoint
+            Integer that index the k point on analysis.
+        bn: Band
+            Integer that index the band number on analysis.
+        k_index: array_like
+            An array that contains the indices of each k point on the k-space matrix.
+        k_matrix: array_like
+            An array with the shape of the k-space. It contains the value of each k point in their corresponding position.
+        signal: array_like
+            An array with the current signal value for each k point.
+        bands: array_like
+            An array with the information of current solution of band clustering.
+        energies: array_like
+            It contais the energy value for each k point.
+    
+    Returns
+        (signal, scores): Tuple[int, list[int]]
+            scores: list[int]
+                Sinalize if exist continuity on each direction [Down, Right, up, Left].
+                    1 --- This direction preserves energy continuity.
+                    0 --- This direction does not preserves energy continuity.
+            N -> Number of directions with energy continuity.
+            signal: int
+                Value :                              Description
+                0     :                        The point is not solved
+                1     :  MISTAKE               N = 0
+                2     :  DEGENERATE            It is a degenerate point.
+                3     :  OTHER                 0 < N < 4
+                4     :  CORRECT               N = 4
+    '''
+    
+    CORRECT = 4
+    MISTAKE = 1
+    OTHER = 3
 
-    directions = np.array([[1,0], [0,1], [-1,0], [0,-1]]) # Down, Right, Up, Left
+    TOL = 0.9         # Tolerance to consider that exist energy continuity
+    N = 4             # Number of points to fit the curve
+
+    mach_bn = bands[k, bn]          # original band
+    sig = signal[k, bn]             # signal
+    ik, jk = k_index[k]             # k point indices on k-space
+    Ek = energies[k, mach_bn]       # k point's Energy value
+
+    def difference_energy(Ek: float, Enew: float) -> float:
+        '''
+        Attributes a value that score how close is Ek to Enew.
+
+        Parameters
+            Ek: float
+                K point's energy value.
+            Enew: float
+                Energy value to compare.
+        Returns
+            score: float [0, 1]
+                Value that measures the closeness between Ek and Enew consider the other possible values.
+        '''
+        min_energy = np.min(np.abs(Enew-energies[k]))           # Computes all possible energy values for this k point
+        delta_energy = np.abs(Enew-Ek)                          # Actual difference between Ek and Enew
+        return min_energy/delta_energy if delta_energy else 1   # Score
+
+    directions = np.array([[1,0], [0,1], [-1,0], [0,-1]])       # Down, Right, Up, Left
     energy_vals = []
+
+    ###########################################################################
+    # Calculate the score for each direction
+    ###########################################################################
+
     for direction in directions:
+        # Iterates each direction and obtain N points to be used for fit the curve
         n = np.repeat(np.arange(1,N+1),2).reshape(N,2)
         kn_index = n*direction + np.array([ik, jk])
-        i, j = kn_index[:, 0], kn_index[:, 1]
-        flag = len(np.unique(i)) > 1
+        i, j = kn_index[:, 0], kn_index[:, 1]   # Selects the indices of these N points
+        flag = len(np.unique(i)) > 1            # Necessary to identify which will be the direction of the fit
         if flag:
             i = i[i >= 0]
             i = i[i < k_matrix.shape[0]]
@@ -92,11 +167,13 @@ def evaluate_point(k, bn, k_index, k_matrix, signal, bands, energies):
             j = j[j < k_matrix.shape[1]]
             i = np.full(len(j), i[0])
         
-        ks = k_matrix[i, j] if len(i) > 0 else []
-        if len(ks) == 0:
+        ks = k_matrix[i, j] if len(i) > 0 else []   # Identify the N k points
+        if len(ks) == 0:    
+            # The direction in analysis does not have points
             energy_vals.append(1)
             continue
-        if len(ks) <= 3:
+        if len(ks) <= 3:    
+            # If there are not enough points to fit the curve it is used the Energy of the nearest neighbor
             Eneig = energies[ks[0], bands[ks[0], bn]]
             energy_vals.append(difference_energy(Ek, Eneig))
             continue
@@ -105,23 +182,16 @@ def evaluate_point(k, bn, k_index, k_matrix, signal, bands, energies):
         Es = energies[ks, k_bands]
         X = i if flag else j
         new_x = ik if flag else jk
-        pol = lambda x, a, b, c: a*x**2 + b*x + c
-        popt, pcov = curve_fit(pol, X, Es)
-        Enew = pol(new_x, *popt)
-        energy_vals.append(difference_energy(Ek, Enew))
-    
-    TOL = 0.9
-    N_Neighs = 4
+        pol = lambda x, a, b, c: a*x**2 + b*x + c           # Second order polynomial
+        popt, pcov = curve_fit(pol, X, Es)                  # Curve fitting
+        Enew = pol(new_x, *popt)                            # Obtain Energy value
+        energy_vals.append(difference_energy(Ek, Enew))     # Calculate score
     
     energy_vals = np.array(energy_vals)
-    scores = (energy_vals > TOL)*1
-    score = np.sum(scores)
-
-    CORRECT = 4
-    MISTAKE = 1
-    OTHER = 3
+    scores = (energy_vals > TOL)*1  # Verification energy continuity on each direction
+    score = np.sum(scores)          # Counting how many directions preserves energy continuity
     
-    if score == N_Neighs:
+    if score == N_NEIGS:
         return CORRECT, scores
     if score == 0:
         return MISTAKE, scores
@@ -132,9 +202,80 @@ class MATERIAL:
     '''
     This object contains all information about the material that
     will be used to solve their bands' problem.
+
+    Atributes
+        nkx : int
+            The number ok k points on x direction.
+        nky : int
+            The number ok k points on y direction.
+        nbnb : int
+            Total number of bands.
+        total_bands : int
+            Total number of bands.
+        nks : int
+            Total number of k points.
+        eigenvalues : array_like
+            It contains the energy value for each k point.
+        connections : array_like
+            The dot product information between k points.
+        neighbors : array_like
+            An array with the information about which are the neighbors of each k point.
+        vectors : array_like
+            Each k point in the vector representation on k-space.
+        n_process : int
+            Number of processes to use.
+        bands_final : array_like
+            An array with final result of bands attribution.
+        signal_final : array_like
+            Contains the resulting signal for each k point.
+        final_score : aray_like
+            It contains the result score for each band.
+
+    Methods
+        solve() : None
+            This method is the main algorithm which iterates between solutions
+                trying to find the best result for the material.
+        make_vectors() : None
+            It transforms the information into more convenient data structures.
+        make_BandsEnergy() : array_like
+            It sets the energy information in more convinient data structure
+        make_kpointsIndex() : None
+            It computes the indices of each k point in their correspondence in k-space.
+        make_connections() : None
+            This function evaluates the connection between each k point, and adds an edge
+                to the graph if its connection is greater than a tolerance value (tol).
+        get_neigs() : list[Kpoint]
+            Obtain the i's neighbors.
+        find_path() : bool
+            Verify if exist a path between two k points inside the graph.
     '''
-    def __init__(self, nkx, nky, nbnd, nks, eigenvalues,
-                 connections, neighbors, n_process=1):
+    def __init__(self, nkx: int, nky: int, nbnd: int, nks: int, eigenvalues: np.ndarray,
+                 connections: np.ndarray, neighbors: np.ndarray, n_process: int=1) -> None:
+        '''
+        Initialize the object.
+
+        Parameters
+            nkx : int
+                The number ok k points on x direction.
+            nky : int
+                The number ok k points on y direction.
+            nbnb : int
+                Total number of bands.
+            total_bands : int
+                Total number of bands.
+            nks : int
+                Total number of k points.
+            eigenvalues : array_like
+                It contains the energy value for each k point.
+            connections : array_like
+                The dot product information between k points.
+            neighbors : array_like
+                An array with the information about which are the neighbors of each k point.
+            vectors : array_like
+                Each k point in the vector representation on k-space.
+            n_process : int
+                Number of processes to use.
+        '''
         self.nkx = nkx
         self.nky = nky
         self.nbnd = nbnd
@@ -146,7 +287,17 @@ class MATERIAL:
         self.vectors = None
         self.n_process = n_process
 
-    def make_BandsEnergy(self):
+    def make_BandsEnergy(self) -> np.ndarray:
+        '''
+        It sets the energy information in more convinient data structure
+        
+        Parameters
+            None
+        
+        Returns
+            BandsEnergy : array_like
+                An array with the information about each energy value on k-space.
+        '''
         bands_final, _ = np.meshgrid(np.arange(0, self.nbnd),
                                      np.arange(0, self.nks))
         BandsEnergy = np.empty((self.nbnd, self.nkx, self.nky), float)
@@ -161,7 +312,10 @@ class MATERIAL:
             BandsEnergy[bn] = zarray
         return BandsEnergy
 
-    def make_kpointsIndex(self):
+    def make_kpointsIndex(self) -> None:
+        '''
+        It computes the indices of each k point in their correspondence in k-space.
+        '''
         My, Mx = np.meshgrid(np.arange(self.nky), np.arange(self.nkx))
         self.matrix = My*self.nkx+Mx
         counts = np.arange(self.nks)
@@ -169,29 +323,34 @@ class MATERIAL:
                                       axis=1)
 
     @time_fn(prefix="\t")
-    def make_vectors(self, min_band=0, max_band=-1):
+    def make_vectors(self, min_band: int=0, max_band: int=-1) -> None:
         '''
         It transforms the information into more convenient data structures.
 
-        INPUT
-        min_band: An integer that gives the minimum band that clustering will use.
-                  default: 0
-        max_band: An integer that gives the maximum band that clustering will use.
-                  default: All
+        Parameters
+            min_band : int
+                An integer that gives the minimum band that clustering will use.
+                    default: 0
+            max_band : int
+                An integer that gives the maximum band that clustering will use.
+                    default: All
 
-        RESULT
-        self.vectors: [kx_b, ky_b, E_b]
-            k = (kx, ky)_b: k point
-            b: band number
-        self.degenerados: It marks the degenerate points
-        self.GRPAH: It is a graph in which each node represents a vector.
-        self.energies: It contains the energy values for each band distributed
-                       in a matrix.
+        Result
+            self.vectors: [kx_b, ky_b, E_b]
+                k = (kx, ky)_b: k point
+                b: band number
+            self.degenerados: It marks the degenerate points
+            self.GRPAH: It is a graph in which each node represents a vector.
+            self.energies: It contains the energy values for each band distributed
+                        in a matrix.
         '''
         process_name = 'Making Vectors'
         LOG.percent_complete(0, 100, title=process_name)
 
-        self.GRAPH = nx.Graph()
+        ###########################################################################
+        # Compute the auxiliar information
+        ###########################################################################
+        self.GRAPH = nx.Graph()     # Create the initail Graph
         self.min_band = min_band
         self.max_band = max_band
         nbnd = self.nbnd if max_band == -1 else max_band+1
@@ -199,6 +358,9 @@ class MATERIAL:
         energies = self.make_BandsEnergy()
         LOG.percent_complete(20, 100, title=process_name)
 
+        ###########################################################################
+        # Compute the vector representation of each k point
+        ###########################################################################
         n_vectors = (nbnd-min_band)*self.nks
         ik = np.tile(self.kpoints_index[:, 0], nbnd-min_band)
         jk = np.tile(self.kpoints_index[:, 1], nbnd-min_band)
@@ -207,30 +369,34 @@ class MATERIAL:
         self.vectors = np.stack([ik, jk, eigenvalues], axis=1)
         LOG.percent_complete(100, 100, title=process_name)
 
-        self.GRAPH.add_nodes_from(np.arange(n_vectors))
-
-        self.degenerados = []
+        self.GRAPH.add_nodes_from(np.arange(n_vectors))     # Add the nodes, each node represent a k point
         
-        def obtain_degenerates(vectors):
+        ###########################################################################
+        # Verify if any k point is a degenerate point
+        ###########################################################################
+        self.degenerados = []
+        def obtain_degenerates(vectors: np.ndarray) -> list[Kpoint]:
+            '''
+            Find all degenerate k points present on vectors.
+
+            Parameters
+                vectors : array_like
+                    An array with vector representation of k points.
+            
+            Returns
+                degenerates : list[Kpoint]
+                    It contains the degenerate points found.
+            '''
             degenerates = []
             for i, v in vectors:
                 degenerado = np.where(np.all(np.isclose(self.vectors[i+1:]-v, 0),
-                                    axis=1))[0]
+                                    axis=1))[0] # Verify which points have numerically the same value
                 if len(degenerado) > 0:
                     LOG.debug(f'Found degenerete point for {i}')
                     degenerates += [[i, d+i+1] for d in degenerado]
             return degenerates
-        
-        '''
-        for i, v in enumerate(self.vectors):
-            LOG.percent_complete(50 + int(i*50/len(self.vectors)), 100, title=title)
-            degenerado = np.where(np.all(np.isclose(self.vectors[i+1:]-v, 0),
-                                  axis=1))[0]
-            if len(degenerado) > 0:
-                self.degenerados += [[i, d+i+1] for d in degenerado]
-                LOG.debug(f'Found degenerete point for {i}')'''
-        
 
+        # Parallelize the verification process
         self.degenerados = self.parallelize('Finding degenerate points', obtain_degenerates, enumerate(self.vectors))
 
         if len(self.degenerados) > 0:
@@ -240,13 +406,33 @@ class MATERIAL:
 
         self.ENERGIES = energies
         self.nbnd = nbnd-min_band
-
         self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
 
-    def get_neigs(self, i):
+    def get_neigs(self, i: Kpoint) -> list[Kpoint]:
+        '''
+        Obtain the i's neighbors
+
+        Parameters
+            i : Kpoint
+                The node index.
+        
+        Returns
+            neighbors : list[Kpoint]
+                List with the nodes that are neighbors of the node i.
+        '''
         return list(self.GRAPH.neighbors(i))
 
-    def find_path(self, i, j):
+    def find_path(self, i: Kpoint, j:Kpoint) -> bool:
+        '''
+        Verify if exist a path between two k points inside the graph
+
+        Parameters
+            i : Kpoint
+            j : Kpoint
+        
+        Returns : bool
+            If exists a path return True
+        '''
         neighs = self.get_neigs(i)
         neigh = neighs.pop(0) if len(neighs) > 0 else None
         visited = [i] + [d for points in self.degenerados
@@ -264,7 +450,7 @@ class MATERIAL:
         return neigh == j if neigh is not None else False
 
     @time_fn(prefix="\t")
-    def make_connections(self, tol=0.95):
+    def make_connections(self, tol:float=0.95) -> None:
         '''
         This function evaluates the connection between each k point,
         and adds an edge to the graph if its connection is greater
@@ -272,13 +458,26 @@ class MATERIAL:
 
         <i|j>: The dot product between i and j represents its connection
 
-        INPUT
-        tol: It is the minimum connection value that will be accepted as
-             an edge.
-             default: 0.95
+        Parameters
+            tol : float
+                It is the minimum connection value that will be accepted as an edge.
+                default: 0.95
         '''
+        ###########################################################################
+        # Find the edges on the graph
+        ###########################################################################
+        def connection_component(vectors:np.ndarray) -> list[list[Kpoint]]:
+            '''
+            Find the possible edges in the graph using the information of dot product.
 
-        def connection_component(vectors):
+            Parameters
+                vectors : array_like
+                    An array with vector representation of k points.
+            
+            Returns
+                edges : list[list[Kpoint]]
+                    List of all edges that was found.
+            '''
             edges = []
             bands = np.repeat(np.arange(self.min_band, self.max_band+1), len(self.neighbors[0]))
             for i_ in vectors:
@@ -301,18 +500,23 @@ class MATERIAL:
                         edges.append([i_, j_])
             return edges
 
+        # Parallelize the edges calculation
         edges = self.parallelize('Computing Edges', connection_component, range(len(self.vectors)))
-
+        # Establish the edges on the graph from edges array
         self.GRAPH.add_edges_from(edges)
 
+        ###########################################################################
+        # Solve problems that a degenerate point may cause
+        ###########################################################################
         for d1, d2 in self.degenerados:
             '''
             The degenerate points may cause problems.
             The algorithm below finds its problems and solves them.
             '''
-
             if not self.find_path(d1, d2):
+                # Verify if exist a path that connects two forbidden points
                 continue
+            # Obtains the neighbors from each degenerate point that cause problems
             N1 = np.array(self.get_neigs(d1))
             N2 = np.array(self.get_neigs(d2))
             if len(N1) == 0 or len(N2) == 0:
@@ -334,7 +538,7 @@ class MATERIAL:
                     N = [[N_1[0], N_2[n2_index]]] \
                         + [[n] for n in N_2 if n != N_2[n2_index]]
                     flag = True
-
+            # Assign to a specific band each point and establish the corresponding edges
             n1 = np.random.choice(N[0])
             if flag:
                 N1_ = [n1]
@@ -359,7 +563,7 @@ class MATERIAL:
             for k in N2_:
                 self.GRAPH.add_edge(k, d2)
 
-    def parallelize(self, process_name, f, iterator, *args, verbose=True):
+    def parallelize(self, process_name: str, f: function, iterator: Union[list, np.ndarray], *args, verbose: bool=True):
         process = []
         iterator = list(iterator)
         N = len(iterator)
@@ -721,8 +925,24 @@ class MATERIAL:
             self.correct_signalfinal[k_ot, bn_ot] = CORRECT-1
 
     @time_fn(prefix="\t")
-    def solve(self, step=0.1, min_tol=0):
-        TOL = 0.5
+    def solve(self, step: float=0.1, min_tol: float=0) -> None:
+        '''
+        This method is the main algorithm which iterates between solutions
+        trying to find the best result for the material.
+
+        Parameters
+            step : float
+                It is the iteration value which is used to relax the tolerance condition.
+                (default 0.1)
+            min_tol : float
+                The minimum tolerance.
+                (default 0)
+        '''
+        ###########################################################################
+        # Initial preparation of data structures
+        # The previous and best result are stored
+        ###########################################################################
+        TOL = 0.5   # The initial tolerance is 0.5 that is 0.5*<i|j> + 0.5*f(E)
         bands_final_flag = True
         self.bands_final_prev = np.copy(self.bands_final)
         self.best_bands_final = np.copy(self.bands_final)
@@ -730,29 +950,36 @@ class MATERIAL:
         self.final_score = np.zeros(self.total_bands, dtype=float)
         self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
         self.correct_signalfinal_prev = np.full(self.signal_final.shape, -1, int)
-        max_solved = 0
+        max_solved = 0  # The maximum number of solved bands
 
+        ###########################################################################
+        # Algorithm
+        ###########################################################################
         while bands_final_flag and TOL >= min_tol:
             print()
             LOG.info(f'\n\n  Clustering samples for TOL: {TOL}')
-            self.get_components(tol=TOL)
+            self.get_components(tol=TOL)                    # Obtain components from a Graph
 
-            LOG.info('  Calculating output')
-            self.obtain_output()
-            self.print_report(self.signal_final)
+            LOG.info('  Calculating output')        
+            self.obtain_output()                            # Compute the result
+            self.print_report(self.signal_final)            # Print result
 
-            LOG.info('  Validating result')
-            self.correct_signal()
-            self.print_report(self.correct_signalfinal)
-
+            LOG.info('  Validating result')     
+            self.correct_signal()                           # Evaluate the energy continuity and perform a new Graph
+            self.print_report(self.correct_signalfinal)     # Print result
+            
+            # Verification if the result is similar to the previous one
             bands_final_flag = np.sum(np.abs(self.bands_final_prev - self.bands_final)) != 0
             self.bands_final_prev = np.copy(self.bands_final)
 
+            # Verify and store the best result
+            # To be a better result it has to be better score and all k points attributed for all the first max_solved bands
             solved = 0
             for bn, score in enumerate(self.final_score):
                 best_score = self.best_score[bn]
-                not_solved = np.sum(self.signal_final[:, bn] == NOT_SOLVED)
-                if score >= best_score and not_solved == 0:
+                not_solved_prev = np.sum(self.correct_signalfinal_prev[:, bn] == NOT_SOLVED)
+                not_solved = np.sum(self.correct_signalfinal[:, bn] == NOT_SOLVED)
+                if score >= best_score and not_solved <= not_solved_prev:
                     solved += 1
                 else:
                     break
@@ -768,6 +995,7 @@ class MATERIAL:
                 self.correct_signal()
             TOL -= step
         
+        # The best result is maintained
         self.bands_final = np.copy(self.best_bands_final)
         self.final_score = np.copy(self.best_score)
         self.signal_final = np.copy(self.best_signal_final)
