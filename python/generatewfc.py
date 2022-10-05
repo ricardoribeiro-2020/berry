@@ -47,7 +47,7 @@ if __name__ == "__main__":
     sys.stdout.flush()
 
     ###########################################################################
-    # 4. SECONG HARMONIC GENERATION
+    # 4. WAVEFUNCTIONS EXTRACTION
     ###########################################################################
     if isinstance(NK_POINTS, range):
         print("\tWill run for all k-points and bands")
@@ -55,17 +55,18 @@ if __name__ == "__main__":
 
         for nk in NK_POINTS:
             print(f"\tCalculating wfc for k-point {nk}")
-            dft._wfck2r(nk, 0, d.nbnd - 1)
+            dft._wfck2r(nk, 0, d.nbnd)
     else:
         if isinstance(BANDS, range):
-            print(f"\tWill run just for k-point {NK_POINTS}.")
+            print(f"\tWill run just for k-point {NK_POINTS} an all bands.")
             print(f"\tThere are {d.nks} k-points and {d.nbnd} bands.\n")
-        else:
-            print(f"\tWill run just for k-point {NK_POINTS} and band {BANDS[0]}.\n")
 
-        for band in BANDS:
-            print(f"\tCalculating wfc for k-point {NK_POINTS} and band {band}")
-            dft._wfck2r(NK_POINTS, band)
+            print(f"\tCalculating wfc for k-point {NK_POINTS}")
+            dft._wfck2r(NK_POINTS, 0, d.nbnd)
+        else:
+            print(f"\tWill run just for k-point {NK_POINTS} and band {BANDS}.\n")
+            dft._wfck2r(NK_POINTS, BANDS)
+
 
     ###########################################################################
     # Finished
