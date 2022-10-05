@@ -49,7 +49,7 @@ def tempo(starttime, endtime):
 
     if d > 0:
         string = (
-            " The program ran for "
+            "The program ran for "
             + str(d)
             + " days, "
             + str(h)
@@ -59,7 +59,7 @@ def tempo(starttime, endtime):
         )
     elif h > 0:
         string = (
-            " The program ran for "
+            "The program ran for "
             + str(h)
             + " h, "
             + str(m)
@@ -68,9 +68,9 @@ def tempo(starttime, endtime):
             + " s"
         )
     elif m > 0:
-        string = " The program ran for " + str(m) + " m, " + str(s) + " s"
+        string = "The program ran for " + str(m) + " m, " + str(s) + " s"
     else:
-        string = " The program ran for " + str(dif) + " s"
+        string = "The program ran for " + str(dif) + " s"
 
     return string
 
