@@ -1,9 +1,10 @@
+from multiprocessing.util import sub_debug
 from typing import Dict, Any
 
 import os
 import argparse
 
-import loaddata as d
+import python.loaddata as d
 
 
 class CustomParser(argparse.ArgumentParser):
@@ -15,6 +16,10 @@ class CustomParser(argparse.ArgumentParser):
             msg = f"invalid choice: {value}. Choose from {first} up to (and including) {last}."
             raise argparse.ArgumentError(action, msg)
 
+
+##################################################################################################
+# MAIN PROGRAMS
+##################################################################################################
 
 def preprocessing_cli() -> Dict[str, Any]:
     ###########################################################################
@@ -192,3 +197,83 @@ def shg_cli() -> Dict[str, Any]:
 
     ###########################################################################
     return args_dict
+
+##################################################################################################
+# VIZUALIZATION PROGRAMS
+##################################################################################################
+
+def viz_berry_cli() -> argparse.Namespace:
+    ###########################################################################
+    # 1. DEFINING CLI ARGS
+    ###########################################################################
+    parser = CustomParser(description="Visualizes the Berry connection and curvature vectors.")
+    sub_parser = parser.add_subparsers(help="Available visualizations.", dest="viz_prog")
+
+    # 1.1. BERRY CONNECTION
+    bcc_parser = sub_parser.add_parser("bcc", help="Visualizes the Berry connection vectors.")
+    bcc_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to visualize.")
+    bcc_parser.add_argument("grad", type=int, metavar=f"grad (0-{d.nbnd-1})", choices=range(d.nbnd), help="Gradient to visualize.")
+    bcc_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
+
+    # 1.2. BERRY CURVATURE
+    bcr_parser = sub_parser.add_parser("bcr", help="Visualizes the Berry curvature vectors.")
+    bcr_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to visualize.")
+    bcr_parser.add_argument("grad", type=int, metavar=f"grad (0-{d.nbnd-1})", choices=range(d.nbnd), help="Gradient to visualize.")
+    bcr_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
+
+    args = parser.parse_args()
+    ###########################################################################
+    # 2. ASSERTIONS
+    ###########################################################################
+    assert args.viz_prog is not None, parser.error("No visualization program was selected.")
+
+    ###########################################################################
+    # 3. PROCESSING ARGS
+    ###########################################################################
+
+    return args
+
+
+def viz_debug_cli() -> argparse.Namespace:
+    ###########################################################################
+    # 1. DEFINING CLI ARGS
+    ###########################################################################
+    parser = CustomParser(description="Visualizes the information of the calculation. It is useful for debugging.")
+    sub_parser = parser.add_subparsers(help="Available visualizations.", dest="viz_prog")
+
+    # 1.1 view data
+    data_parser = sub_parser.add_parser("data", help="Visualizes the data of the system.")
+    
+    # 1.2 view data
+    dot1_parser = sub_parser.add_parser("dot1", help="Dot product visualization. (Option 1)")
+    
+    # 1.2 view data
+    dot2_parser = sub_parser.add_parser("dot2", help="Dot product visualization. (Option 2)")
+    dot2_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to consider.")
+
+    # 1.3 view eigenvalues
+    eigen_parser = sub_parser.add_parser("eigen", help="Visualizes the eigenvalues of the system.")
+    eigen_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to consider.")
+    eigen_parser.add_argument("-acc", type=int, default=0, help="Precision of the eigenvalues.")
+
+    # 1.4 view neighbors
+    neighors_parser = sub_parser.add_parser("neig", help="Visualizes the neighbors in system.")
+
+    # 1.5 view occupations
+    occ_parser = sub_parser.add_parser("occ", help="Visualizes the occupations of each k point.")
+
+    # 1.5 view real space
+    real_parser = sub_parser.add_parser("r-space", help="Visualizes the real space of the system.")
+
+    args = parser.parse_args()
+    
+    ###########################################################################
+    # 2. ASSERTIONS
+    ###########################################################################
+    assert args.viz_prog is not None, parser.error("No visualization program was selected.")
+
+    ###########################################################################
+    # 3. PROCESSING ARGS
+    ###########################################################################
+
+    return args
