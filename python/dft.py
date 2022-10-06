@@ -176,7 +176,7 @@ def _wfck2r(nk1, nb1, total_bands=1):
         psifinal += list(psi[i * d.nr : (i + 1) * d.nr] * np.exp(-1j * deltaphase[i]))
     psifinal = np.array(psifinal)
 
-    outfiles = map(lambda band: f"{d.wfcdirectory}k0{nk1}b0{band}.wfc", range(total_bands))
+    outfiles = map(lambda band: f"{d.wfcdirectory}k0{nk1}b0{band+nb1}.wfc", range(total_bands))
     for i, outfile in enumerate(outfiles):
         with open(outfile, "wb") as fich:
             np.save(fich, psifinal[i * d.nr : (i + 1) * d.nr])

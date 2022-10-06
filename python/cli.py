@@ -1,10 +1,9 @@
-from multiprocessing.util import sub_debug
 from typing import Dict, Any
 
 import os
 import argparse
 
-import python.loaddata as d
+import loaddata as d
 
 
 class CustomParser(argparse.ArgumentParser):
@@ -51,7 +50,8 @@ def generatewfc_cli() -> Dict[str, Any]:
     ###########################################################################
     # 2. ASSERTIONS
     ###########################################################################
-    assert not (args.band and not args.nk), "If you specify a band (-band), you must specify a k-point (-nk)."
+    if args.nk is None and args.band is not None:
+        parser.error("If you want to generate a wavefunction for a single band, you must specify the k-point.")
 
     ###########################################################################
     # 3. PROCESSING ARGS
