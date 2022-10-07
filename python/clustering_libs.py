@@ -815,7 +815,7 @@ class MATERIAL:
                     if np.any(len_bn > 1):
                         i_deg = np.where(len_bn > 1)[0]
                         k_deg = k_unique[i_deg]
-                        bns_deg = [bn_unique[j_deg] for j_deg in i_deg] if len(i_deg) > 1 else [bn_unique[i_deg]]
+                        bns_deg = [bn_unique[j_deg] for j_deg in i_deg]
                         k_basis_rotation.append([k, k_deg, bn, bns_deg])
                 score += np.mean(dps)
             score /= self.nks
@@ -829,25 +829,27 @@ class MATERIAL:
                 if not np.all([np.all(np.isin(bns, bns_deg_[j])) for j, bns in enumerate(bns_deg)]):
                     continue
                 
-                flag = True
-                for i_c, (k_c, bn_c1, bn_c2, k_deg_c) in enumerate(degenerates):
-                    if k != k_c or not np.all(np.isin([bn, bn_], [bn_c1, bn_c2])) or not np.any(k_deg_c == k):
-                        continue
-                    flag = False
-                    K = np.array([k, k])
-                    K_C = np.array([k_c, k_c])
-                    B_C = np.array([bn_c1, bn_c2])
-                    dE = np.abs(np.sum(self.eigenvalues[K_C, self.bands_final[K_C, B_C]]*np.array(1, -1)))
-                    dE_new = np.abs(np.sum(self.eigenvalues[K, self.bands_final[K, B_C]]*np.array(1, -1)))
-                    
-                    if dE_new < dE:
-                        degenerates[i_c] = [k, bn, bn_, k_deg]
+                degenerates.append([k, bn, bn_])
 
-                if flag:
-                    degenerates.append([k, bn, bn_, k_deg])
+        analized = []
+        for i, (k, bn, bn_) in enumerate(degenerates):
+            analized.append(i)
+            same_group = []
+            for j, (k_, bn0, bn1) in enumerate(degenerates[i+1:]):
+                ik, jk = self.kpoints_index[k]
+                ik_, jk_ = self.kpoints_index[k_]
+                idif = np.abs(ik - ik_)
+                jdif = np.abs(jk - jk_)
+                if idif > 1 or jdif > 1 or not np.all(np.isin([bn, bn_], [bn0, bn1])):
+                    continue
+                analized.append(j+i+1)
+                same_group.append([k_, bn0, bn1])
 
-        for k, bn, bn_, k_deg in degenerates:
-            self.degenerate_final.append([k, bn, bn_])
+            same_group = np.array(same_group)
+            ks = same_group[:, 0]
+            neighs = self.neighbors[ks]
+            points = [np.sum(neighs == k) for k in ks]
+            self.degenerate_final.append(same_group[np.argmax(points)])
         
         self.degenerate_final = np.array(self.degenerate_final)
 
