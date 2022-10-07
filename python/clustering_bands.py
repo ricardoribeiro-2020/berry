@@ -92,9 +92,6 @@ if __name__ == '__main__':
     with open('output/degeneratefinal.npy', 'wb') as f:
         np.save(f, material.degenerate_final)
 
-    with open('output/k_basis_rotation.npy', 'wb') as f:
-        np.save(f, material.k_basis_rotation)
-
     with open('output/final_score.npy', 'wb') as f:
         np.save(f, material.final_score)
 

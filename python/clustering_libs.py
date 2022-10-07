@@ -16,7 +16,7 @@ from multiprocessing import Manager
 from scipy.optimize import curve_fit
 from contatempo import time_fn
 from write_k_points import _bands_numbers
-from typing import Tuple, Union
+from typing import Tuple, Union, Callable
 
 
 ###########################################################################
@@ -508,6 +508,7 @@ class MATERIAL:
         ###########################################################################
         # Solve problems that a degenerate point may cause
         ###########################################################################
+        degnerates = []
         for d1, d2 in self.degenerados:
             '''
             The degenerate points may cause problems.
@@ -515,6 +516,7 @@ class MATERIAL:
             '''
             if not self.find_path(d1, d2):
                 # Verify if exist a path that connects two forbidden points
+                degnerates.append([d1, d2])
                 continue
             # Obtains the neighbors from each degenerate point that cause problems
             N1 = np.array(self.get_neigs(d1))
@@ -562,8 +564,10 @@ class MATERIAL:
                 self.GRAPH.add_edge(k, d1)
             for k in N2_:
                 self.GRAPH.add_edge(k, d2)
+        
+        self.degenerates = np.array(degnerates)
 
-    def parallelize(self, process_name: str, f: function, iterator: Union[list, np.ndarray], *args, verbose: bool=True):
+    def parallelize(self, process_name: str, f: Callable, iterator: Union[list, np.ndarray], *args, verbose: bool=True):
         process = []
         iterator = list(iterator)
         N = len(iterator)
@@ -772,12 +776,11 @@ class MATERIAL:
 
             self.signal_final[k1, bn1] = DEGENERATE
             self.signal_final[k2, bn2] = DEGENERATE
+            
+            # if np.any(np.all(np.array([d1, d2]) == self.degenerates, axis=1)):
+            #    self.degenerate_final.append([k1, k2, bn1, bn2])
 
-            self.degenerate_final.append([k1, k2, bn1, bn2])
-
-        self.degenerate_final = np.array(self.degenerate_final)
-
-        self.k_basis_rotation = []
+        k_basis_rotation = []
 
         for bn in range(self.total_bands):
             score = 0
@@ -799,12 +802,54 @@ class MATERIAL:
                 bn_k = np.repeat(bn_k, len(kneigs))
                 dps = self.connections[k, i_neigs, bn_k, bn_neighs]
                 if np.any(np.logical_and(dps >= 0.5, dps <= 0.8)):
-                    self.k_basis_rotation.append([k, bn_k])
+                    dps_deg = self.connections[k, i_neigs, bn_k]
+                    k = k[0]
+                    i_deg, bn_deg = np.where(np.logical_and(dps_deg >= 0.5, dps_deg <= 0.8))
+                    k_deg = self.neighbors[k][i_deg+np.min(i_neigs)]
+                    i_sort = np.argsort(k_deg)
+                    k_deg = k_deg[i_sort]
+                    bn_deg = bn_deg[i_sort]
+                    k_unique, index_unique = np.unique(k_deg, return_index=True)
+                    bn_unique = np.split(bn_deg, index_unique[1:])
+                    len_bn = np.array([len(k_len) for k_len in bn_unique])
+                    if np.any(len_bn > 1):
+                        i_deg = np.where(len_bn > 1)[0]
+                        k_deg = k_unique[i_deg]
+                        bns_deg = [bn_unique[j_deg] for j_deg in i_deg] if len(i_deg) > 1 else [bn_unique[i_deg]]
+                        k_basis_rotation.append([k, k_deg, bn, bns_deg])
                 score += np.mean(dps)
             score /= self.nks
             self.final_score[bn] = score
 
-        self.k_basis_rotation = np.array(self.k_basis_rotation)
+        degenerates = []
+        for i, (k, k_deg, bn, bns_deg) in enumerate(k_basis_rotation[:-1]):
+            for k_, k_deg_, bn_, bns_deg_ in k_basis_rotation[i+1:]:
+                if k != k_ or not np.all(k_deg == k_deg_):
+                    continue
+                if not np.all([np.all(np.isin(bns, bns_deg_[j])) for j, bns in enumerate(bns_deg)]):
+                    continue
+                
+                flag = True
+                for i_c, (k_c, bn_c1, bn_c2, k_deg_c) in enumerate(degenerates):
+                    if k != k_c or not np.all(np.isin([bn, bn_], [bn_c1, bn_c2])) or not np.any(k_deg_c == k):
+                        continue
+                    flag = False
+                    K = np.array([k, k])
+                    K_C = np.array([k_c, k_c])
+                    B_C = np.array([bn_c1, bn_c2])
+                    dE = np.abs(np.sum(self.eigenvalues[K_C, self.bands_final[K_C, B_C]]*np.array(1, -1)))
+                    dE_new = np.abs(np.sum(self.eigenvalues[K, self.bands_final[K, B_C]]*np.array(1, -1)))
+                    
+                    if dE_new < dE:
+                        degenerates[i_c] = [k, bn, bn_, k_deg]
+
+                if flag:
+                    degenerates.append([k, bn, bn_, k_deg])
+
+        for k, bn, bn_, k_deg in degenerates:
+            self.degenerate_final.append([k, bn, bn_])
+        
+        self.degenerate_final = np.array(self.degenerate_final)
 
     @time_fn(prefix="\t")
     def print_report(self, signal_report):
@@ -950,6 +995,7 @@ class MATERIAL:
         self.final_score = np.zeros(self.total_bands, dtype=float)
         self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
         self.correct_signalfinal_prev = np.full(self.signal_final.shape, -1, int)
+        self.degenerate_best = None
         max_solved = 0  # The maximum number of solved bands
 
         ###########################################################################
@@ -987,11 +1033,13 @@ class MATERIAL:
                 self.best_bands_final = np.copy(self.bands_final)
                 self.best_score = np.copy(self.final_score)
                 self.best_signal_final = np.copy(self.signal_final)
+                self.degenerate_best = np.copy(self.degenerate_final)
                 max_solved = solved
             else:
                 self.bands_final = np.copy(self.best_bands_final)
                 self.final_score = np.copy(self.best_score)
                 self.signal_final = np.copy(self.best_signal_final)
+                self.degenerate_final = np.copy(self.degenerate_best)
                 self.correct_signal()
             TOL -= step
         
@@ -999,6 +1047,7 @@ class MATERIAL:
         self.bands_final = np.copy(self.best_bands_final)
         self.final_score = np.copy(self.best_score)
         self.signal_final = np.copy(self.best_signal_final)
+        self.degenerate_final = np.copy(self.degenerate_best)
         
         self.print_report(self.signal_final)
         self.print_report(self.correct_signalfinal)
