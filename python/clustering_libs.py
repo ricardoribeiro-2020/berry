@@ -833,8 +833,10 @@ class MATERIAL:
 
         analized = []
         for i, (k, bn, bn_) in enumerate(degenerates):
+            if i in analized:
+                continue
             analized.append(i)
-            same_group = []
+            same_group = [[k, bn, bn_]]
             for j, (k_, bn0, bn1) in enumerate(degenerates[i+1:]):
                 ik, jk = self.kpoints_index[k]
                 ik_, jk_ = self.kpoints_index[k_]
