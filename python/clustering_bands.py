@@ -14,19 +14,20 @@ to be solved given as argument the maximum band
 or the interval of minimum and maximum band.
 The default uses all bands.
 """
+from log_libs import log
+import loaddata as d
+
+LOG = log('clustering', 'Band Clustering', d.version)
 
 import os
 import numpy as np
 import time
-import loaddata as d
 from cli import clustering_cli
 from clustering_libs import MATERIAL
-from log_libs import log
 
 if __name__ == '__main__':
     args = clustering_cli()
-
-    LOG = log('clustering', 'Band Clustering', d.version)
+    
     LOG.header()
 
     STARTTIME = time.time()

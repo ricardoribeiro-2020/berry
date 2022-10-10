@@ -4,6 +4,7 @@ The algorithm uses machine learning techniques to cluster the data.
 """
 
 import os
+import __main__
 import numpy as np
 import networkx as nx
 from log_libs import log
@@ -36,7 +37,7 @@ NOT_SOLVED = 0
 
 N_NEIGS = 4
 
-global LOG # Use LOG from parent module (clustering_bands.py)
+LOG = __main__.LOG # Use LOG from parent module (clustering_bands.py)
 LOG: log
 
 def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
