@@ -18,7 +18,7 @@ It still can only be used with 2D materials and with DFT suite Quantum Espresso.
 It is expected that this software will evolve with many more possibilities in the near future.
 The list of TODOs is already large.
 
-- **Source code:** https://github.com/berry
+- **Source code:** https://github.com/ricardoribeiro-2020/berry
 
 - **Aknowledgement:** We aknowledge the Fundação para a Ciência e a Tecnologia (FCT)
 under project  **QUEST2D - Excitations in quantum 2D materials**
