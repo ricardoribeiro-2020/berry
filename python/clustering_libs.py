@@ -3,13 +3,12 @@ It determines which points belong to each band used for posterior calculations.
 The algorithm uses machine learning techniques to cluster the data.
 """
 
-import os
+from __future__ import annotations
 import __main__
 import numpy as np
 import networkx as nx
 from log_libs import log
 from functools import partial
-from __future__ import annotations
 from scipy.ndimage import correlate
 from multiprocessing import Process
 from multiprocessing import Manager
@@ -1223,6 +1222,7 @@ class COMPONENT:
             It identifies the component of the graph.
         was_modified : bool
             The flag that says if the component was modified in the last iteration.
+                default = True
         scores : dict
             Stores the last score for some component with __id__ key.
     
@@ -1238,6 +1238,10 @@ class COMPONENT:
         calc_boundary() : None
             Only the boundary nodes are necessary. Therefore this function computes
                 these essential nodes and uses them to compare components.
+        get_cluster_score() : float
+            This function returns the similarity between components taking
+                into account the dot product of all essential points and their
+                energy value.
     '''
     def __init__(self, component: nx.Graph, kpoints_index:np.ndarray, matrix: np.ndarray) -> None:
         '''

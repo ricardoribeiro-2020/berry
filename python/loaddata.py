@@ -44,7 +44,7 @@ with open("datafile.npy", "rb") as fich:
     wfck2r = str(np.load(fich))
     version = str(np.load(fich))
     refname = str(np.load(fich))
-    #vb = int(np.load(fich))
+    vb = int(np.load(fich))
 
 
 # Read eigenvalues from file   eigenvalues = np.array(nks,nbnd)

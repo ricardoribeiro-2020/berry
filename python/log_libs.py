@@ -5,6 +5,16 @@ from headerfooter import header
 from headerfooter import footer
 from contatempo import tempo
 
+def prepare_message(method):
+    def wrapper(ref, *messages):
+        message = ''
+        if len(messages) == 0:
+            method(ref, message)
+        for m in messages:
+            message += str(m) + ' '
+        method(ref, message)
+    return wrapper
+
 class log:
     def __init__(self, program, title, version):
         self.program = program
@@ -29,16 +39,20 @@ class log:
         H = header(self.title, self.version, time.asctime())
         self.info(H)
 
+    @prepare_message
     def debug(self, message):
         self.logger.debug(message)
 
+    @prepare_message
     def info(self, message):
         print(message)
         self.logger.info(message)
-    
+
+    @prepare_message
     def error(self, message):
         self.logger.error(message)
-    
+
+    @prepare_message
     def warning(self, message):
         self.logger.warning(message)
     

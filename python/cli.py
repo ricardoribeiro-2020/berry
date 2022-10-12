@@ -52,6 +52,21 @@ def clustering_cli() -> argparse.Namespace:
     # Save them in a dict and return
     return args_dict
 
+def basisrotation_cli() -> argparse.Namespace:
+    # Define all cli arguments
+    parser = argparse.ArgumentParser(description="This program finds the problematic cases and makes a basis rotation of the wavefunctions.")
+    parser.add_argument("Mb", type=int, help="Maximum band to consider (>0)")
+    parser.add_argument("-np", type=int, default=1, help="Number of processes to use (default: 1)")
+    args = parser.parse_args()
+
+    # Process the arguments given
+    args_dict = {}
+    args_dict["NPR"] = max(args.np, 1)
+    args_dict["MAX_BAND"] = args.Mb
+
+    # Save them in a dict and return
+    return args_dict
+
 def r2k_cli() -> argparse.Namespace:
     # Define all cli arguments
     parser = argparse.ArgumentParser(description="Calculates the grid of points in the k-space")
