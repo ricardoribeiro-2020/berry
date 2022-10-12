@@ -181,7 +181,7 @@ if __name__ == "__main__":
     print("     Name of nscf file:", NAMENSCF)
     print("     DFT prefix:", PREFIX)
     print("     DFT outdir:", OUTDIR)
-    DFTDATAFILE = "/local/bn/e100_3120/dft/out/" + PREFIX + ".xml"
+    DFTDATAFILE = OUTDIR + PREFIX + ".xml"
     print("     DFT data file:", DFTDATAFILE)
     print()
     print("     Finished reading input file")

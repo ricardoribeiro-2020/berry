@@ -128,50 +128,24 @@ def _nscf(mpi, directory, name_nscf, nscftemplate, nkps, kpoints, nbands):
 
 
 # wfck2r calculation and wavefunctions extraction *********************
-def _wfck2r(nk1, nb1, total_bands=0):
+def _wfck2r(nk1, nb1, total_bands=1):
     """Extracts wfc in r-space using softawre from DFT suite."""
     import loaddata as d
 
     wfck2rfile = str(d.wfck2r)
-    if int(d.npr) == 1:
-        mpi = ""
-    else:
-        mpi = "mpirun -np " + str(d.npr) + " "
+    mpi = f"mpirun -np {d.npr} "
 
-    comando = (
-        "&inputpp  prefix = '"
-        + str(d.prefix)
-        + "' ,\
-                         outdir = '"
-        + str(d.outdir)
-        + "' ,\
-                        first_k = "
-        + str(nk1 + 1)
-        + " ,\
-                         last_k = "
-        + str(nk1 + 1)
-        + " ,\
-                     first_band = "
-        + str(nb1 + 1)
-        + " ,\
-                      last_band = "
-        + str(total_bands + 1)
-        + " , \
+    coommand =f"&inputpp prefix = '{d.prefix}',\
+                        outdir = '{d.outdir}',\
+                        first_k = {nk1 + 1},\
+                        last_k = {nk1 + 1},\
+                        first_band = {nb1 + 1},\
+                        last_band = {nb1 + total_bands},\
                         loctave = .true., /"
-    )
-    sys.stdout.flush()
 
     # comand to send to the shell
-    cmd = (
-        'echo "'
-        + comando
-        + '"|'
-        + mpi
-        + "wfck2r.x > tmp;tail -"
-        + str(d.nr * ((total_bands - nb1) + 1))
-        + " "
-        + wfck2rfile
-    )
+    cmd = f'echo "{coommand}" | {mpi} wfck2r.x > tmp; tail -{d.nr * total_bands} {wfck2rfile}'
+    
     # Captures the output of the shell command
     output = subprocess.check_output(cmd, shell=True)
     # Strips the output of fortran formating and converts to numpy formating
@@ -186,32 +160,23 @@ def _wfck2r(nk1, nb1, total_bands=0):
     psi = np.fromstring(out1, dtype=complex, sep="\n")
 
     # For each band, find the value of the wfc at the specific point rpoint (in real space)
-    psi_rpoint = np.array(
-        [psi[int(d.rpoint) + d.nr * i] for i in range((total_bands - nb1) + 1)]
-    )
+    psi_rpoint = np.array([psi[int(d.rpoint) + d.nr * i] for i in range(total_bands)])
+
     # Calculate the phase at rpoint for all the bands
     deltaphase = np.arctan2(psi_rpoint.imag, psi_rpoint.real)
+
     # and the modulus
     mod_rpoint = np.absolute(psi_rpoint)
+
     psifinal = []
-    # For each band beeing considered
-    for i in range((total_bands - nb1) + 1):
-        # Print to the output file for verification
-        print(
-            "    %6d  %4d  %12.8f  %12.8f   %r"
-            % (nk1, i + nb1, mod_rpoint[i], deltaphase[i], not mod_rpoint[i] < 1e-5)
-        )
+    for i in range(total_bands):
+        print(f"\t{nk1:6d}  {(i + nb1):4d}  {mod_rpoint[i]:12.8f}  {deltaphase[i]:12.8f}   {not mod_rpoint[i] < 1e-5}")
+        
         # Subtract the reference phase for each point
         psifinal += list(psi[i * d.nr : (i + 1) * d.nr] * np.exp(-1j * deltaphase[i]))
     psifinal = np.array(psifinal)
 
-    # Name of the final wfc file
-    outfiles = [
-        str(d.wfcdirectory) + "k0" + str(nk1) + "b0" + str(band) + ".wfc"
-        for band in range(nb1, total_bands + 1)
-    ]
-    # Save wavefunction to file
+    outfiles = map(lambda band: f"{d.wfcdirectory}k0{nk1}b0{band+nb1}.wfc", range(total_bands))
     for i, outfile in enumerate(outfiles):
         with open(outfile, "wb") as fich:
             np.save(fich, psifinal[i * d.nr : (i + 1) * d.nr])
-        fich.close()

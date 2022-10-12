@@ -18,7 +18,7 @@ It still can only be used with 2D materials and with DFT suite Quantum Espresso.
 It is expected that this software will evolve with many more possibilities in the near future.
 The list of TODOs is already large.
 
-- **Source code:** https://github.com/berry
+- **Source code:** https://github.com/ricardoribeiro-2020/berry
 
 - **Aknowledgement:** We aknowledge the Fundação para a Ciência e a Tecnologia (FCT)
 under project  **QUEST2D - Excitations in quantum 2D materials**
@@ -26,4 +26,24 @@ PTDC/FIS-MAC/2045/2021 and in the framework of the Strategic Funding UIDB/04650/
 
 - **Requirements** To install requiremnts, run:
 ```pip install -r requirements.txt```
+
+Copyright (c) 2022
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
