@@ -5,9 +5,21 @@ from headerfooter import header
 from headerfooter import footer
 from contatempo import tempo
 
+def prepare_message(method):
+    def wrapper(ref, *messages):
+        message = ''
+        if len(messages) == 0:
+            method(ref, message)
+        for m in messages:
+            message += str(m) + ' '
+        method(ref, message)
+    return wrapper
+
 class log:
     def __init__(self, program, title, version):
         self.program = program
+        self.title = title
+        self.version = version
         logging.basicConfig(filename=program+'.log',
                             filemode='w',
                             encoding='utf-8',
@@ -22,20 +34,25 @@ class log:
         ch.setLevel(logging.WARNING)
         ch.setFormatter(logging.Formatter('%(asctime)s  %(levelname)s: %(message)s'))
         self.logger.addHandler(ch)
-
-        H = header(title, version, time.asctime())
+    
+    def header(self):
+        H = header(self.title, self.version, time.asctime())
         self.info(H)
 
+    @prepare_message
     def debug(self, message):
         self.logger.debug(message)
 
+    @prepare_message
     def info(self, message):
         print(message)
         self.logger.info(message)
-    
+
+    @prepare_message
     def error(self, message):
         self.logger.error(message)
-    
+
+    @prepare_message
     def warning(self, message):
         self.logger.warning(message)
     
@@ -44,7 +61,7 @@ class log:
         F = footer(tempo(self.STARTTIME, ENDTIME))
         self.info(F)
 
-    def percent_complete(step, total_steps, bar_width=60, title="", print_perc=True):
+    def percent_complete(self, step, total_steps, bar_width=60, title="", print_perc=True):
         '''
         author: WinEunuuchs2Unix
         url: https://stackoverflow.com/questions/3002085/how-to-print-out-status-bar-and-percentage
