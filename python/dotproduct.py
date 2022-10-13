@@ -2,7 +2,6 @@
   This program calculates the dot product of the wfc Bloch factor with their neighbors
 
 """
-from itertools import product
 from typing import Tuple
 from multiprocessing import Array, Pool
 
@@ -32,7 +31,7 @@ def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
         for band1 in range(d.nbnd):
             wfc1 = np.load(f"{d.wfcdirectory}k0{neighbor}b0{band1}.wfc").conj()
 
-            dpc[nk, j, band0, band1] = np.einsum("k,k,k->", dphase, wfc0, wfc1) / d.nr
+            dpc[nk, j, band0, band1] = np.einsum("k,k,k->", dphase, wfc0, wfc1)
             dpc[neighbor, jNeighbor, band1, band0] = dpc[nk, j, band0, band1].conj()
 
 
@@ -50,15 +49,13 @@ def get_point_neighbors(nk: int, j: int) -> None:
 if __name__ == "__main__":
     args = dotproduct_cli()
 
-    header("DOTPRODUCT", d.version, time.asctime())
+    print(header("DOTPRODUCT", d.version, time.asctime()))
     STARTTIME = time.time()  # Starts counting time
 
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
     ########################################################################### 
     NPR = args["NPR"]
-
-    RUN_PARAMS = {"nk_points": range(d.nks),"num_neibhors": range(4)}
 
     DPC_SIZE = d.nks * 4 * d.nbnd * d.nbnd
     DPC_SHAPE = (d.nks, 4, d.nbnd, d.nbnd)
@@ -92,6 +89,7 @@ if __name__ == "__main__":
             if (args := get_point_neighbors(nk, j)) is not None
         )
         pool.starmap(dot, pre_connection_args)
+    dpc /=d.nr
     dp = np.abs(dpc)
 
     ###########################################################################
@@ -106,4 +104,4 @@ if __name__ == "__main__":
     # Finished
     ###########################################################################
 
-    footer(contatempo.tempo(STARTTIME, time.time()))
+    print(footer(contatempo.tempo(STARTTIME, time.time())))

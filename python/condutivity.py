@@ -87,7 +87,7 @@ def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.nd
 if __name__ == "__main__":
     args = conductivity_cli()
 
-    header("CONDUTIVITY", d.version, time.asctime())
+    print(header("CONDUTIVITY", d.version, time.asctime()))
     STARTTIME = time.time()
 
     ###########################################################################
@@ -173,4 +173,4 @@ if __name__ == "__main__":
     ###########################################################################
     # Finished
     ###########################################################################
-    footer(contatempo.tempo(STARTTIME, time.time()))
+    print(footer(contatempo.tempo(STARTTIME, time.time())))

@@ -114,7 +114,7 @@ def calculate_shg(omega):
 if __name__ == "__main__":
     args = shg_cli()
 
-    header("SHG", d.version, time.asctime())
+    print(header("SHG", d.version, time.asctime()))
     STARTTIME = time.time() 
 
     ###########################################################################
@@ -226,4 +226,4 @@ if __name__ == "__main__":
     # Finished
     ###################################################################################
 
-    footer(tempo(STARTTIME, time.time()))
+    print(footer(tempo(STARTTIME, time.time())))

@@ -33,7 +33,7 @@ def read_wfc_files(banda: int) -> None:
 
         wfct_k[:, kp] = np.load(infile)
 
-    with Pool(NPR) as pool:
+    with Pool(min(10, NPR)) as pool: #TODO: try to abstract this operation 
         pool.map(read_wfc_kp, range(d.nks))
 
 
@@ -74,7 +74,7 @@ def r_to_k(banda: int) -> None:
 if __name__ == "__main__":
     args = r2k_cli()
 
-    header("R2K", d.version, time.asctime())
+    print(header("R2K", d.version, time.asctime()))
     STARTTIME = time.time()
 
     ###########################################################################
@@ -132,4 +132,4 @@ if __name__ == "__main__":
     # Finished
     ###########################################################################
 
-    footer(tempo(STARTTIME, time.time()))
+    print(footer(tempo(STARTTIME, time.time())))

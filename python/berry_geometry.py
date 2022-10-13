@@ -77,7 +77,7 @@ def berry_curvature(idx: int, idx_: int) -> None:
 if __name__ == "__main__":
     args = berry_props_cli()
 
-    header("BERRY GEOMETRY", d.version, time.asctime())
+    print(header("BERRY GEOMETRY", d.version, time.asctime()))
     STARTTIME = time.time()
     
     ###########################################################################
@@ -134,4 +134,4 @@ if __name__ == "__main__":
     # Finished
     ###########################################################################
 
-    footer(tempo(STARTTIME, time.time()))
+    print(footer(tempo(STARTTIME, time.time())))
