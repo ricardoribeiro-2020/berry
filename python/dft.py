@@ -133,7 +133,10 @@ def _wfck2r(nk1, nb1, total_bands=1):
     import loaddata as d
 
     wfck2rfile = str(d.wfck2r)
-    mpi = f"mpirun -np {d.npr} "
+    if d.npr==1:
+        mpi = ""
+    else:
+        mpi = f"mpirun -np {d.npr} "
 
     coommand =f"&inputpp prefix = '{d.prefix}',\
                         outdir = '{d.outdir}',\

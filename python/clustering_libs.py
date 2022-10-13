@@ -973,7 +973,7 @@ class MATERIAL:
             report.append(np.round(self.final_score[bn], 4))                # Set the final score
             bands_report.append(report)
 
-            LOG.info(f'\n  New Band: {bn}\tnr falis: {report[0]}')
+            LOG.info(f'\n  New Band: {bn}\tnr fails: {report[0]}')
             _bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
 
         ###########################################################################
