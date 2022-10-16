@@ -18,8 +18,8 @@ from log_libs import log
 
 import loaddata as d
 
-LOG: log = log("r2k", "R2K", d.version)
-# time_fn = partial(time_fn, log=LOG)
+args = r2k_cli()
+LOG: log = log("r2k", "R2K", d.version, args["LOG LEVEL"])
 
 # pylint: disable=C0103
 ###################################################################################
@@ -74,8 +74,6 @@ def r_to_k(banda: int) -> None:
 
 
 if __name__ == "__main__":
-    args = r2k_cli()
-
     LOG.header()
 
     ###########################################################################

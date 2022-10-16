@@ -6,7 +6,6 @@ from itertools import product
 from typing import Tuple
 
 import sys
-import time
 
 from findiff import Gradient
 
@@ -20,7 +19,8 @@ from log_libs import log
 
 import loaddata as d
 
-LOG: log = log("shg", "SECOND HARMONIC GENERATION", d.version)
+args = shg_cli()
+LOG: log = log("shg", "SECOND HARMONIC GENERATION", d.version, args["LOG LEVEL"])
 
 # pylint: disable=C0103
 ###############################################################################
@@ -114,8 +114,6 @@ def calculate_shg(omega):
     return (omega, np.sum(np.sum(sig, axis=0), axis=0) * VK)
 
 if __name__ == "__main__":
-    args = shg_cli()
-
     LOG.header()
 
     ###########################################################################

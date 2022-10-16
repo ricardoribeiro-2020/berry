@@ -15,7 +15,8 @@ from contatempo import time_fn
 
 import loaddata as d
 
-LOG: log = log("dotproduct", "DOT PRODUCT", d.version)
+args = dotproduct_cli()
+LOG: log = log("dotproduct", "DOT PRODUCT", d.version, args["LOG LEVEL"])
 
 # pylint: disable=C0103
 ###################################################################################
@@ -42,11 +43,8 @@ def get_point_neighbors(nk: int, j: int) -> None:
         return (nk, j, neighbor, jNeighbor)
     return None
 
-
 ###################################################################################
 if __name__ == "__main__":
-    args = dotproduct_cli()
-
     LOG.header()
 
     ###########################################################################

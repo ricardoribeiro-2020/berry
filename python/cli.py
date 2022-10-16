@@ -2,6 +2,7 @@ from typing import Dict, Any
 
 import os
 import argparse
+import logging
 
 import loaddata as d
 
@@ -45,6 +46,7 @@ def generatewfc_cli() -> Dict[str, Any]:
 
     parser.add_argument("-nk"  , type=int, metavar=f"[0-{d.nr-1}]"  , default=None, choices=range(d.nr)  , help="K-point to generate the wavefunction for all bands (default: All).")
     parser.add_argument("-band", type=int, metavar=f"[0-{d.nbnd-1}]", default=None, choices=range(d.nbnd), help="Band to generate the wavefunction for a single k-point (default: All).")
+    parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
     args = parser.parse_args()
 
     ###########################################################################
@@ -57,6 +59,7 @@ def generatewfc_cli() -> Dict[str, Any]:
     # 3. PROCESSING ARGS
     ###########################################################################
     args_dict = {}
+    args_dict["LOG LEVEL"] = logging.DEBUG if args.v else logging.INFO
     if args.nk is None:
         args_dict["NK"] = range(d.nks)
         args_dict["BAND"] = None
@@ -75,6 +78,7 @@ def dotproduct_cli() -> Dict[str, Any]:
     ###########################################################################
     parser = CustomParser(description="Calculates the dot product between the neighbouring points of the wavefunction.")
     parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
+    parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
     args = parser.parse_args()
 
     ###########################################################################
@@ -85,6 +89,7 @@ def dotproduct_cli() -> Dict[str, Any]:
     # 3. PROCESSING ARGS
     ###########################################################################
     args_dict = {}
+    args_dict["LOG LEVEL"] = logging.DEBUG if args.v else logging.INFO
     args_dict["NPR"] = max(args.np, 1)
 
     return args_dict
@@ -96,10 +101,12 @@ def clustering_cli() -> argparse.Namespace:
     parser.add_argument("-mb", type=int, default=0, help="Minimum band to consider (>0; default: 0)")
     parser.add_argument("-np", type=int, default=1, help="Number of processes to use (default: 1)")
     parser.add_argument("-t", type=float, default=0.95, help="Tolerance used for grpah construction (default: 0.95)")
+    parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
     args = parser.parse_args()
 
     # Process the arguments given
     args_dict = {}
+    args_dict["LOG LEVEL"] = logging.DEBUG if args.v else logging.INFO
     args_dict["NPR"] = max(args.np, 1)
     args_dict["TOL"] = args.t
     args_dict["MIN_BAND"] = max(args.mb, 0)
@@ -113,10 +120,12 @@ def basisrotation_cli() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="This program finds the problematic cases and makes a basis rotation of the wavefunctions.")
     parser.add_argument("Mb", type=int, help="Maximum band to consider (>0)")
     parser.add_argument("-np", type=int, default=1, help="Number of processes to use (default: 1)")
+    parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
     args = parser.parse_args()
 
     # Process the arguments given
     args_dict = {}
+    args_dict["LOG LEVEL"] = logging.DEBUG if args.v else logging.INFO
     args_dict["NPR"] = max(args.np, 1)
     args_dict["MAX_BAND"] = args.Mb
 
@@ -131,6 +140,7 @@ def r2k_cli() -> Dict[str, Any]:
     parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{d.nbnd-1})"   , choices=range(d.nbnd)             , help="Maximum band to consider")
     parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
     parser.add_argument("-mb", type=int, default=0, metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)             , help="Minimum band to consider (default: 0)")
+    parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
     args = parser.parse_args()
 
     ###########################################################################
@@ -141,6 +151,7 @@ def r2k_cli() -> Dict[str, Any]:
     # 3. PROCESSING ARGS
     ###########################################################################
     args_dict = {}
+    args_dict["LOG LEVEL"] = logging.DEBUG if args.v else logging.INFO
     args_dict["NPR"] = args.np
     args_dict["MIN_BAND"] = args.mb
     args_dict["MAX_BAND"] = args.Mb
@@ -156,6 +167,7 @@ def berry_props_cli() -> Dict[str, Any]:
     parser.add_argument("-np"  , type=int, default=1     , metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1)         , help="Number of processes to use (default: 1)")
     parser.add_argument("-mb"  , type=int, default=0     , metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)                      , help="Minimum band to consider (default: 0)")
     parser.add_argument("-prop", type=str, default="both"                                 , choices=["both", "connection", "curvature"], help="Specify which proprety to calculate. (default: both)")
+    parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
     args = parser.parse_args()
     
     ###########################################################################
@@ -166,6 +178,7 @@ def berry_props_cli() -> Dict[str, Any]:
     # 3. PROCESSING ARGS
     ###########################################################################
     args_dict = {}
+    args_dict["LOG LEVEL"] = logging.DEBUG if args.v else logging.INFO
     args_dict["NPR"] = min(args.np, args.Mb - args.mb + 1)
     args_dict["MIN_BAND"] = args.mb
     args_dict["MAX_BAND"] = args.Mb
@@ -184,6 +197,7 @@ def conductivity_cli() -> Dict[str, Any]:
     parser.add_argument("-enermax"  , type=float, default=2.5                                                                          , help="Maximum energy in Ry units (default: 2.5).")
     parser.add_argument("-enerstep" , type=float, default=0.001                                                                        , help="Energy step in Ry units (default: 0.001).")
     parser.add_argument("-broadning", type=float, default=0.01j                                                                        , help="Energy broading in Ry units (default: 0.01).")
+    parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
     args = parser.parse_args()
     
     ###########################################################################
@@ -194,6 +208,7 @@ def conductivity_cli() -> Dict[str, Any]:
     # 3. PROCESSING ARGS
     ###########################################################################
     args_dict = {}
+    args_dict["LOG LEVEL"] = logging.DEBUG if args.v else logging.INFO
     args_dict["NPR"] = args.np
     args_dict["ENERMAX"] = args.enermax
     args_dict["ENERSTEP"] = args.enerstep
@@ -213,6 +228,7 @@ def shg_cli() -> Dict[str, Any]:
     parser.add_argument("-enermax"  , type=float, default=2.5                                                                           , help="Maximum energy in Ry units (default: 2.5).")
     parser.add_argument("-enerstep" , type=float, default=0.001                                                                         , help="Energy step in Ry units (default: 0.001).")
     parser.add_argument("-broadning", type=float, default=0.01j                                                                         , help="Energy broading in Ry units (default: 0.01).")
+    parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
     args = parser.parse_args()
 
     ###########################################################################
@@ -223,6 +239,7 @@ def shg_cli() -> Dict[str, Any]:
     # 3. PROCESSING ARGS
     ###########################################################################
     args_dict = {}
+    args_dict["LOG LEVEL"] = logging.DEBUG if args.v else logging.INFO
     args_dict["NPR"] = args.np
     args_dict["ENERMAX"] = args.enermax
     args_dict["ENERSTEP"] = args.enerstep

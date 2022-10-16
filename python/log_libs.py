@@ -17,16 +17,17 @@ def prepare_message(method):
 
 #TODO: Make logger level configurable
 class log:
-    def __init__(self, program, title, version):
+    def __init__(self, program, title, version, level=logging.INFO):
         self.program = program
         self.title = title
         self.version = version
+        self.level = level
         logging.basicConfig(filename=program+'.log',
                             filemode='w',
 #                            encoding='utf-8',
                             format='%(asctime)s   %(levelname)s: %(message)s',
                             datefmt='%m/%d/%Y %H:%M:%S',
-                            level=logging.INFO)
+                            level=level)
         self.logger = logging.getLogger(program)
 
         self.STARTTIME = time.time()

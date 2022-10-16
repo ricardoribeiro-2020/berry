@@ -17,8 +17,8 @@ from log_libs import log
 
 import loaddata as d
 
-LOG: log = log("berry_props", "BERRY GEOMETRY", d.version)
-# time_fn = partial(time_fn, logger=LOG)
+args = berry_props_cli()
+LOG: log = log("berry_props", "BERRY GEOMETRY", d.version, args["LOG LEVEL"])
 
 ###################################################################################
 def berry_connection(n_pos: int, n_gra: int):
@@ -78,8 +78,6 @@ def berry_curvature(idx: int, idx_: int) -> None:
 
 
 if __name__ == "__main__":
-    args = berry_props_cli()
-
     LOG.header()
     
     ###########################################################################

@@ -16,7 +16,8 @@ from log_libs import log
 
 import loaddata as d
 
-LOG: log = log("conductivity", "CONDUCTIVITY", d.version)
+args = conductivity_cli()
+LOG: log = log("conductivity", "CONDUCTIVITY", d.version, args["LOG LEVEL"])
 
 # pylint: disable=C0103
 ###################################################################################
@@ -83,8 +84,6 @@ def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.nd
     return (omega, sig * VK)
 
 if __name__ == "__main__":
-    args = conductivity_cli()
-
     LOG.header()
 
     ###########################################################################

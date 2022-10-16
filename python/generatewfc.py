@@ -14,13 +14,12 @@ from log_libs import log
 import dft
 import loaddata as d
 
-LOG = log("generatewfc", "GENERATE WFC", d.version)
+args = generatewfc_cli()
+LOG = log("generatewfc", "GENERATE WFC", d.version, args["LOG LEVEL"])
 
 # pylint: disable=C0103
 ###################################################################################
 if __name__ == "__main__":
-    args = generatewfc_cli()
-
     LOG.header()
     os.system("mkdir -p " + d.wfcdirectory)
 

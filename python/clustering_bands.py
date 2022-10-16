@@ -22,15 +22,13 @@ import loaddata as d
 from log_libs import log
 from cli import clustering_cli
 
-LOG = log('clustering', 'Band Clustering', d.version)
+args = clustering_cli()
+LOG = log('clustering', 'Band Clustering', d.version, args['LOG LEVEL'])
 
 from clustering_libs import MATERIAL
 
 if __name__ == '__main__':
-    args = clustering_cli()
-    
     LOG.header()
-    STARTTIME = time.time()
 
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
