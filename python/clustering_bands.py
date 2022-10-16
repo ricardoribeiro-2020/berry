@@ -44,7 +44,7 @@ if __name__ == '__main__':
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ########################################################################### 
-    if not os.path.exists(OUTPUT_PATH):
+    if OUTPUT_PATH != "" and not os.path.exists(OUTPUT_PATH):
         os.mkdir(OUTPUT_PATH)
         LOG.warning(f'The {OUTPUT_PATH} was created.')
 
