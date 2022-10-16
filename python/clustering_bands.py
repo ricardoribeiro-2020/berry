@@ -35,7 +35,7 @@ if __name__ == '__main__':
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
     ###########################################################################
-    OUTPUT_PATH = 'output/'
+    OUTPUT_PATH = ''
     NPR = args['NPR']
     TOL = args["TOL"]
     max_band = args['MAX_BAND'] if args['MAX_BAND'] != -1 else d.nbnd-1

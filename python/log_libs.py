@@ -22,7 +22,7 @@ class log:
         self.version = version
         logging.basicConfig(filename=program+'.log',
                             filemode='w',
-                            encoding='utf-8',
+#                            encoding='utf-8',
                             format='%(asctime)s   %(levelname)s: %(message)s',
                             datefmt='%m/%d/%Y %H:%M:%S',
                             level=logging.DEBUG)
