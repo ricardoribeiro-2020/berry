@@ -5,8 +5,6 @@
 from typing import Tuple
 from multiprocessing import Array, Pool
 
-import sys
-import time
 import ctypes
 
 import numpy as np
@@ -15,7 +13,6 @@ from cli import dotproduct_cli
 from log_libs import log
 from contatempo import time_fn
 
-import contatempo
 import loaddata as d
 
 LOG: log = log("dotproduct", "DOT PRODUCT", d.version)
@@ -51,7 +48,6 @@ if __name__ == "__main__":
     args = dotproduct_cli()
 
     LOG.header()
-    STARTTIME = time.time()  # Starts counting time
 
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
@@ -70,7 +66,6 @@ if __name__ == "__main__":
     LOG.info(f"\tTotal number of k-points: {d.nks}")
     LOG.info(f"\tTotal number of points in real space: {d.nr}")
     LOG.info(f"\tDirectory where the wfc are: {d.wfcdirectory}\n")
-    sys.stdout.flush()
 
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS

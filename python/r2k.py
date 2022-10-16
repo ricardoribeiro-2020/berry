@@ -14,10 +14,12 @@ from findiff import Gradient
 import numpy as np
 
 from cli import r2k_cli
-from contatempo import tempo, time_fn
-from headerfooter import header, footer
+from contatempo import time_fn
+from log_libs import log
 
 import loaddata as d
+
+LOG: log = log("r2k", "R2K", d.version)
 
 # pylint: disable=C0103
 ###################################################################################
@@ -74,8 +76,7 @@ def r_to_k(banda: int) -> None:
 if __name__ == "__main__":
     args = r2k_cli()
 
-    print(header("R2K", d.version, time.asctime()))
-    STARTTIME = time.time()
+    LOG.header()
 
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
@@ -95,16 +96,16 @@ if __name__ == "__main__":
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ########################################################################### 
-    print(f"\tUnique reference of run: {d.refname}")
-    print(f"\tNumber of processors to use: {NPR}")
-    print(f"\tMinimum band: {MIN_BAND}")
-    print(f"\tMaximum band: {MAX_BAND}")
-    print(f"\tk-points step, dk: {d.step}")
-    print(f"\tTotal number of k-points: {d.nks}")
-    print(f"\tTotal number of points in real space: {d.nr}")
-    print(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
-    print(f"\tDirectory where the wfc are: {d.wfcdirectory}\n")
-    sys.stdout.flush()
+    LOG.info(f"\tUnique reference of run: {d.refname}")
+    LOG.info(f"\tNumber of processors to use: {NPR}")
+    LOG.info(f"\tMinimum band: {MIN_BAND}")
+    LOG.info(f"\tMaximum band: {MAX_BAND}")
+    LOG.info(f"\tk-points step, dk: {d.step}")
+    LOG.info(f"\tTotal number of k-points: {d.nks}")
+    LOG.info(f"\tTotal number of points in real space: {d.nr}")
+    LOG.info(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
+    LOG.info(f"\tDirectory where the wfc are: {d.wfcdirectory}\n")
+
 
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS AND GRADIENT
@@ -132,4 +133,4 @@ if __name__ == "__main__":
     # Finished
     ###########################################################################
 
-    print(footer(tempo(STARTTIME, time.time())))
+    LOG.footer()
