@@ -5,8 +5,11 @@
 import os
 import sys
 import subprocess
+import __main__
 
 import numpy as np
+
+from log_libs import log
 
 # pylint: disable=C0103
 ###################################################################################
@@ -131,6 +134,7 @@ def _nscf(mpi, directory, name_nscf, nscftemplate, nkps, kpoints, nbands):
 def _wfck2r(nk1, nb1, total_bands=1):
     """Extracts wfc in r-space using softawre from DFT suite."""
     import loaddata as d
+    LOG: log = __main__.LOG
 
     wfck2rfile = str(d.wfck2r)
     if d.npr==1:
@@ -173,7 +177,7 @@ def _wfck2r(nk1, nb1, total_bands=1):
 
     psifinal = []
     for i in range(total_bands):
-        print(f"\t{nk1:6d}  {(i + nb1):4d}  {mod_rpoint[i]:12.8f}  {deltaphase[i]:12.8f}   {not mod_rpoint[i] < 1e-5}")
+        LOG.debug(f"\t{nk1:6d}  {(i + nb1):4d}  {mod_rpoint[i]:12.8f}  {deltaphase[i]:12.8f}   {not mod_rpoint[i] < 1e-5}")
         
         # Subtract the reference phase for each point
         psifinal += list(psi[i * d.nr : (i + 1) * d.nr] * np.exp(-1j * deltaphase[i]))
