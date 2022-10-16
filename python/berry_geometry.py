@@ -3,19 +3,22 @@ Calculates the Berry connections and Berry curvatures.
 """
 
 from multiprocessing import Pool, Array
+# from functools import partial
 
 import sys
-import time
 import ctypes
 
 import numpy as np
 
 from cli import berry_props_cli
 from jit import numba_njit
-from contatempo import tempo, time_fn
-from headerfooter import header, footer
+from contatempo import time_fn
+from log_libs import log
 
 import loaddata as d
+
+LOG: log = log("berry_props", "BERRY GEOMETRY", d.version)
+# time_fn = partial(time_fn, logger=LOG)
 
 ###################################################################################
 def berry_connection(n_pos: int, n_gra: int):
@@ -77,8 +80,7 @@ def berry_curvature(idx: int, idx_: int) -> None:
 if __name__ == "__main__":
     args = berry_props_cli()
 
-    print(header("BERRY GEOMETRY", d.version, time.asctime()))
-    STARTTIME = time.time()
+    LOG.header()
     
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
@@ -94,11 +96,11 @@ if __name__ == "__main__":
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ########################################################################### 
-    print(f"\tUnique reference of run: {d.refname}")
-    print(f"\tProperties to calculate: {PROP}")
-    print(f"\tMinimum band: {MIN_BAND}")
-    print(f"\tMaximum band: {MAX_BAND}")
-    print(f"\tNumber of processes: {NPR}\n")
+    LOG.info(f"\tUnique reference of run: {d.refname}")
+    LOG.info(f"\tProperties to calculate: {PROP}")
+    LOG.info(f"\tMinimum band: {MIN_BAND}")
+    LOG.info(f"\tMaximum band: {MAX_BAND}")
+    LOG.info(f"\tNumber of processes: {NPR}\n")
     sys.stdout.flush()
 
     ###########################################################################
@@ -112,7 +114,7 @@ if __name__ == "__main__":
     ###########################################################################
     if PROP == "both" or PROP == "connection":
         for idx in range(MIN_BAND, MAX_BAND + 1):
-            wfcgra[:] = np.load(f"wfcgra{idx}.npy")
+            wfcgra = np.load(f"wfcgra{idx}.npy")
 
             berry_conn = time_fn(0, 1, prefix="\t")(berry_connection)
             work_load = ((idx_pos, idx) for idx_pos in range(MIN_BAND, MAX_BAND + 1))
@@ -122,7 +124,7 @@ if __name__ == "__main__":
 
     if PROP == "both" or PROP == "curvature":
         for idx in range(MIN_BAND, MAX_BAND + 1):
-            wfcgra[:] = np.load(f"wfcgra{idx}.npy")
+            wfcgra = np.load(f"wfcgra{idx}.npy")
 
             berry_curv = time_fn(0, 1, prefix="\t")(berry_curvature)
             work_load = ((idx, idx_) for idx_ in range(MIN_BAND, MAX_BAND + 1))
@@ -134,4 +136,4 @@ if __name__ == "__main__":
     # Finished
     ###########################################################################
 
-    print(footer(tempo(STARTTIME, time.time())))
+    LOG.footer()
