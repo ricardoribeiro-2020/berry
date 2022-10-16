@@ -7,6 +7,7 @@ from __future__ import annotations
 import __main__
 import numpy as np
 import networkx as nx
+import logging
 from log_libs import log
 from functools import partial
 from scipy.ndimage import correlate
@@ -577,7 +578,7 @@ class MATERIAL:
         
         self.degenerates = np.array(degnerates)
 
-    def parallelize(self, process_name: str, f: Callable, iterator: Union[list, np.ndarray], *args, verbose: bool=True) -> np.ndarray:
+    def parallelize(self, process_name: str, f: Callable, iterator: Union[list, np.ndarray], *args) -> np.ndarray:
         '''
         Create processes for some function f over an iterator.
 
@@ -604,10 +605,10 @@ class MATERIAL:
         ###########################################################################
         # Debug information and Progress bar
         ###########################################################################
-        if verbose:
-            LOG.debug(f'Starting Parallelization for {process_name} with {N} values')
-        if verbose:
-            LOG.percent_complete(0, N, title=process_name)
+        
+        LOG.debug(f'Starting Parallelization for {process_name} with {N} values')
+        
+        LOG.percent_complete(0, N, title=process_name)
 
         ###########################################################################
         # Processes management
@@ -629,9 +630,9 @@ class MATERIAL:
                 # The function may not return anything
                 result += f(iterator, *args)        # Store the output into result array
             per[0] += len(iterator)                 # The counter is actualized
-            if verbose:
-                # Show on screen the progress bar
-                LOG.percent_complete(per[0], N, title=process_name)
+            
+            # Show on screen the progress bar
+            LOG.percent_complete(per[0], N, title=process_name)
         
         result = Manager().list([])             # Shared Memory list to store the result
         per = Manager().list([0])               # Shared Memory to countability the progress
@@ -650,9 +651,6 @@ class MATERIAL:
         while len(process) > 0:
             p = process.pop(0)
             p.join()
-
-        if verbose:
-            print()
 
         return np.array(result)
 
@@ -973,7 +971,8 @@ class MATERIAL:
             bands_report.append(report)
 
             LOG.info(f'\n  New Band: {bn}\tnr fails: {report[0]}')
-            _bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
+            if LOG.level == logging.DEBUG:
+                _bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
 
         ###########################################################################
         # Set up the data representation
