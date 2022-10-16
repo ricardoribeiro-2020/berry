@@ -14,11 +14,13 @@ import ctypes
 import numpy as np
 
 from cli import shg_cli
-from contatempo import time_fn, tempo
-from headerfooter import header, footer
+from contatempo import time_fn
 from comutator import comute, comute3, comutederiv
+from log_libs import log
 
 import loaddata as d
+
+LOG: log = log("shg", "SECOND HARMONIC GENERATION", d.version)
 
 # pylint: disable=C0103
 ###############################################################################
@@ -114,8 +116,7 @@ def calculate_shg(omega):
 if __name__ == "__main__":
     args = shg_cli()
 
-    print(header("SHG", d.version, time.asctime()))
-    STARTTIME = time.time() 
+    LOG.header()
 
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
@@ -144,16 +145,16 @@ if __name__ == "__main__":
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ###########################################################################
-    print(f"\tList of bands: {BANDLIST}")
-    print(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
-    print(f"\tNumber of bands: {d.nbnd}")
-    print(f"\tk-points step, dk {d.step}")                                      # Defines the step for gradient calculation dk
+    LOG.info(f"\tList of bands: {BANDLIST}")
+    LOG.info(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
+    LOG.info(f"\tNumber of bands: {d.nbnd}")
+    LOG.info(f"\tk-points step, dk {d.step}")                                      # Defines the step for gradient calculation dk
 
-    print(f"\n\tMaximum energy (Ry): {ENERMAX}")
-    print(f"\tEnergy step (Ry): {ENERSTEP}")
-    print(f"\tEnergy broadning (Ry): {np.imag(BROADNING)}")
-    print(f"\tConstant 4e^2/hslash 1/(2pi)^2 in Rydberg units: {np.imag(CONST)}")
-    print(f"\tVolume (area) in k space: {VK}\n")
+    LOG.info(f"\n\tMaximum energy (Ry): {ENERMAX}")
+    LOG.info(f"\tEnergy step (Ry): {ENERSTEP}")
+    LOG.info(f"\tEnergy broadning (Ry): {np.imag(BROADNING)}")
+    LOG.info(f"\tConstant 4e^2/hslash 1/(2pi)^2 in Rydberg units: {np.imag(CONST)}")
+    LOG.info(f"\tVolume (area) in k space: {VK}\n")
     sys.stdout.flush()
 
     ###########################################################################
@@ -201,7 +202,7 @@ if __name__ == "__main__":
                     np.real(sigma[omega][1, 0, 0]),
                 )
             )
-    print("\n\tReal part of SHG saved to file sigma2r.dat")
+    LOG.info("\n\tReal part of SHG saved to file sigma2r.dat")
 
     with open("sigma2i.dat", "w") as sigm:
         sigm.write("# Energy (eV), sigma_xxx, sigma_yyy, sigma_xxy, sigma_xyx, sigma_xyy, sigma_yyx, sigma_yxy, sigma_yxx\n")
@@ -220,10 +221,10 @@ if __name__ == "__main__":
                     np.imag(sigma[omega][1, 0, 0]),
                 )
             )
-    print("\tImaginary part of SHG saved to file sigma2i.dat")
+    LOG.info("\tImaginary part of SHG saved to file sigma2i.dat")
 
     ###################################################################################
     # Finished
     ###################################################################################
 
-    print(footer(tempo(STARTTIME, time.time())))
+    LOG.footer()
