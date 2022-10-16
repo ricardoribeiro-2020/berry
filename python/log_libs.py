@@ -15,6 +15,8 @@ def prepare_message(method):
         method(ref, message)
     return wrapper
 
+#TODO: Remove prints from self.info() 
+#TODO: Make logger level configurable
 class log:
     def __init__(self, program, title, version):
         self.program = program
