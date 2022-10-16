@@ -36,8 +36,7 @@ NOT_SOLVED = 0
 
 N_NEIGS = 4
 
-LOG = __main__.LOG # Use LOG from parent module (clustering_bands.py)
-LOG: log
+LOG: log = __main__.LOG # Use LOG from parent module (clustering_bands.py)
 
 def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
     '''
