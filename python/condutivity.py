@@ -6,18 +6,17 @@ from typing import Tuple
 from itertools import product
 
 import sys
-import time
 import ctypes
 
 import numpy as np
 
 from cli import conductivity_cli
 from contatempo import time_fn
-from headerfooter import header, footer
+from log_libs import log
 
-import contatempo
 import loaddata as d
 
+LOG: log = log("conductivity", "CONDUCTIVITY", d.version)
 
 # pylint: disable=C0103
 ###################################################################################
@@ -61,7 +60,6 @@ def get_delta_eigen_array_and_fermi(eigen_array: np.ndarray) -> Tuple[np.ndarray
 
     return delta_eigen_array, fermi
 
-@time_fn(0, prefix="\t", display_arg_name=True)
 def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.ndarray) -> Tuple[float, np.ndarray]:
     omegaarray = np.full(OMEGA_SHAPE, omega + BROADING)
     gamma = CONST * delta_eigen_array / (omegaarray - delta_eigen_array)        # factor that multiplies
@@ -87,8 +85,7 @@ def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.nd
 if __name__ == "__main__":
     args = conductivity_cli()
 
-    print(header("CONDUTIVITY", d.version, time.asctime()))
-    STARTTIME = time.time()
+    LOG.header()
 
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
@@ -113,16 +110,16 @@ if __name__ == "__main__":
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ########################################################################### 
-    print(f"\tList of bands: {BANDLIST}")
-    print(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
-    print(f"\tNumber of bands: {d.nbnd}")
-    print(f"\tk-points step, dk {d.step}")                                      # Defines the step for gradient calculation dk
+    LOG.info(f"\tList of bands: {BANDLIST}")
+    LOG.info(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
+    LOG.info(f"\tNumber of bands: {d.nbnd}")
+    LOG.info(f"\tk-points step, dk {d.step}")                                    # Defines the step for gradient calculation dk
 
-    print(f"\n\tMaximum energy (Ry): {ENERMAX}")
-    print(f"\tEnergy step (Ry): {ENERSTEP}")
-    print(f"\tEnergy BROADING (Ry): {np.imag(BROADING)}")
-    print(f"\tConstant 4e^2/hslash 1/(2pi)^2 in Rydberg units: {np.imag(CONST)}")
-    print(f"\tVolume (area) in k space: {VK}\n")
+    LOG.info(f"\tMaximum energy (Ry): {ENERMAX}")
+    LOG.info(f"\tEnergy step (Ry): {ENERSTEP}")
+    LOG.info(f"\tEnergy BROADING (Ry): {np.imag(BROADING)}")
+    LOG.info(f"\tConstant 4e^2/hslash 1/(2pi)^2 in Rydberg units: {np.imag(CONST)}")
+    LOG.info(f"\tVolume (area) in k space: {VK}\n")
     sys.stdout.flush()
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS
@@ -154,7 +151,7 @@ if __name__ == "__main__":
                     np.real(sigma[omega][0, 1]),
                 )
             )
-    print("\n\tReal part of conductivity saved to file sigmar.dat")
+    LOG.info("\tReal part of conductivity saved to file sigmar.dat")
 
     with open("sigmai.dat", "w") as sigm:
         sigm.write("# Energy (eV), sigma_xx,  sigma_yy,  sigma_yx,  sigma_xy\n")
@@ -169,8 +166,8 @@ if __name__ == "__main__":
                     np.imag(sigma[omega][0, 1]),
                 )
             )
-    print("\tImaginary part of conductivity saved to file sigmai.dat")
+    LOG.info("\tImaginary part of conductivity saved to file sigmai.dat")
     ###########################################################################
     # Finished
     ###########################################################################
-    print(footer(contatempo.tempo(STARTTIME, time.time())))
+    LOG.footer()
