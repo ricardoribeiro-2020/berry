@@ -27,7 +27,7 @@ class log:
 #                            encoding='utf-8',
                             format='%(asctime)s   %(levelname)s: %(message)s',
                             datefmt='%m/%d/%Y %H:%M:%S',
-                            level=logging.DEBUG)
+                            level=logging.INFO)
         self.logger = logging.getLogger(program)
 
         self.STARTTIME = time.time()
