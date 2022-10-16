@@ -12,12 +12,13 @@ import ctypes
 import numpy as np
 
 from cli import dotproduct_cli
-from jit import numba_njit
-from headerfooter import header, footer
+from log_libs import log
 from contatempo import time_fn
 
 import contatempo
 import loaddata as d
+
+LOG: log = log("dotproduct", "DOT PRODUCT", d.version)
 
 # pylint: disable=C0103
 ###################################################################################
@@ -49,7 +50,7 @@ def get_point_neighbors(nk: int, j: int) -> None:
 if __name__ == "__main__":
     args = dotproduct_cli()
 
-    print(header("DOTPRODUCT", d.version, time.asctime()))
+    LOG.header()
     STARTTIME = time.time()  # Starts counting time
 
     ###########################################################################
@@ -63,12 +64,12 @@ if __name__ == "__main__":
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ########################################################################### 
-    print(f"\tUnique reference of run: {d.refname}")
-    print(f"\tNumber of processors to use: {NPR}")
-    print(f"\tNumber of bands: {d.nbnd}")
-    print(f"\tTotal number of k-points: {d.nks}")
-    print(f"\tTotal number of points in real space: {d.nr}")
-    print(f"\tDirectory where the wfc are: {d.wfcdirectory}\n")
+    LOG.info(f"\tUnique reference of run: {d.refname}")
+    LOG.info(f"\tNumber of processors to use: {NPR}")
+    LOG.info(f"\tNumber of bands: {d.nbnd}")
+    LOG.info(f"\tTotal number of k-points: {d.nks}")
+    LOG.info(f"\tTotal number of points in real space: {d.nr}")
+    LOG.info(f"\tDirectory where the wfc are: {d.wfcdirectory}\n")
     sys.stdout.flush()
 
     ###########################################################################
@@ -97,11 +98,11 @@ if __name__ == "__main__":
     ###########################################################################
     np.save("dpc.npy", dpc)
     np.save("dp.npy", dp)
-    print(f"\n\tDot products saved to file dpc.npy")
-    print(f"\tDot products modulus saved to file dp.npy")
+    LOG.info(f"\n\tDot products saved to file dpc.npy")
+    LOG.info(f"\tDot products modulus saved to file dp.npy")
 
     ###########################################################################
     # Finished
     ###########################################################################
 
-    print(footer(contatempo.tempo(STARTTIME, time.time())))
+    LOG.footer()
