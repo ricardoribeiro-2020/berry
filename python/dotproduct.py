@@ -85,7 +85,7 @@ if __name__ == "__main__":
             if (args := get_point_neighbors(nk, j)) is not None
         )
         pool.starmap(dot, pre_connection_args)
-    dpc /=d.nr
+    dpc /= d.nr
     dp = np.abs(dpc)
 
     ###########################################################################
@@ -93,7 +93,7 @@ if __name__ == "__main__":
     ###########################################################################
     np.save("dpc.npy", dpc)
     np.save("dp.npy", dp)
-    LOG.info(f"\n\tDot products saved to file dpc.npy")
+    LOG.info(f"\tDot products saved to file dpc.npy")
     LOG.info(f"\tDot products modulus saved to file dp.npy")
 
     ###########################################################################

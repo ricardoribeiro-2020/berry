@@ -4,9 +4,8 @@
  the functions become a function of k instead of r
 """
 from multiprocessing import Pool, Array
+# from functools import partial
 
-import sys
-import time
 import ctypes
 
 from findiff import Gradient
@@ -20,6 +19,7 @@ from log_libs import log
 import loaddata as d
 
 LOG: log = log("r2k", "R2K", d.version)
+# time_fn = partial(time_fn, log=LOG)
 
 # pylint: disable=C0103
 ###################################################################################
@@ -61,7 +61,7 @@ def calculate_wfcgra() -> np.ndarray:
         pool.map(calculate_wfcgra_kp, range(d.nr))
 
 
-@time_fn(0, prefix="\t\t")
+@time_fn(prefix="\t")
 def r_to_k(banda: int) -> None:
     read_wfc_files(banda)
 
