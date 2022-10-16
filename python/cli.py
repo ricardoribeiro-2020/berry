@@ -6,7 +6,6 @@ import logging
 
 import loaddata as d
 
-#TODO: Add verbosity argument to all functions. The result should make alterations to the logger level.
 class CustomParser(argparse.ArgumentParser):
     def _check_value(self, action, value):
         if not isinstance(action.choices, range):
