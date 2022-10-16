@@ -7,6 +7,8 @@ import time
 
 def time_fn(*arg_pos_or_keys, prefix: str = "", display_arg_name: bool = False) -> Callable:
     global outer_dec
+    import __main__
+    LOG = __main__.LOG
 
     def outer_dec(func: Callable) -> Callable:
         global wrapper
@@ -27,8 +29,7 @@ def time_fn(*arg_pos_or_keys, prefix: str = "", display_arg_name: bool = False) 
                     args_str += f"{arg_name}{kwargs[pos_or_key]},"
                 else:
                     raise ValueError(f"Only accepts int or str as positional or keyword arguments not {type(pos_or_key)}")
-            
-            print(f"{prefix}Finished {func.__name__}({args_str}) in {(end - start):.3f} seconds", flush=True)
+            LOG.debug(f"{prefix}Finished {func.__name__}({args_str}) in {(end - start):.3f} seconds")
 
             if result is not None:
                 return result
