@@ -4,9 +4,7 @@
 
 import numpy as np
 
-# pylint: disable=C0103
-###################################################################################
-# To read the data from file:
+
 with open("datafile.npy", "rb") as fich:
     k0 = np.load(fich)
     nkx = int(np.load(fich))

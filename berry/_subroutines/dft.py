@@ -1,7 +1,7 @@
 """  These routines run the DFT calculations
 
 """
-
+#NOTE: This module is no longer used by any other module in the package
 import os
 import sys
 import subprocess
@@ -9,7 +9,7 @@ import __main__
 
 import numpy as np
 
-from log_libs import log
+from berry.utils._logger import log
 
 # pylint: disable=C0103
 ###################################################################################
@@ -156,13 +156,12 @@ def _wfck2r(nk1, nb1, total_bands=1):
     # Captures the output of the shell command
     output = subprocess.check_output(cmd, shell=True)
     # Strips the output of fortran formating and converts to numpy formating
-    out1 = (
-        output.decode("utf-8")
-        .replace(")", "j")
-        .replace(", -", "-")
-        .replace(",  ", "+")
-        .replace("(", "")
-    )
+    out1 = (output.decode("utf-8")
+                .replace(")", "j")
+                .replace(", -", "-")
+                .replace(",  ", "+")
+                .replace("(", "")
+                )
     # puts the wavefunctions into a numpy array
     psi = np.fromstring(out1, dtype=complex, sep="\n")
 
@@ -183,7 +182,7 @@ def _wfck2r(nk1, nb1, total_bands=1):
         psifinal += list(psi[i * d.nr : (i + 1) * d.nr] * np.exp(-1j * deltaphase[i]))
     psifinal = np.array(psifinal)
 
-    outfiles = map(lambda band: f"{d.wfcdirectory}k0{nk1}b0{band+nb1}.wfc", range(total_bands))
+    outfiles = map(lambda band: f"{d.wfcdirectory}/k0{nk1}b0{band+nb1}.wfc", range(total_bands))
     for i, outfile in enumerate(outfiles):
         with open(outfile, "wb") as fich:
             np.save(fich, psifinal[i * d.nr : (i + 1) * d.nr])

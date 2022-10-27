@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from python.cli import viz_berry_cli
-import python.loaddata as d
+from berry.cli import viz_berry_cli
+import berry._subroutines.loaddata as d
 
 
 def bcc(band:int, grad:int, type: str):

@@ -1,38 +1,32 @@
-"""
-  This program calculates the linear conductivity from the Berry connections
-"""
 from multiprocessing import Array, Pool
-from typing import Tuple
+from typing import Tuple, Sequence
 from itertools import product
 
-import sys
+import os
 import ctypes
+import logging
 
 import numpy as np
 
-from cli import conductivity_cli
-from contatempo import time_fn
-from log_libs import log
+from berry import log
 
-import loaddata as d
+try:
+    import berry._subroutines.loaddata as d
+except:
+    pass
 
-args = conductivity_cli()
-LOG: log = log("conductivity", "CONDUCTIVITY", d.version, args["LOG LEVEL"])
 
-# pylint: disable=C0103
-###################################################################################
-@time_fn(prefix="\t")
-def load_berry_connections() -> np.ndarray:
-    base = Array(ctypes.c_double, BERRY_CONNECTIONS_SIZE * 2, lock=False)
-    berry_connections = np.frombuffer(base, dtype=np.complex128).reshape(BERRY_CONNECTIONS_SHAPE)
+def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_conn_shape: Tuple[Sequence[int]]) -> np.ndarray:
+    base = Array(ctypes.c_double, berry_conn_size * 2, lock=False)
+    berry_connections = np.frombuffer(base, dtype=np.complex128).reshape(berry_conn_shape)
 
-    for i in range(BANDEMPTY + 1):
-        for j in range(BANDEMPTY + 1):
-            berry_connections[i, j] = np.load(f"berryConn{i}_{j}.npy")
+    for i in range(conduction_band + 1):
+        for j in range(conduction_band + 1):
+            berry_connections[i, j] = np.load(os.path.join(d.workdir, f"berryConn{i}_{j}.npy"))
 
     return berry_connections
 
-@time_fn(prefix="\t")
+
 def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
     kp = 0
     eigen_array = np.zeros((d.nkx, d.nky, d.nbnd))
@@ -45,29 +39,28 @@ def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
 
     return eigen_array
 
-@time_fn(prefix="\t")
-def get_delta_eigen_array_and_fermi(eigen_array: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    delta_eigen_array = np.zeros((d.nkx, d.nky, BANDEMPTY + 1, BANDEMPTY + 1))
-    fermi = np.zeros((d.nkx, d.nky, BANDEMPTY + 1, BANDEMPTY + 1))
+def get_delta_eigen_array_and_fermi(eigen_array: np.ndarray, conduction_band: int) -> Tuple[np.ndarray, np.ndarray]:
+    delta_eigen_array = np.zeros((d.nkx, d.nky, conduction_band + 1, conduction_band + 1))
+    fermi = np.zeros((d.nkx, d.nky, conduction_band + 1, conduction_band + 1))
 
-    for s in BANDLIST:
-        for sprime in BANDLIST:
+    for s in band_list:
+        for sprime in band_list:
             delta_eigen_array[:, :, s, sprime] = eigen_array[:, :, s] - eigen_array[:, :, sprime]
 
-            if s <= BANDFILLED < sprime:
+            if s <= d.vb < sprime:
                 fermi[:, :, s, sprime] = 1
-            elif sprime <= BANDFILLED < s:
+            elif sprime <= d.vb < s:
                 fermi[:, :, s, sprime] = -1
 
     return delta_eigen_array, fermi
 
-def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.ndarray) -> Tuple[float, np.ndarray]:
-    omegaarray = np.full(OMEGA_SHAPE, omega + BROADING)
+def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.ndarray, broadning: complex) -> Tuple[float, np.ndarray]:
+    omegaarray = np.full(OMEGA_SHAPE, omega + broadning)
     gamma = CONST * delta_eigen_array / (omegaarray - delta_eigen_array)        # factor that multiplies
     sig = np.full((2, 2), 0.0 + 0j)                                             # matrix sig_xx, sig_xy, sig_yy, sig_yx
 
-    for s in BANDLIST:                                                          # runs through index s
-        for sprime in BANDLIST:                                                 # runs through index s'
+    for s in band_list:                                                          # runs through index s
+        for sprime in band_list:                                                 # runs through index s'
             if s == sprime:
                 continue
 
@@ -83,8 +76,13 @@ def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.nd
 
     return (omega, sig * VK)
 
-if __name__ == "__main__":
-    LOG.header()
+#TODO: ADD assertions to all functions in order to check if the inputs are correct
+#IDEA: Maybe create a type checking decorator (USE pydantic)
+def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, broadning: complex = 0.01j, logger_name: str = "condutivity", logger_level: int = logging.INFO) -> None:
+    global band_list, berry_connections, OMEGA_SHAPE, CONST, VK
+    logger = log(logger_name, "CONDUCTIVITY", logger_level)
+
+    logger.header()
 
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
@@ -94,52 +92,52 @@ if __name__ == "__main__":
     # the '4' comes from spin degeneracy, that is summed in s and s'
     CONST = 4 * 2j / (2 * np.pi) ** 2                                           # = i2e^2/hslash 1/(2pi)^2     in Rydberg units
 
-    BANDFILLED = d.vb
-    BANDEMPTY  = args["BANDEMPTY"]
-    BANDLIST   = list(range(BANDEMPTY + 1))
+    band_list   = list(range(conduction_band + 1))
 
-    NPR = args["NPR"]
-    ENERMAX  = args["ENERMAX"]                                                  # Maximum energy (Ry)
-    ENERSTEP = args["ENERSTEP"]                                                 # Energy step (Ry)
-    BROADING = args["BROADNING"]                                                # energy broading (Ry)
+    #TODO: add function docstring with these comments
+    # Maximum energy (Ry)
+    # Energy step (Ry)
+    # energy broading (Ry)
 
-    OMEGA_SHAPE             = (d.nkx, d.nky, BANDEMPTY + 1, BANDEMPTY + 1)
-    BERRY_CONNECTIONS_SIZE  = 2 * d.nkx * d.nky * (BANDEMPTY + 1) ** 2
-    BERRY_CONNECTIONS_SHAPE = (BANDEMPTY + 1, BANDEMPTY + 1, 2, d.nkx, d.nky)
+    OMEGA_SHAPE             = (d.nkx, d.nky, conduction_band + 1, conduction_band + 1)
+    berry_conn_size  = 2 * d.nkx * d.nky * (conduction_band + 1) ** 2
+    berry_conn_shape = (conduction_band + 1, conduction_band + 1, 2, d.nkx, d.nky)
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ########################################################################### 
-    LOG.info(f"\tList of bands: {BANDLIST}")
-    LOG.info(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
-    LOG.info(f"\tNumber of bands: {d.nbnd}")
-    LOG.info(f"\tk-points step, dk {d.step}")                                    # Defines the step for gradient calculation dk
+    logger.info(f"List of bands: {band_list}")
+    logger.info(f"Number of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
+    logger.info(f"Number of bands: {d.nbnd}")
+    logger.info(f"k-points step, dk {d.step}")                                    # Defines the step for gradient calculation dk
 
-    LOG.info(f"\tMaximum energy (Ry): {ENERMAX}")
-    LOG.info(f"\tEnergy step (Ry): {ENERSTEP}")
-    LOG.info(f"\tEnergy BROADING (Ry): {np.imag(BROADING)}")
-    LOG.info(f"\tConstant 4e^2/hslash 1/(2pi)^2 in Rydberg units: {np.imag(CONST)}")
-    LOG.info(f"\tVolume (area) in k space: {VK}\n")
-    sys.stdout.flush()
+    logger.info(f"Maximum energy (Ry): {energy_max}")
+    logger.info(f"Energy step (Ry): {energy_step}")
+    logger.info(f"Energy broadning (Ry): {np.imag(broadning)}")
+    logger.info(f"Constant 4e^2/hslash 1/(2pi)^2 in Rydberg units: {np.imag(CONST)}")
+    logger.info(f"Volume (area) in k space: {VK}\n")
+
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS
     ###########################################################################
-    bandsfinal               = np.load("bandsfinal.npy")
-    signalfinal              = np.load("signalfinal.npy")                       # Not used
+    bandsfinal               = np.load(os.path.join(d.workdir, "bandsfinal.npy"))
+    signalfinal              = np.load(os.path.join(d.workdir, "signalfinal.npy"))                       #NOTE: Not used
     eigen_array              = correct_eigenvalues(bandsfinal)
-    berry_connections        = load_berry_connections()
-    delta_eigen_array, fermi = get_delta_eigen_array_and_fermi(eigen_array)
+    berry_connections        = load_berry_connections(conduction_band, berry_conn_size, berry_conn_shape)
+    delta_eigen_array, fermi = get_delta_eigen_array_and_fermi(eigen_array, conduction_band)
+
     ###########################################################################
     # 4. CALCULATE THE CONDUCTIVITY
     ###########################################################################
-    with Pool(NPR) as pool:
-        work_load = product(np.arange(0, ENERMAX + ENERSTEP, ENERSTEP), [delta_eigen_array], [fermi])
+    with Pool(npr) as pool:
+        work_load = product(np.arange(0, energy_max + energy_step, energy_step), [delta_eigen_array], [fermi], [broadning])
         sigma = dict(pool.starmap(compute_condutivity, work_load))
+
     ###########################################################################
     # 5. SAVE OUTPUT
     ###########################################################################
-    with open("sigmar.dat", "w") as sigm:
+    with open(os.path.join(d.workdir, "sigmar.dat"), "w") as sigm:
         sigm.write("# Energy (eV), sigma_xx,  sigma_yy,  sigma_yx,  sigma_xy\n")
-        for omega in np.arange(0, ENERMAX + ENERSTEP, ENERSTEP):
+        for omega in np.arange(0, energy_max + energy_step, energy_step):
             outp = "{0:.4f}  {1:.6f}  {2:.6f}  {3:.6f}  {4:.6f}\n"
             sigm.write(
                 outp.format(
@@ -150,11 +148,11 @@ if __name__ == "__main__":
                     np.real(sigma[omega][0, 1]),
                 )
             )
-    LOG.info("\tReal part of conductivity saved to file sigmar.dat")
+    logger.info("Real part of conductivity saved to file sigmar.dat")
 
-    with open("sigmai.dat", "w") as sigm:
+    with open(os.path.join(d.workdir, "sigmai.dat"), "w") as sigm:
         sigm.write("# Energy (eV), sigma_xx,  sigma_yy,  sigma_yx,  sigma_xy\n")
-        for omega in np.arange(0, ENERMAX + ENERSTEP, ENERSTEP):
+        for omega in np.arange(0, energy_max + energy_step, energy_step):
             outp = "{0:.4f}  {1:.6f}  {2:.6f}  {3:.6f}  {4:.6f}\n"
             sigm.write(
                 outp.format(
@@ -165,8 +163,9 @@ if __name__ == "__main__":
                     np.imag(sigma[omega][0, 1]),
                 )
             )
-    LOG.info("\tImaginary part of conductivity saved to file sigmai.dat")
+    logger.info("Imaginary part of conductivity saved to file sigmai.dat")
+
     ###########################################################################
     # Finished
     ###########################################################################
-    LOG.footer()
+    logger.footer()

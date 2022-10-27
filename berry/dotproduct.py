@@ -1,34 +1,29 @@
-"""
-  This program calculates the dot product of the wfc Bloch factor with their neighbors
-
-"""
+from multiprocessing import Pool, Array
 from typing import Tuple
-from multiprocessing import Array, Pool
 
+import os
 import ctypes
+import logging
 
 import numpy as np
 
-from cli import dotproduct_cli
-from log_libs import log
-from contatempo import time_fn
+from berry import log
 
-import loaddata as d
+try:
+    import berry._subroutines.loaddata as d
+except:
+    pass
 
-args = dotproduct_cli()
-LOG: log = log("dotproduct", "DOT PRODUCT", d.version, args["LOG LEVEL"])
 
-# pylint: disable=C0103
-###################################################################################
-@time_fn(0, 2, prefix="\t")
+#TODO: Figure out how to share the dpc array between processes inside a class
 def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
 
     dphase = d.phase[:, nk] * d.phase[:, neighbor].conj()
 
     for band0 in range(d.nbnd):
-        wfc0 = np.load(f"{d.wfcdirectory}k0{nk}b0{band0}.wfc")
+        wfc0 = np.load(os.path.join(d.wfcdirectory, f"k0{nk}b0{band0}.wfc"))
         for band1 in range(d.nbnd):
-            wfc1 = np.load(f"{d.wfcdirectory}k0{neighbor}b0{band1}.wfc").conj()
+            wfc1 = np.load(os.path.join(d.wfcdirectory, f"k0{neighbor}b0{band1}.wfc")).conj()
 
             dpc[nk, j, band0, band1] = np.einsum("k,k,k->", dphase, wfc0, wfc1)
             dpc[neighbor, jNeighbor, band1, band0] = dpc[nk, j, band0, band1].conj()
@@ -43,27 +38,30 @@ def get_point_neighbors(nk: int, j: int) -> None:
         return (nk, j, neighbor, jNeighbor)
     return None
 
-###################################################################################
-if __name__ == "__main__":
-    LOG.header()
+def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logging.INFO):
+    global dpc
+    logger = log(logger_name, "DOT PRODUCT", logger_level)
+
+    if not 0 < npr <= os.cpu_count():
+        raise ValueError(f"npr must be between 1 and {os.cpu_count()}")
+
+    logger.header()
 
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
     ########################################################################### 
-    NPR = args["NPR"]
-
     DPC_SIZE = d.nks * 4 * d.nbnd * d.nbnd
     DPC_SHAPE = (d.nks, 4, d.nbnd, d.nbnd)
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ########################################################################### 
-    LOG.info(f"\tUnique reference of run: {d.refname}")
-    LOG.info(f"\tNumber of processors to use: {NPR}")
-    LOG.info(f"\tNumber of bands: {d.nbnd}")
-    LOG.info(f"\tTotal number of k-points: {d.nks}")
-    LOG.info(f"\tTotal number of points in real space: {d.nr}")
-    LOG.info(f"\tDirectory where the wfc are: {d.wfcdirectory}\n")
+    logger.info(f"\tUnique reference of run: {d.refname}")
+    logger.info(f"\tNumber of processors to use: {npr}")
+    logger.info(f"\tNumber of bands: {d.nbnd}")
+    logger.info(f"\tTotal number of k-points: {d.nks}")
+    logger.info(f"\tTotal number of points in real space: {d.nr}")
+    logger.info(f"\tDirectory where the wfc are: {d.wfcdirectory}\n")
 
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS
@@ -75,7 +73,7 @@ if __name__ == "__main__":
     ###########################################################################
     # 4. CALCULATE THE CONDUCTIVITY
     ###########################################################################
-    with Pool(NPR) as pool:
+    with Pool(npr) as pool:
         pre_connection_args = (
             args
             for nk in range(d.nks)
@@ -89,13 +87,15 @@ if __name__ == "__main__":
     ###########################################################################
     # 5. SAVE OUTPUT
     ###########################################################################
-    np.save("dpc.npy", dpc)
-    np.save("dp.npy", dp)
-    LOG.info(f"\tDot products saved to file dpc.npy")
-    LOG.info(f"\tDot products modulus saved to file dp.npy")
+    np.save(os.path.join(d.workdir, "dpc.npy"), dpc)
+    np.save(os.path.join(d.workdir, "dp.npy"), dp)
+    logger.info(f"\tDot products saved to file dpc.npy")
+    logger.info(f"\tDot products modulus saved to file dp.npy")
 
     ###########################################################################
     # Finished
     ###########################################################################
+    logger.footer()
 
-    LOG.footer()
+if __name__ == "__main__":
+    run_dot(log("dotproduct", "DOT PRODUCT", "version"), 20)

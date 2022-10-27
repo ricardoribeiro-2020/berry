@@ -2,10 +2,10 @@ from colorama import Fore, Back, Style
 
 import numpy as np
 
-from python.cli import viz_debug_cli
-from python.write_k_points import _float_numbers
+from berry.cli import viz_debug_cli
+from berry._subroutines.write_k_points import _float_numbers
 
-import python.loaddata as d
+import berry._subroutines.loaddata as d
 
 
 Options = str

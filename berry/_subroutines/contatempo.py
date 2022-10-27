@@ -2,41 +2,9 @@
 from typing import Callable
 
 import time
+import logging
 
-# pylint: disable=C0103
-
-def time_fn(*arg_pos_or_keys, prefix: str = "", display_arg_name: bool = False) -> Callable:
-    global outer_dec
-    import __main__
-    LOG = __main__.LOG
-
-    def outer_dec(func: Callable) -> Callable:
-        global wrapper
-
-        def wrapper(*args, **kwargs) -> Callable:
-            start = time.time()
-            result = func(*args, **kwargs)
-            end = time.time()
-
-            args_str = ""
-            for pos_or_key in arg_pos_or_keys:
-                if isinstance(pos_or_key, int):
-                    args_str += f"{args[pos_or_key]},"
-                elif isinstance(pos_or_key, str):
-                    arg_name = ""
-                    if display_arg_name:
-                        arg_name = f"{pos_or_key}="
-                    args_str += f"{arg_name}{kwargs[pos_or_key]},"
-                else:
-                    raise ValueError(f"Only accepts int or str as positional or keyword arguments not {type(pos_or_key)}")
-            LOG.debug(f"{prefix}Finished {func.__name__}({args_str}) in {(end - start):.3f} seconds")
-
-            if result is not None:
-                return result
-
-        return wrapper
-
-    return outer_dec
+import berry
 
 def tempo(starttime, endtime):
     """ Returns a string with the time elapsed between starttime,endtime """

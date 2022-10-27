@@ -9,9 +9,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-from python.contatempo import tempo
-from python.headerfooter import header, footer
-import python.loaddata as d
+from berry._subroutines.contatempo import tempo
+from berry._subroutines.headerfooter import header, footer
+import berry._subroutines.loaddata as d
 
 # pylint: disable=C0103
 ###################################################################################
@@ -26,7 +26,7 @@ def main():
         sys.exit("Stop")
 
     startband = 0  # Number of the first band
-    endband = 3  # Number of the last band
+    endband = 7  # Number of the last band
 
     fig = plt.figure(figsize=(6, 6))
 
@@ -66,7 +66,6 @@ def main():
     print(" Eigenvlaues loaded")
     print(" K-points loaded")
 
-    bandsfinal = np.load(d.DIR + "bandsfinal.npy")
 
     xarray = np.zeros((d.nkx, d.nky))
     yarray = np.zeros((d.nkx, d.nky))
@@ -84,7 +83,7 @@ def main():
         for j in range(d.nky):
             for i in range(d.nkx):
                 count = count + 1
-                zarray[i, j] = d.eigenvalues[count, bandsfinal[count, banda]]
+                zarray[i, j] = d.eigenvalues[count, banda]
 
         ax.plot(xarray, yarray, zarray, color=cores[banda])
 
@@ -109,9 +108,6 @@ def main():
     # ax = fig.add_subplot(111, projection='3d')
 
     # ax.plot_trisurf(xarray, yarray, zarray, linewidth=0.2, antialiased=True)
-
-    # 3D-plot the bands
-
 
     plt.show()
 

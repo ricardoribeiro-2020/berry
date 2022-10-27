@@ -1,9 +1,12 @@
+from pathlib import Path
+
 import sys
-import logging
 import time
-from headerfooter import header
-from headerfooter import footer
-from contatempo import tempo
+import logging
+
+from berry import __version__
+from berry._subroutines.headerfooter import header, footer
+from berry._subroutines.contatempo import tempo
 
 def prepare_message(method):
     def wrapper(ref, *messages):
@@ -16,10 +19,12 @@ def prepare_message(method):
     return wrapper
 
 class log:
-    def __init__(self, program, title, version, level=logging.INFO):
+    def __init__(self, program, title, level=logging.INFO):
+        Path(program).parent.mkdir(parents=True, exist_ok=True)
+
         self.program = program
         self.title = title
-        self.version = version
+        self.version = __version__
         self.level = level
         logging.basicConfig(filename=program+'.log',
                             filemode='w',
