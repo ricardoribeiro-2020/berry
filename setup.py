@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
-from version import version
+from berry import __version__
 
 def get_long_description():
     with open('README.md') as f:
@@ -11,7 +11,7 @@ def get_requirements():
 
 setup(
     name='berry',
-    version=version,
+    version=__version__,
     description='ADD DESCRIPTION',
     long_description=get_long_description(),
     long_description_content_type='text/markdown',
