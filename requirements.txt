@@ -43,3 +43,4 @@ sympy==1.11.1
 tornado==6.2
 traitlets==5.4.0
 wcwidth==0.2.5
+argcomplete==2.0.0

@@ -10,10 +10,9 @@ import logging
 
 import numpy as np
 
-from berry import log
+from berry import log, __version__
 from berry._subroutines.parserQE import parser
 
-__version__ = "0.1.0"  #TODO: change this to a _version.py file
 now = time.strftime("%d-%m-%Y_%H:%M:%S", time.gmtime())
 Data = Dict[str, Union[int, str, float]]
 
@@ -349,3 +348,4 @@ class Preprocess:
         self.logger.info(f"Name of the scf input file: {self.scf}")
         self.logger.info(f"Name of the nscf input file: {self.nscf}")
         self.logger.info(f"Name of the dft data file: {self.dft_data_file}\n")
+

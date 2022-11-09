@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
-from berry import __version__
+from _version import __version__
 
 def get_long_description():
     with open('README.md') as f:
@@ -12,18 +12,28 @@ def get_requirements():
 setup(
     name='berry',
     version=__version__,
-    description='ADD DESCRIPTION',
-    long_description=get_long_description(),
-    long_description_content_type='text/markdown',
     author='ADD AUTHOR',
     author_email='ADD EMAIL',
     url='ADD URL',
+    description='ADD DESCRIPTION',
+    long_description=get_long_description(),
+    long_description_content_type='text/markdown',
     packages=find_packages(),
-    install_requires=get_requirements(),
+    install_requires=[
+        "numpy",
+        "networkx",
+        "findiff",
+        "matplotlib",
+        "scipy",
+        "argcomplete",
+    ],
     classifiers=[
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
+        'License :: OSI Approved :: MIT License',
+        'Operating System :: linux',
+        'Topic :: Scientific/Engineering :: Physics',
     ],#TODO: Add classifiers
     entry_points={
         'console_scripts': [

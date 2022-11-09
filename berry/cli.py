@@ -2,7 +2,7 @@ from typing import Callable, Dict, Any
 
 import os
 import sys
-import argparse
+import argparse, argcomplete
 import logging
 
 #TODO: Talk to professor about np.savez
@@ -62,60 +62,66 @@ def master_cli():
 The Berry Suite is a collection of programs that have to be run in a specific order. This CLI is meant to help the user run the programs in the correct order
 and to help the user understand what each program does. If running running this CLI, the user must specify the program to run and the arguments for that program.""")
         sub_parser = parser.add_subparsers(dest="program", help="Choose the program to run.")
+        sub_parser.add_parser("enable_autocomplete", help="Enable autocomplete for the CLI.")
 
         preprocess_parser = sub_parser.add_parser("preprocess", help="Extract DFT calculations from specific program.", description="Extract DFT calculations from specific program.")
         preprocess_parser.add_argument("input_file", type=str, help="Path to input file from where to extract the run parameters.")
         preprocess_parser.add_argument("-o", default="preprocess", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
         preprocess_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
-
+        
         if WFCGEN:
             wfc_parser = sub_parser.add_parser("wfcgen", help="Generate Wannier functions from DFT calculations.", description="Generate Wannier functions from DFT calculations.")
+        if DOT:
+            dot_parser = sub_parser.add_parser("dot", help="Calculate the dot product between the neighbouring points of the wavefunction.", description="Calculate the dot product between the neighbouring points of the wavefunction.")
+        if CLUSTER:
+            cluster_parser = sub_parser.add_parser("cluster", help="Classify the k points to solve band crossing problem.", description="Classify the k points to solve band crossing problem.")
+        if BASIS:
+            basis_parser = sub_parser.add_parser("basis", help="Find the problematic cases and make a basis rotation of the wavefunctions.", description="Find the problematic cases and make a basis rotation of the wavefunctions.")
+        if R2K:
+            r2k_parser = sub_parser.add_parser("r2k", help="Calculate the grid of points in the k-space", description="Calculate the grid of points in the k-space")
+        if GEOMETRY:
+            geometry_parser = sub_parser.add_parser("geometry", help="Calculate the Berry connections and the Berry curvature.", description="Calculate the Berry connections and the Berry curvature.")
+        if CONDUCTIVITY:
+            conductivity_parser = sub_parser.add_parser("conductivity", help="Calculate the conductivity of the system..", description="Calculate the conductivity of the system.")
+        if SHG:
+            shg_parser = sub_parser.add_parser("shg", help="Calculate the second harmonic generation of the system..", description="Calculate the second harmonic generation of the system.")
+        argcomplete.autocomplete(parser)
+
+        if WFCGEN:
             wfc_parser.add_argument("-nk"  , type=int, metavar=f"[0-{d.nks-1}]"  , default=None, choices=range(d.nks)  , help="K-point to generate the wavefunction for all bands (default: All).")
             wfc_parser.add_argument("-band", type=int, metavar=f"[0-{d.nbnd-1}]", default=None, choices=range(d.nbnd), help="Band to generate the wavefunction for a single k-point (default: All).")
             wfc_parser.add_argument("-o", default="wfc", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             wfc_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
-
         if DOT:
-            dot_parser = sub_parser.add_parser("dot", help="Calculate the dot product between the neighbouring points of the wavefunction.", description="Calculate the dot product between the neighbouring points of the wavefunction.")
             dot_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
             dot_parser.add_argument("-o", default="dot", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             dot_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
-
         if CLUSTER:
-            cluster_parser = sub_parser.add_parser("cluster", help="Classify the k points to solve band crossing problem.", description="Classify the k points to solve band crossing problem.")
             cluster_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{d.nbnd-1})"   , choices=range(d.nbnd)             , help="Maximum band to consider")
             cluster_parser.add_argument("-mb", type=int, default=0, metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)             , help="Minimum band to consider (default: 0)")
             cluster_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
             cluster_parser.add_argument("-t",  type=restricted_float, default=0.95, metavar="[0.0-1.0]", help="Tolerance used for graph construction (default: 0.95)")
             cluster_parser.add_argument("-o", default="cluster", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             cluster_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
-
         if BASIS:
-            basis_parser = sub_parser.add_parser("basis", help="Find the problematic cases and make a basis rotation of the wavefunctions.", description="Find the problematic cases and make a basis rotation of the wavefunctions.")
             basis_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{d.nbnd-1})"   , choices=range(d.nbnd)             , help="Maximum band to consider")
             basis_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
             basis_parser.add_argument("-o", default="basis", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             basis_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
-
         if R2K:
-            r2k_parser = sub_parser.add_parser("r2k", help="Calculate the grid of points in the k-space", description="Calculate the grid of points in the k-space")
             r2k_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{d.nbnd-1})"   , choices=range(d.nbnd)             , help="Maximum band to consider")
             r2k_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
             r2k_parser.add_argument("-mb", type=int, default=0, metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)             , help="Minimum band to consider (default: 0)")
             r2k_parser.add_argument("-o", default="r2k", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             r2k_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
-
         if GEOMETRY:
-            geometry_parser = sub_parser.add_parser("geometry", help="Calculate the Berry connections and the Berry curvature.", description="Calculate the Berry connections and the Berry curvature.")
             geometry_parser.add_argument("Mb"   , type=int                , metavar=f"Mb (0-{d.nbnd-1})"   , choices=range(d.nbnd)                      , help="Maximum band to consider")
             geometry_parser.add_argument("-np"  , type=int, default=1     , metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1)         , help="Number of processes to use (default: 1)")
             geometry_parser.add_argument("-mb"  , type=int, default=0     , metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)                      , help="Minimum band to consider (default: 0)")
             geometry_parser.add_argument("-prop", type=str, default="both"                                 , choices=["both", "connection", "curvature"], help="Specify which proprety to calculate. (default: both)")
             geometry_parser.add_argument("-o", default="geometry", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             geometry_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
-
         if CONDUCTIVITY:
-            conductivity_parser = sub_parser.add_parser("conductivity", help="Calculate the conductivity of the system..", description="Calculate the conductivity of the system.")
             conductivity_parser.add_argument("cb" , type=int                        ,metavar=f"cb ({d.vb+1}-{d.nbnd-1})", choices=range(d.vb+1, d.nbnd)     , help="Index of the conduction band.")
             conductivity_parser.add_argument("-np"       , type=int  , default=1    , metavar=f"[1-{os.cpu_count()}]"   , choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
             conductivity_parser.add_argument("-eM"  , type=float, default=2.5                                                                          , help="Maximum energy in Ry units (default: 2.5).")
@@ -123,9 +129,7 @@ and to help the user understand what each program does. If running running this 
             conductivity_parser.add_argument("-brd", type=float, default=0.01j                                                                        , help="Energy broading in Ry units (default: 0.01).")
             conductivity_parser.add_argument("-o", default="conductivity", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             conductivity_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
-        
         if SHG:
-            shg_parser = sub_parser.add_parser("shg", help="Calculate the second harmonic generation of the system..", description="Calculate the second harmonic generation of the system.")
             shg_parser.add_argument("cb" , type=int                        ,metavar=f"cb ({d.vb+1}-{d.nbnd-1})", choices=range(d.vb+1, d.nbnd)     , help="Index of the conduction band.")
             shg_parser.add_argument("-np"       , type=int  , default=1    , metavar=f"[1-{os.cpu_count()}]"   , choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
             shg_parser.add_argument("-eM"  , type=float, default=2.5                                                                          , help="Maximum energy in Ry units (default: 2.5).")
@@ -158,6 +162,7 @@ For more information add the '-h' flag to the 'preprocess' subcommand.""")
     ###########################################################################
 
     program_dict: Dict[str, Callable] = {
+        "enable_autocomplete": enable_autocomplete,
         "preprocess": preprocessing_cli,
         "wfcgen": generatewfc_cli,
         "dot": dotproduct_cli,
@@ -177,6 +182,13 @@ For more information add the '-h' flag to the 'preprocess' subcommand.""")
 ##################################################################################################
 # MAIN PROGRAMS
 ##################################################################################################
+def enable_autocomplete(args: argparse.Namespace):
+    """Enable autocomplete for the Berry Suite CLI."""
+    print("Enabling autocomplete for the Berry Suite CLI...")
+    print("This will require root access. Please enter your password.")
+    os.system("sudo cp ./berry_suite_autocomplete /etc/bash_completion.d/")
+    print("Done!")
+
 
 def preprocessing_cli(args: argparse.Namespace):
     from berry import Preprocess
