@@ -4,18 +4,20 @@ The algorithm uses machine learning techniques to cluster the data.
 """
 
 from __future__ import annotations
-import __main__
+from multiprocessing import Process, Manager
+from typing import Tuple, Union, Callable
+from functools import partial
+
+import logging
+
+from scipy.ndimage import correlate
+from scipy.optimize import curve_fit
+
 import numpy as np
 import networkx as nx
-from log_libs import log
-from functools import partial
-from scipy.ndimage import correlate
-from multiprocessing import Process
-from multiprocessing import Manager
-from scipy.optimize import curve_fit
-from contatempo import time_fn
-from write_k_points import _bands_numbers
-from typing import Tuple, Union, Callable
+
+from berry import log
+from .write_k_points import _bands_numbers
 
 
 ###########################################################################
@@ -35,9 +37,6 @@ MISTAKE = 1
 NOT_SOLVED = 0
 
 N_NEIGS = 4
-
-LOG = __main__.LOG # Use LOG from parent module (clustering_bands.py)
-LOG: log
 
 def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
     '''
@@ -261,7 +260,7 @@ class MATERIAL:
                 a new signal value depending only on energy continuity.
     '''     
     def __init__(self, nkx: int, nky: int, nbnd: int, nks: int, eigenvalues: np.ndarray,
-                 connections: np.ndarray, neighbors: np.ndarray, n_process: int=1) -> None:
+                 connections: np.ndarray, neighbors: np.ndarray, logger: log, n_process: int=1) -> None:
         '''
         Initialize the object.
 
@@ -297,6 +296,7 @@ class MATERIAL:
         self.neighbors = neighbors
         self.vectors = None
         self.n_process = n_process
+        self.logger = logger
 
     def make_BandsEnergy(self) -> np.ndarray:
         '''
@@ -333,7 +333,6 @@ class MATERIAL:
         self.kpoints_index = np.stack([counts % self.nkx, counts//self.nkx],
                                       axis=1)
 
-    @time_fn(prefix="\t")
     def make_vectors(self, min_band: int=0, max_band: int=-1) -> None:
         '''
         It transforms the information into more convenient data structures.
@@ -356,7 +355,7 @@ class MATERIAL:
                         in a matrix.
         '''
         process_name = 'Making Vectors'
-        LOG.percent_complete(0, 100, title=process_name)
+        self.logger.percent_complete(0, 100, title=process_name)
 
         ###########################################################################
         # Compute the auxiliar information
@@ -367,7 +366,7 @@ class MATERIAL:
         nbnd = self.nbnd if max_band == -1 else max_band+1
         self.make_kpointsIndex()
         energies = self.make_BandsEnergy()
-        LOG.percent_complete(20, 100, title=process_name)
+        self.logger.percent_complete(20, 100, title=process_name)
 
         ###########################################################################
         # Compute the vector representation of each k point
@@ -378,7 +377,7 @@ class MATERIAL:
         bands = np.arange(min_band, nbnd)
         eigenvalues = self.eigenvalues[:, bands].T.reshape(n_vectors)
         self.vectors = np.stack([ik, jk, eigenvalues], axis=1)
-        LOG.percent_complete(100, 100, title=process_name)
+        self.logger.percent_complete(100, 100, title=process_name)
 
         self.GRAPH.add_nodes_from(np.arange(n_vectors))     # Add the nodes, each node represent a k point
         
@@ -403,7 +402,7 @@ class MATERIAL:
                 degenerado = np.where(np.all(np.isclose(self.vectors[i+1:]-v, 0),
                                     axis=1))[0] # Verify which points have numerically the same value
                 if len(degenerado) > 0:
-                    LOG.debug(f'Found degenerete point for {i}')
+                    self.logger.debug(f'Found degenerete point for {i}')
                     degenerates += [[i, d+i+1] for d in degenerado]
             return degenerates
 
@@ -411,9 +410,9 @@ class MATERIAL:
         self.degenerados = self.parallelize('Finding degenerate points', obtain_degenerates, enumerate(self.vectors))
 
         if len(self.degenerados) > 0:
-            LOG.info('Degenerate Points: ')
+            self.logger.info('Degenerate Points: ')
             for d in self.degenerados:
-                LOG.info(f'\t{d}')
+                self.logger.info(f'\t{d}')
 
         self.ENERGIES = energies
         self.nbnd = nbnd-min_band
@@ -460,7 +459,6 @@ class MATERIAL:
             neigh = neighs.pop(0) if len(neighs) > 0 else None
         return neigh == j if neigh is not None else False
 
-    @time_fn(prefix="\t")
     def make_connections(self, tol:float=0.95) -> None:
         '''
         This function evaluates the connection between each k point,
@@ -534,7 +532,7 @@ class MATERIAL:
             N2 = np.array(self.get_neigs(d2))
             if len(N1) == 0 or len(N2) == 0:
                 continue
-            LOG.info(f'Problem:\n\t{d1}: {N1}\n\t{d2}:{N2}')
+            self.logger.info(f'Problem:\n\t{d1}: {N1}\n\t{d2}:{N2}')
             NKS = self.nks
             if len(N1) > 1 and len(N2) > 1:
                 def n2_index(n1): return np.where(N2 % NKS == n1 % NKS)
@@ -565,7 +563,7 @@ class MATERIAL:
                 N1_ = [n[np.argmin(np.abs(n-n1))] for n in N]
                 N2_ = [n[np.argmax(np.abs(n-n1))] for n in N]
 
-            LOG.info(f'Solution:\n\t{d1}: {N1_}\n\t{d2}:{N2_}')
+            self.logger.info(f'Solution:\n\t{d1}: {N1_}\n\t{d2}:{N2_}')
             for k in N1:
                 self.GRAPH.remove_edge(k, d1)
             for k in N2:
@@ -578,7 +576,7 @@ class MATERIAL:
         
         self.degenerates = np.array(degnerates)
 
-    def parallelize(self, process_name: str, f: Callable, iterator: Union[list, np.ndarray], *args, verbose: bool=True) -> np.ndarray:
+    def parallelize(self, process_name: str, f: Callable, iterator: Union[list, np.ndarray], *args) -> np.ndarray:
         '''
         Create processes for some function f over an iterator.
 
@@ -605,10 +603,10 @@ class MATERIAL:
         ###########################################################################
         # Debug information and Progress bar
         ###########################################################################
-        if verbose:
-            LOG.debug(f'Starting Parallelization for {process_name} with {N} values')
-        if verbose:
-            LOG.percent_complete(0, N, title=process_name)
+        
+        self.logger.debug(f'Starting Parallelization for {process_name} with {N} values')
+        
+        self.logger.percent_complete(0, N, title=process_name)
 
         ###########################################################################
         # Processes management
@@ -630,9 +628,9 @@ class MATERIAL:
                 # The function may not return anything
                 result += f(iterator, *args)        # Store the output into result array
             per[0] += len(iterator)                 # The counter is actualized
-            if verbose:
-                # Show on screen the progress bar
-                LOG.percent_complete(per[0], N, title=process_name)
+            
+            # Show on screen the progress bar
+            self.logger.percent_complete(per[0], N, title=process_name)
         
         result = Manager().list([])             # Shared Memory list to store the result
         per = Manager().list([0])               # Shared Memory to countability the progress
@@ -652,12 +650,8 @@ class MATERIAL:
             p = process.pop(0)
             p.join()
 
-        if verbose:
-            print()
-
         return np.array(result)
 
-    @time_fn(prefix="\t")
     def get_components(self, alpha: float=0.5) -> None:
         '''
         The make_connections function constructs the graph, in which
@@ -678,8 +672,8 @@ class MATERIAL:
         ###########################################################################
         # Identify connected components inside the GRAPH
         ###########################################################################
-        LOG.info('\n\nNumber of Components: ')
-        LOG.info(f'{nx.number_connected_components(self.GRAPH)}')
+        self.logger.info('\n\nNumber of Components: ')
+        self.logger.info(f'{nx.number_connected_components(self.GRAPH)}')
         self.components = [COMPONENT(self.GRAPH.subgraph(c),
                                      self.kpoints_index,
                                      self.matrix)
@@ -714,8 +708,8 @@ class MATERIAL:
             else:
                 # If it can, then it is a sample.
                 samples.append(component)
-        LOG.info(f'    Phase 1: {len(self.solved)}/{self.nbnd} Solved')
-        LOG.info(f'    Initial clusters: {len(clusters)} Samples: {len(samples)}')
+        self.logger.info(f'    Phase 1: {len(self.solved)}/{self.nbnd} Solved')
+        self.logger.info(f'    Initial clusters: {len(clusters)} Samples: {len(samples)}')
 
         ###########################################################################
         # Assigning samples to clusters by selecting the best option
@@ -754,21 +748,20 @@ class MATERIAL:
             count[0] += 1                                                           # Update the counter
             clusters[bn].join(sample)                                               # Join the sample to the best cluster               
             clusters[bn].was_modified = True
-            LOG.percent_complete(count[0], count[1], title='Clustering Samples')
-            LOG.debug(f'{count[0]}/{count[1]} Sample corrected: {score}')
+            self.logger.percent_complete(count[0], count[1], title='Clustering Samples')
+            self.logger.debug(f'{count[0]}/{count[1]} Sample corrected: {score}')
             if clusters[bn].N == self.nks:
                 #  If the number of nodes inside the component equals the total number of k points, the cluster is considered solved
-                LOG.debug('Cluster Solved')
+                self.logger.debug('Cluster Solved')
                 self.solved.append(clusters.pop(bn))
 
-        LOG.info(f'    Phase 2: {len(self.solved)}/{self.nbnd} Solved')
+        self.logger.info(f'    Phase 2: {len(self.solved)}/{self.nbnd} Solved')
 
         if len(self.solved)/self.nbnd < 1:
-            LOG.info(f'    New clusters: {len(clusters)}')
+            self.logger.info(f'    New clusters: {len(clusters)}')
 
         self.clusters : list[COMPONENT] = clusters
 
-    @time_fn(prefix="\t")
     def obtain_output(self) -> None:
         '''
         This function prepares the final data structures
@@ -952,7 +945,6 @@ class MATERIAL:
         
         self.degenerate_final = np.array(self.degenerate_final)
 
-    @time_fn(prefix="\t")
     def print_report(self, signal_report: np.ndarray) -> None:
         '''
         Shows on screen the report for each band.
@@ -973,8 +965,9 @@ class MATERIAL:
             report.append(np.round(self.final_score[bn], 4))                # Set the final score
             bands_report.append(report)
 
-            LOG.info(f'\n  New Band: {bn}\tnr fails: {report[0]}')
-            _bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
+            self.logger.info(f'\n  New Band: {bn}\tnr fails: {report[0]}')
+            if self.logger.level == logging.DEBUG:
+                _bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
 
         ###########################################################################
         # Set up the data representation
@@ -1006,10 +999,9 @@ class MATERIAL:
                 n_spaces = n_max - len(str(value))
                 final_report += ' '*n_spaces+str(value) + '   '
 
-        LOG.info(final_report)              # Show on screen
+        self.logger.info(final_report)              # Show on screen
         self.final_report = final_report    # Store for saving on a file
     
-    @time_fn(prefix="\t")
     def correct_signal(self) -> None:
         '''
         This function evaluates the k-point signal calculated on previous analysis and attributes
@@ -1047,7 +1039,7 @@ class MATERIAL:
                 # If the point was not marked as a correct or mistake signal, It is stored
                 error_directions.append([k, bn])
                 directions.append(scores)
-            LOG.debug(f'K point: {k} Band: {bn}    New Signal: {signal} Directions: {scores}')
+            self.logger.debug(f'K point: {k} Band: {bn}    New Signal: {signal} Directions: {scores}')
 
         ###########################################################################
         # Create a new problem for another solver iteration
@@ -1111,7 +1103,6 @@ class MATERIAL:
             self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)                       # Save the currect result
             self.correct_signalfinal[k_ot, bn_ot] = CORRECT-1                                       # Signaling as CORRECT the repeated k-points
 
-    @time_fn(prefix="\t")
     def solve(self, step: float=0.1, min_alpha: float=0) -> None:
         '''
         This method is the main algorithm which iterates between solutions
@@ -1145,14 +1136,14 @@ class MATERIAL:
         ###########################################################################
         while bands_final_flag and ALPHA >= min_alpha:
             print()
-            LOG.info(f'\n\n  Clustering samples for TOL: {ALPHA}')
+            self.logger.info(f'\n\n  Clustering samples for TOL: {ALPHA}')
             self.get_components(alpha=ALPHA)                    # Obtain components from a Graph
 
-            LOG.info('  Calculating output')        
+            self.logger.info('  Calculating output')        
             self.obtain_output()                            # Compute the result
             self.print_report(self.signal_final)            # Print result
 
-            LOG.info('  Validating result')     
+            self.logger.info('  Validating result')     
             self.correct_signal()                           # Evaluate the energy continuity and perform a new Graph
             self.print_report(self.correct_signalfinal)     # Print result
             

@@ -1,7 +1,6 @@
 """ Module to include some commutators for condutivity calculations """
 
 from findiff import Gradient
-# pylint: disable=C0103
 
 
 def comute(berryConnection, sprime, s, beta, alpha):

@@ -6,7 +6,7 @@
 
 import smtplib
 from socket import gaierror
-import loaddata as d
+import berry._subroutines.loaddata as d
 
 # pylint: disable=C0103
 ###################################################################################

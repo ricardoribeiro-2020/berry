@@ -1,28 +1,26 @@
-"""
-Calculates the Berry connections and Berry curvatures.
-"""
-
 from multiprocessing import Pool, Array
+from typing import Literal
 
-import sys
-import time
+import os
 import ctypes
+import logging
 
 import numpy as np
 
-from cli import berry_props_cli
-from jit import numba_njit
-from contatempo import tempo, time_fn
-from headerfooter import header, footer
+from berry import log
+from berry.utils.jit import numba_njit
 
-import loaddata as d
+try:
+    import berry._subroutines.loaddata as d
+except:
+    pass
 
-###################################################################################
+
 def berry_connection(n_pos: int, n_gra: int):
     """
     Calculates the Berry connection.
     """ 
-    wfcpos = np.load(f"wfcpos{n_pos}.npy", mmap_mode="r").conj()
+    wfcpos = np.load(os.path.join(d.workdir, f"wfcpos{n_pos}.npy"), mmap_mode="r").conj()
     
     @numba_njit
     def aux_connection() -> np.ndarray:
@@ -41,7 +39,7 @@ def berry_connection(n_pos: int, n_gra: int):
 
     bcc = aux_connection()
 
-    np.save(f"berryConn{n_pos}_{n_gra}.npy", bcc)
+    np.save(os.path.join(d.workdir, f"berryConn{n_pos}_{n_gra}.npy"), bcc)
 
 
 def berry_curvature(idx: int, idx_: int) -> None:
@@ -51,7 +49,7 @@ def berry_curvature(idx: int, idx_: int) -> None:
     if idx == idx_:
         wfcgra_ = wfcgra.conj()
     else:
-        wfcgra_ = np.load(f"wfcgra{idx_}.npy", mmap_mode="r").conj()
+        wfcgra_ = np.load(os.path.join(d.workdir, f"wfcgra{idx_}.npy"), mmap_mode="r").conj()
 
     @numba_njit
     def aux_curvature() -> np.ndarray:
@@ -71,35 +69,28 @@ def berry_curvature(idx: int, idx_: int) -> None:
 
     bcr = aux_curvature()
 
-    np.save(f"berryCur{idx}_{idx_}.npy", bcr)
+    np.save(os.path.join(d.workdir, f"berryCur{idx}_{idx_}.npy"), bcr)
 
-
-if __name__ == "__main__":
-    args = berry_props_cli()
-
-    header("BERRY GEOMETRY", d.version, time.asctime())
-    STARTTIME = time.time()
+def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curvature", "connection", "both"] = "both", logger_name: str = "geometry", logger_level: int = logging.INFO):
+    global wfcgra
+    logger = log(logger_name, "BERRY GEOMETRY", logger_level)
+    
+    logger.header()
     
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
     ########################################################################### 
-    NPR      = args["NPR"]
-    PROP     = args["PROP"]
-    MIN_BAND = args["MIN_BAND"]
-    MAX_BAND = args["MAX_BAND"]
-
     GRA_SIZE  = d.nr * 2 * d.nkx * d.nky
     GRA_SHAPE = (d.nr, 2, d.nkx, d.nky)
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ########################################################################### 
-    print(f"\tUnique reference of run: {d.refname}")
-    print(f"\tProperties to calculate: {PROP}")
-    print(f"\tMinimum band: {MIN_BAND}")
-    print(f"\tMaximum band: {MAX_BAND}")
-    print(f"\tNumber of processes: {NPR}\n")
-    sys.stdout.flush()
+    logger.info(f"\tUnique reference of run: {d.refname}")
+    logger.info(f"\tProperties to calculate: {prop}")
+    logger.info(f"\tMinimum band: {min_band}")
+    logger.info(f"\tMaximum band: {max_band}")
+    logger.info(f"\tNumber of processes: {npr}\n")
 
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS
@@ -110,28 +101,29 @@ if __name__ == "__main__":
     ###########################################################################
     # 4. CALCULATE BERRY GEOMETRY
     ###########################################################################
-    if PROP == "both" or PROP == "connection":
-        for idx in range(MIN_BAND, MAX_BAND + 1):
-            wfcgra[:] = np.load(f"wfcgra{idx}.npy")
+    if prop == "both" or prop == "connection":
+        for idx in range(min_band, max_band + 1):
+            wfcgra = np.load(os.path.join(d.workdir, f"wfcgra{idx}.npy"))
 
-            berry_conn = time_fn(0, 1, prefix="\t")(berry_connection)
-            work_load = ((idx_pos, idx) for idx_pos in range(MIN_BAND, MAX_BAND + 1))
+            work_load = ((idx_pos, idx) for idx_pos in range(min_band, max_band + 1))
 
-            with Pool(NPR) as pool:
-                pool.starmap(berry_conn, work_load)
+            with Pool(npr) as pool:
+                pool.starmap(berry_connection, work_load)
 
-    if PROP == "both" or PROP == "curvature":
-        for idx in range(MIN_BAND, MAX_BAND + 1):
-            wfcgra[:] = np.load(f"wfcgra{idx}.npy")
+    if prop == "both" or prop == "curvature":
+        for idx in range(min_band, max_band + 1):
+            wfcgra = np.load(os.path.join(d.workdir, f"wfcgra{idx}.npy"))
 
-            berry_curv = time_fn(0, 1, prefix="\t")(berry_curvature)
-            work_load = ((idx, idx_) for idx_ in range(MIN_BAND, MAX_BAND + 1))
+            work_load = ((idx, idx_) for idx_ in range(min_band, max_band + 1))
 
-            with Pool(NPR) as pool:
-                pool.starmap(berry_curv, work_load)
+            with Pool(npr) as pool:
+                pool.starmap(berry_curvature, work_load)
 
     ###########################################################################
     # Finished
     ###########################################################################
 
-    footer(tempo(STARTTIME, time.time()))
+    logger.footer()
+
+if __name__ == "__main__":
+    run_berry_geometry(9, log("berry_geometry", "BERRY GEOMETRY", "version", logging.DEBUG), npr=10, prop="both")
