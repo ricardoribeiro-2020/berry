@@ -1,4 +1,4 @@
-from typing import Dict, Union, List
+from typing import Dict, Union, List, Tuple
 from multiprocessing import Pool
 from itertools import product
 
@@ -308,7 +308,7 @@ class Preprocess:
         with open(self.nscf, "w") as f:
             f.write(nscf_content)
 
-    def _build_kpoints(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _build_kpoints(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         kpoints = np.zeros((self.__nks, 3), dtype=np.float64)
         nktoijl = np.zeros((self.__nks, 3), dtype=np.int64)
         ijltonk = np.zeros((self.nkx, self.nky, self.nkz), dtype=np.int64)
