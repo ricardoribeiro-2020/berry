@@ -59,33 +59,35 @@ def master_cli():
     # 1. DEFINING MASTER CLI ARGS
     ###########################################################################
     try:
-        parser = CustomParser(description="""Master CLI for the Berry Suite.
-The Berry Suite is a collection of programs that have to be run in a specific order. This CLI is meant to help the user run the programs in the correct order
-and to help the user understand what each program does. If running running this CLI, the user must specify the program to run and the arguments for that program.""")
+        parser = CustomParser(description="""Master Command Line Interface (CLI) for the Berry Suite.
+The Berry Suite is a collection of programs that have to be run in a specific order. 
+This CLI is meant to help the user run the programs in the correct order
+and to help the user understand what each program does. 
+When running this CLI, the user must specify the program to run and the arguments for that program.""")
         sub_parser = parser.add_subparsers(dest="program", help="Choose the program to run.")
         sub_parser.add_parser("enable_autocomplete", help="Enable autocomplete for the CLI.")
 
-        preprocess_parser = sub_parser.add_parser("preprocess", help="Extract DFT calculations from specific program.", description="Extract DFT calculations from specific program.")
-        preprocess_parser.add_argument("input_file", type=str, help="Path to input file from where to extract the run parameters.")
+        preprocess_parser = sub_parser.add_parser("preprocess", help="Run and extract data from DFT calculations. This should be the first to run.", description="Run and extract data from DFT calculations. This should be the first to run.")
+        preprocess_parser.add_argument("input_file", type=str, help="Path to input file with the run parameters.")
         preprocess_parser.add_argument("-o", default="preprocess", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
         preprocess_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
         
         if WFCGEN:
-            wfc_parser = sub_parser.add_parser("wfcgen", help="Generate Wannier functions from DFT calculations.", description="Generate Wannier functions from DFT calculations.")
+            wfc_parser = sub_parser.add_parser("wfcgen", help="Extracts wavefunctions from DFT calculations.", description="Extracts wavefunctions from DFT calculations.")
         if DOT:
-            dot_parser = sub_parser.add_parser("dot", help="Calculate the dot product between the neighbouring points of the wavefunction.", description="Calculate the dot product between the neighbouring points of the wavefunction.")
+            dot_parser = sub_parser.add_parser("dot", help="Calculates the dot product of Bloch factors of nearby wavefunctions.", description="Calculates the dot product of Bloch factors of nearby wavefunctions.")
         if CLUSTER:
-            cluster_parser = sub_parser.add_parser("cluster", help="Classify the k points to solve band crossing problem.", description="Classify the k points to solve band crossing problem.")
+            cluster_parser = sub_parser.add_parser("cluster", help="Classify the eigenstates in bands.", description="Classify the eigenstates in bands.")
         if BASIS:
-            basis_parser = sub_parser.add_parser("basis", help="Find the problematic cases and make a basis rotation of the wavefunctions.", description="Find the problematic cases and make a basis rotation of the wavefunctions.")
+            basis_parser = sub_parser.add_parser("basis", help="Finds problematic cases and make a local basis rotation of the wavefunctions.", description="Finds problematic cases and make a local basis rotation of the wavefunctions.")
         if R2K:
-            r2k_parser = sub_parser.add_parser("r2k", help="Calculate the grid of points in the k-space", description="Calculate the grid of points in the k-space")
+            r2k_parser = sub_parser.add_parser("r2k", help="Calculates the grid of points in the k-space", description="Calculates the grid of points in the k-space")
         if GEOMETRY:
-            geometry_parser = sub_parser.add_parser("geometry", help="Calculate the Berry connections and the Berry curvature.", description="Calculate the Berry connections and the Berry curvature.")
+            geometry_parser = sub_parser.add_parser("geometry", help="Calculates the Berry connections and the Berry curvature.", description="Calculates the Berry connections and the Berry curvature.")
         if CONDUCTIVITY:
-            conductivity_parser = sub_parser.add_parser("conductivity", help="Calculate the conductivity of the system..", description="Calculate the conductivity of the system.")
+            conductivity_parser = sub_parser.add_parser("conductivity", help="Calculates the optical linear conductivity of the system..", description="Calculates the optical linear conductivity of the system.")
         if SHG:
-            shg_parser = sub_parser.add_parser("shg", help="Calculate the second harmonic generation of the system..", description="Calculate the second harmonic generation of the system.")
+            shg_parser = sub_parser.add_parser("shg", help="Calculates the second harmonic generation conductivity of the system.", description="Calculate the second harmonic generation conductivity of the system.")
         argcomplete.autocomplete(parser)
 
         if WFCGEN:
