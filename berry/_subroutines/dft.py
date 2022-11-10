@@ -1,7 +1,7 @@
 """  These routines run the DFT calculations
 
 """
-#NOTE: This module is no longer used by any other module in the package
+#NOTE: This module is no longer used by any other module in the package. Waiting for removal.
 import os
 import sys
 import subprocess
