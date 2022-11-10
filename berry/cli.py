@@ -2,8 +2,9 @@ from typing import Callable, Dict, Any
 
 import os
 import sys
-import argparse, argcomplete
 import logging
+import subprocess
+import argparse, argcomplete
 
 #TODO: Talk to professor about np.savez
 #NOTE: np.savez could help with backwards compatability 
@@ -183,11 +184,46 @@ For more information add the '-h' flag to the 'preprocess' subcommand.""")
 # MAIN PROGRAMS
 ##################################################################################################
 def enable_autocomplete(args: argparse.Namespace):
-    """Enable autocomplete for the Berry Suite CLI."""
-    print("Enabling autocomplete for the Berry Suite CLI...")
-    print("This will require root access. Please enter your password.")
-    os.system("sudo cp ./berry_suite_autocomplete /etc/bash_completion.d/")
-    print("Done!")
+    """
+    Checks if ~/.bashrc exists and if not creates it. 
+    Then checks if eval '\"$(register-python-argcomplete berry)\"' is in the .bashrc file and if not asks the user if he wants to enable it.
+    """
+    bashrc_path = os.path.expanduser("~/.bashrc")
+    if not os.path.exists(bashrc_path):
+        with open(bashrc_path, "w") as f:
+            f.write("#!/bin/bash \n")
+            with open(bashrc_path, "r") as f:
+                if "eval \"$(register-python-argcomplete berry)\"" not in f.read():
+                    while True:
+                        user_input = input("Autocomplete is not enabled. Do you want to enable it? [y/n]: ")
+                        if user_input.lower() == "y":
+                            f.write("eval \"$(register-python-argcomplete berry)\"")
+                            print("Autocomplete enabled. Please restart your terminal!")
+                            break
+                        elif user_input.lower() == "n":
+                            print("Autocomplete not enabled.")
+                            break
+                        else:
+                            print("Please enter 'y' or 'n'!")
+                else:
+                    print("Autocomplete already enabled!")
+    else:
+        with open(bashrc_path, "r") as f:
+            if "eval \"$(register-python-argcomplete berry)\"" not in f.read():
+                while True:
+                    user_input = input("Autocomplete is not enabled. Do you want to enable it? [y/n]: ")
+                    if user_input.lower() == "y":
+                        with open(bashrc_path, "a") as f:
+                            f.write("eval \"$(register-python-argcomplete berry)\"")
+                        print("Autocomplete enabled. Please restart your terminal!")
+                        break
+                    elif user_input.lower() == "n":
+                        print("Autocomplete not enabled.")
+                        break
+                    else:
+                        print("Please enter 'y' or 'n'!")
+            else:
+                print("Autocomplete already enabled!")
 
 
 def preprocessing_cli(args: argparse.Namespace):
