@@ -1158,7 +1158,7 @@ class MATERIAL:
                 best_score = self.best_score[bn]
                 not_solved_prev = np.sum(self.correct_signalfinal_prev[:, bn] == NOT_SOLVED)
                 not_solved = np.sum(self.correct_signalfinal[:, bn] == NOT_SOLVED)
-                if score >= best_score and not_solved <= not_solved_prev:
+                if score != 0 and score >= best_score and not_solved <= not_solved_prev:
                     solved += 1
                 else:
                     break

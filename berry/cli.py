@@ -36,6 +36,10 @@ def restricted_float(x):
 WFCGEN = DOT = CLUSTER = BASIS = R2K = GEOMETRY = CONDUCTIVITY = SHG = 0
 try:
     import berry._subroutines.loaddata as d
+
+    # NOTE: Changed 'd.workdir' to 'os.getcwd()' because one might not want to run from the start
+    d.workdir = os.getcwd()
+
     if os.path.exists(os.path.join(d.workdir, "datafile.npy")):
         WFCGEN = 1
     if os.path.exists(os.path.join(d.workdir, "wfc")):
@@ -100,10 +104,10 @@ When running this CLI, the user must specify the program to run and the argument
             dot_parser.add_argument("-o", default="dot", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             dot_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
         if CLUSTER:
-            cluster_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{d.nbnd-1})"   , choices=range(d.nbnd)             , help="Maximum band to consider")
-            cluster_parser.add_argument("-mb", type=int, default=0, metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)             , help="Minimum band to consider (default: 0)")
-            cluster_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
-            cluster_parser.add_argument("-t",  type=restricted_float, default=0.95, metavar="[0.0-1.0]", help="Tolerance used for graph construction (default: 0.95)")
+            cluster_parser.add_argument("Mb" , type=int, nargs='?',   default=-1,   metavar=f"Mb (0-{d.nbnd-1})",    choices=range(d.nbnd) ,             help="Maximum band to consider")
+            cluster_parser.add_argument("-mb", type=int,              default=0,    metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)             , help="Minimum band to consider (default: 0)")
+            cluster_parser.add_argument("-np", type=int,              default=1,    metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
+            cluster_parser.add_argument("-t",  type=restricted_float, default=0.95, metavar="[0.0-1.0]",  help="Tolerance used for graph construction (default: 0.95)")
             cluster_parser.add_argument("-o", default="cluster", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             cluster_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
         if BASIS:
