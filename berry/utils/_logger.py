@@ -51,6 +51,7 @@ class log:
 
     @prepare_message
     def info(self, message):
+        print(message)
         self.logger.info(message)
 
     @prepare_message

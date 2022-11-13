@@ -649,7 +649,7 @@ class MATERIAL:
         while len(process) > 0:
             p = process.pop(0)
             p.join()
-
+        self.logger.info()
         return np.array(result)
 
     def get_components(self, alpha: float=0.5) -> None:
