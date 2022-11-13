@@ -1,12 +1,15 @@
 """  These routines run the DFT calculations
 
 """
-
+#NOTE: This module is no longer used by any other module in the package. Waiting for removal.
 import os
 import sys
 import subprocess
+import __main__
 
 import numpy as np
+
+from berry.utils._logger import log
 
 # pylint: disable=C0103
 ###################################################################################
@@ -131,9 +134,13 @@ def _nscf(mpi, directory, name_nscf, nscftemplate, nkps, kpoints, nbands):
 def _wfck2r(nk1, nb1, total_bands=1):
     """Extracts wfc in r-space using softawre from DFT suite."""
     import loaddata as d
+    LOG: log = __main__.LOG
 
     wfck2rfile = str(d.wfck2r)
-    mpi = f"mpirun -np {d.npr} "
+    if d.npr==1:
+        mpi = ""
+    else:
+        mpi = f"mpirun -np {d.npr} "
 
     coommand =f"&inputpp prefix = '{d.prefix}',\
                         outdir = '{d.outdir}',\
@@ -149,13 +156,12 @@ def _wfck2r(nk1, nb1, total_bands=1):
     # Captures the output of the shell command
     output = subprocess.check_output(cmd, shell=True)
     # Strips the output of fortran formating and converts to numpy formating
-    out1 = (
-        output.decode("utf-8")
-        .replace(")", "j")
-        .replace(", -", "-")
-        .replace(",  ", "+")
-        .replace("(", "")
-    )
+    out1 = (output.decode("utf-8")
+                .replace(")", "j")
+                .replace(", -", "-")
+                .replace(",  ", "+")
+                .replace("(", "")
+                )
     # puts the wavefunctions into a numpy array
     psi = np.fromstring(out1, dtype=complex, sep="\n")
 
@@ -170,13 +176,13 @@ def _wfck2r(nk1, nb1, total_bands=1):
 
     psifinal = []
     for i in range(total_bands):
-        print(f"\t{nk1:6d}  {(i + nb1):4d}  {mod_rpoint[i]:12.8f}  {deltaphase[i]:12.8f}   {not mod_rpoint[i] < 1e-5}")
+        LOG.debug(f"\t{nk1:6d}  {(i + nb1):4d}  {mod_rpoint[i]:12.8f}  {deltaphase[i]:12.8f}   {not mod_rpoint[i] < 1e-5}")
         
         # Subtract the reference phase for each point
         psifinal += list(psi[i * d.nr : (i + 1) * d.nr] * np.exp(-1j * deltaphase[i]))
     psifinal = np.array(psifinal)
 
-    outfiles = map(lambda band: f"{d.wfcdirectory}k0{nk1}b0{band+nb1}.wfc", range(total_bands))
+    outfiles = map(lambda band: f"{d.wfcdirectory}/k0{nk1}b0{band+nb1}.wfc", range(total_bands))
     for i, outfile in enumerate(outfiles):
         with open(outfile, "wb") as fich:
             np.save(fich, psifinal[i * d.nr : (i + 1) * d.nr])

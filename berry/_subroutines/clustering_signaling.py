@@ -1,8 +1,9 @@
+import logging
+
 import numpy as np
-import loaddata as d
+
+from berry import log, d, __version__
 from clustering_libs import evaluate_point
-from log_libs import log
-import time
 
 OLD_CORRECT = 5
 POTENTIAL_CORRECT = 4
@@ -16,7 +17,7 @@ NOT_SOLVED = 0
 
 if __name__ == "__main__":
     
-    LOG = log('signaling', 'Band Clustering Signaling', d.version)
+    LOG = log('signaling', 'Band Clustering Signaling', __version__, level=logging.DEBUG)
     LOG.header()
 
     # Reading data needed for the run
@@ -102,7 +103,7 @@ if __name__ == "__main__":
 
     bands_report = np.array(bands_report)
     final_report += '\n Signaling: how many events ' + \
-                    'in each band signaled.\n'
+                    'in each band d.\n'
     bands_header = '\n Band | '
 
     for signal in range(CORRECT+1):
@@ -120,5 +121,3 @@ if __name__ == "__main__":
             final_report += ' '*n_spaces+str(value) + '   '
 
     LOG.info(final_report)
-
-            

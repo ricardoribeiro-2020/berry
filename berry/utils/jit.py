@@ -4,6 +4,11 @@ def numba_njit(func):
     """
     try:
         import numba
+        import logging
+
+        numba_logger = logging.getLogger('numba')
+        numba_logger.setLevel(logging.WARNING)
+
         return numba.njit(func)
     except ImportError:
         return func
