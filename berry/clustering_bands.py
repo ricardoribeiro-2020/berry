@@ -21,6 +21,7 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
     # 1. DEFINING THE CONSTANTS
     ###########################################################################
     OUTPUT_PATH = ''
+    max_band = max_band if max_band != -1 else d.nbnd-1
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
@@ -28,8 +29,6 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
     if OUTPUT_PATH != "" and not os.path.exists(OUTPUT_PATH):
         os.mkdir(OUTPUT_PATH)
         logger.warning(f'The {OUTPUT_PATH} was created.')
-
-    n_bands = max_band-min_band+1
 
     logger.info(f'Min band: {min_band}    Max band: {max_band}')
     logger.info(f'Tolerance: {tol}')
