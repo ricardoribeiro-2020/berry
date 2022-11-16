@@ -410,9 +410,9 @@ class MATERIAL:
         self.degenerados = self.parallelize('Finding degenerate points', obtain_degenerates, enumerate(self.vectors))
 
         if len(self.degenerados) > 0:
-            self.logger.info('Degenerate Points: ')
+            self.logger.info('\tDegenerate Points: ')
             for d in self.degenerados:
-                self.logger.info(f'\t{d}')
+                self.logger.info(f'\t\t{d}')
 
         self.ENERGIES = energies
         self.nbnd = nbnd-min_band
@@ -532,7 +532,7 @@ class MATERIAL:
             N2 = np.array(self.get_neigs(d2))
             if len(N1) == 0 or len(N2) == 0:
                 continue
-            self.logger.info(f'Problem:\n\t{d1}: {N1}\n\t{d2}:{N2}')
+            self.logger.info(f'\tProblem:\n\t{d1}: {N1}\n\t{d2}: {N2}\n')
             NKS = self.nks
             if len(N1) > 1 and len(N2) > 1:
                 def n2_index(n1): return np.where(N2 % NKS == n1 % NKS)
@@ -563,7 +563,7 @@ class MATERIAL:
                 N1_ = [n[np.argmin(np.abs(n-n1))] for n in N]
                 N2_ = [n[np.argmax(np.abs(n-n1))] for n in N]
 
-            self.logger.info(f'Solution:\n\t{d1}: {N1_}\n\t{d2}:{N2_}')
+            self.logger.info(f'\tSolution:\n\t{d1}: {N1_}\n\t{d2}: {N2_}\n')
             for k in N1:
                 self.GRAPH.remove_edge(k, d1)
             for k in N2:
@@ -649,6 +649,7 @@ class MATERIAL:
         while len(process) > 0:
             p = process.pop(0)
             p.join()
+
         self.logger.info()
         return np.array(result)
 
@@ -672,8 +673,8 @@ class MATERIAL:
         ###########################################################################
         # Identify connected components inside the GRAPH
         ###########################################################################
-        self.logger.info('\n\nNumber of Components: ')
-        self.logger.info(f'{nx.number_connected_components(self.GRAPH)}')
+        self.logger.info('\n\n\tNumber of Components: ')
+        self.logger.info(f'\t{nx.number_connected_components(self.GRAPH)}')
         self.components = [COMPONENT(self.GRAPH.subgraph(c),
                                      self.kpoints_index,
                                      self.matrix)
@@ -708,8 +709,8 @@ class MATERIAL:
             else:
                 # If it can, then it is a sample.
                 samples.append(component)
-        self.logger.info(f'    Phase 1: {len(self.solved)}/{self.nbnd} Solved')
-        self.logger.info(f'    Initial clusters: {len(clusters)} Samples: {len(samples)}')
+        self.logger.info(f'\tPhase 1: {len(self.solved)}/{self.nbnd} Solved')
+        self.logger.info(f'\tInitial clusters: {len(clusters)} Samples: {len(samples)}')
 
         ###########################################################################
         # Assigning samples to clusters by selecting the best option
@@ -749,16 +750,16 @@ class MATERIAL:
             clusters[bn].join(sample)                                               # Join the sample to the best cluster               
             clusters[bn].was_modified = True
             self.logger.percent_complete(count[0], count[1], title='Clustering Samples')
-            self.logger.debug(f'{count[0]}/{count[1]} Sample corrected: {score}')
+            self.logger.debug(f'\t\t{count[0]}/{count[1]} Sample corrected: {score}')
             if clusters[bn].N == self.nks:
                 #  If the number of nodes inside the component equals the total number of k points, the cluster is considered solved
                 self.logger.debug('Cluster Solved')
                 self.solved.append(clusters.pop(bn))
 
-        self.logger.info(f'    Phase 2: {len(self.solved)}/{self.nbnd} Solved')
+        self.logger.info(f'\tPhase 2: {len(self.solved)}/{self.nbnd} Solved')
 
         if len(self.solved)/self.nbnd < 1:
-            self.logger.info(f'    New clusters: {len(clusters)}')
+            self.logger.info(f'\tNeclusters: {len(clusters)}')
 
         self.clusters : list[COMPONENT] = clusters
 
@@ -965,7 +966,7 @@ class MATERIAL:
             report.append(np.round(self.final_score[bn], 4))                # Set the final score
             bands_report.append(report)
 
-            self.logger.info(f'\n  New Band: {bn}\tnr fails: {report[0]}')
+            self.logger.info(f'\t\n\tNew Band: {bn}\tnr fails: {report[0]}')
             if self.logger.level == logging.DEBUG:
                 _bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
 
@@ -973,9 +974,9 @@ class MATERIAL:
         # Set up the data representation
         ###########################################################################
         bands_report = np.array(bands_report)
-        final_report += '\n Signaling: how many events ' + \
+        final_report += '\n\t Signaling: how many events ' + \
                         'in each band signaled.\n'
-        bands_header = '\n Band | '
+        bands_header = '\n\t Band | '
 
         header = list(range(MAX)) + [' ']
         for signal, value in enumerate(header):
@@ -984,14 +985,14 @@ class MATERIAL:
             n_spaces = len(str(np.max(bands_report[:, signal])))-1
             bands_header += ' '*n_spaces+str(value) + '   '
 
-        final_report += bands_header + '\n'
+        final_report += bands_header + '\n\t'
         final_report += '-'*len(bands_header)
 
         for bn, report in enumerate(bands_report):
             # Make the report
             #  bn    |    0    0   0     0     0   nks
             bn += self.min_band
-            final_report += f'\n {bn}{" "*(4-len(str(bn)))} |' + ' '
+            final_report += f'\n\t {bn}{" "*(4-len(str(bn)))} |' + ' '
             for signal, value in enumerate(report):
                 if signal < MAX:
                     value = int(value)
@@ -1136,14 +1137,14 @@ class MATERIAL:
         ###########################################################################
         while bands_final_flag and ALPHA >= min_alpha:
             print()
-            self.logger.info(f'\n\n  Clustering samples for TOL: {ALPHA}')
+            self.logger.info(f'\n\n\tClustering samples for TOL: {ALPHA}')
             self.get_components(alpha=ALPHA)                    # Obtain components from a Graph
 
-            self.logger.info('  Calculating output')        
+            self.logger.info('\tCalculating output')        
             self.obtain_output()                            # Compute the result
             self.print_report(self.signal_final)            # Print result
 
-            self.logger.info('  Validating result')     
+            self.logger.info('\tValidating result')     
             self.correct_signal()                           # Evaluate the energy continuity and perform a new Graph
             self.print_report(self.correct_signalfinal)     # Print result
             

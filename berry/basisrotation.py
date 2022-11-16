@@ -45,7 +45,7 @@ def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
         dphase = d.phase[:, k] * np.conjugate(d.phase[:, kneig])
         dot_product = np.sum(dphase * psinew * np.conjugate(psineig)) / d.nr
         dp = np.abs(dot_product)
-        logger.info(f'old_dp: {connections[k, i_neig, machbn, bneig]} new_dp: {dp}')
+        logger.info(f'\told_dp: {connections[k, i_neig, machbn, bneig]} new_dp: {dp}')
         dot_products.append(dp)
 
         dot_products_neigs = []
@@ -56,7 +56,7 @@ def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
             connection = dp if k2_neig == k else connections[kneig, j_neig, bneig, bn2neig]
             dot_products_neigs.append(connection)
         new_signal = evaluate_result(dot_products_neigs)
-        logger.info(f'old_signal: {sigfinal[kneig, bn]} new_signal: {new_signal}')
+        logger.info(f'\told_signal: {sigfinal[kneig, bn]} new_signal: {new_signal}')
         sigfinal[kneig, bn] = new_signal
     
     sigfinal[k, bn] = evaluate_result(dot_products)
@@ -72,33 +72,33 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
 
     # Reading data needed for the run
     berrypath = d.berrypath
-    logger.info("     Unique reference of run:", d.refname)
-    logger.info("     Path to BERRY files:", berrypath)
-    logger.info("     Directory where the wfc are:", d.wfcdirectory)
-    logger.info("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
-    logger.info("     Total number of k-points:", d.nks)
-    logger.info("     Total number of points in real space:", d.nr)
-    logger.info("     Number of bands:", d.nbnd)
+    logger.info("\tUnique reference of run:", d.refname)
+    logger.info("\tPath to BERRY files:", berrypath)
+    logger.info("\tDirectory where the wfc are:", d.wfcdirectory)
+    logger.info("\tNumber of k-points in each direction:", d.nkx, d.nky, d.nkz)
+    logger.info("\tTotal number of k-points:", d.nks)
+    logger.info("\tTotal number of points in real space:", d.nr)
+    logger.info("\tNumber of bands:", d.nbnd)
     logger.info()
-    logger.info("     Neighbors loaded")
-    logger.info("     Eigenvalues loaded")
+    logger.info("\tNeighbors loaded")
+    logger.info("\tEigenvalues loaded")
 
     dotproduct = np.load(os.path.join(d.workdir, "dpc.npy"))
     connections = np.load(os.path.join(d.workdir, "dp.npy"))
-    logger.info("     Dot product loaded")
+    logger.info("\tDot product loaded")
 
-    logger.info("     Reading files bandsfinal.npy and signalfinal.npy")
+    logger.info("\tReading files bandsfinal.npy and signalfinal.npy")
     bandsfinal = np.load(os.path.join(d.workdir, "bandsfinal.npy"))
     signalfinal = np.load(os.path.join(d.workdir, "signalfinal.npy"))
     degeneratefinal = np.load(os.path.join(d.workdir, "degeneratefinal.npy"))
 
     ###################################################################################
     logger.info()
-    logger.info("     **********************")
-    logger.info("     Problems not solved")
+    logger.info("\t**********************")
+    logger.info("\tProblems not solved")
     if degeneratefinal.shape[0] == 0:
         logger.footer()
-        exit()
+        exit(0)
     # Consider just the ones below last band wanted
     kpproblem = degeneratefinal[:, 0]
     bnproblem = degeneratefinal[:, [1, 2]]
@@ -107,9 +107,9 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     bnproblem = bnproblem[bands_use]
     machbandproblem = np.array(list(zip(bandsfinal[kpproblem, bnproblem[:, 0]],
                                         bandsfinal[kpproblem, bnproblem[:, 1]])))
-    logger.info("      k-points", kpproblem)
-    logger.info("      in bands", bnproblem)
-    logger.info("      mach  bands", machbandproblem)
+    logger.info("\tk-points\n", kpproblem)
+    logger.info("\tin bands\n", bnproblem)
+    logger.info("\tmach  bands\n", machbandproblem)
 
 #   logger.info(karray)
 #   logger.info(karray[0])
@@ -118,7 +118,7 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     for nki, nk0 in enumerate(kpproblem):
         logger.info()
         logger.info()
-        logger.info("     K-point where problem will be solved:", nk0)
+        logger.info("\tK-point where problem will be solved:", nk0)
         for j in range(4):  # Find the neigbhors of the k-point to be used
             nk = d.neighbors[nk0, j]  # on interpolation
 #            logger.info(j, nk, bnproblem[karray[i][0]])
@@ -128,8 +128,8 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
                 nkj = j
                 break
 
-        logger.info("     Reference k-point:", nk)
-        logger.info("     Bands that will be mixed:",nb1, nb2)
+        logger.info("\tReference k-point:", nk)
+        logger.info("\tBands that will be mixed:",nb1, nb2)
 
         dotA1 = dotproduct[nk0, nkj, nb1, nb1]
         dotA2 = dotproduct[nk0, nkj, nb1, nb2]
@@ -159,25 +159,25 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
 
         res = minimize(func, a, args=dot, options = myoptions, bounds=bnds, constraints=const)
 
-        logger.info("     Result:", res.x)
+        logger.info("\tResult:", res.x)
         ca1 = res.x[0]*np.exp(1j*res.x[1])
-        logger.info("     a1 = ", ca1)
+        logger.info("\ta1 = ", ca1)
         ca2 = np.sqrt(1 - res.x[0]**2)*np.exp(1j*res.x[2])
-        logger.info("     a2 = ", ca2)
+        logger.info("\ta2 = ", ca2)
         cb1 = res.x[3]*np.exp(1j*res.x[4])
-        logger.info("     b1 = ", cb1)
+        logger.info("\tb1 = ", cb1)
         cb2 = np.sqrt(1 - res.x[3]**2)*np.exp(1j*res.x[5])
-        logger.info("     b2 = ", cb2)
+        logger.info("\tb2 = ", cb2)
 
         psinewA = np.zeros((int(d.nr)), dtype=complex)
         psinewB = np.zeros((int(d.nr)), dtype=complex)
 
         infile = os.path.join(d.wfcdirectory, f"k0{nk0}b0{nb1}.wfc")
         logger.info()
-        logger.info("     Reading file: ", infile)
+        logger.info("\tReading file: ", infile)
         psi1 = np.load(infile)  # puts wfc in this array
         infile = os.path.join(d.wfcdirectory, f"k0{nk0}b0{nb2}.wfc")
-        logger.info("     Reading file: ", infile)
+        logger.info("\tReading file: ", infile)
         psi2 = np.load(infile)  # puts wfc in this array
 
         psinewA = psi1*ca1 + psi2*ca2
@@ -189,11 +189,11 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
         # Save new files
         logger.info()
         outfile = os.path.join(d.wfcdirectory, f"k0{nk0}b0{nb1}.wfc1")
-        logger.info("     Writing file: ", outfile)
+        logger.info("\tWriting file: ", outfile)
         with open(outfile, "wb") as f:
             np.save(f, psinewA)
         outfile = os.path.join(d.wfcdirectory, f"k0{nk0}b0{nb2}.wfc1")
-        logger.info("     Writing file: ", outfile)
+        logger.info("\tWriting file: ", outfile)
         with open(outfile, "wb") as f:
             np.save(f, psinewB)
 
@@ -201,24 +201,19 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     #sys.exit("Stop")
     ###################################################################################
     logger.info()
-    logger.info(" *** Final Report ***")
+    logger.info("\t*** Final Report ***")
     logger.info()
     nrnotattrib = np.full((d.nbnd), -1, dtype=int)
     SEP = " "
-    #logger.info("     Bands: gives the original band that belongs to new band (nk,nb)")
+    #logger.info("Bands: gives the original band that belongs to new band (nk,nb)")
     for nb in range(max_band + 1):
         nk = -1
         nrnotattrib[nb] = np.count_nonzero(signalfinal[:, nb] == NOT_SOLVED)
         logger.info()
-        logger.info(
-            "  New band "
-            + str(nb)
-            + "         nr of fails: "
-            + str(nrnotattrib[nb])
-        )
-        _bands_numbers(d.nkx, d.nky, bandsfinal[:, nb])
+        logger.info(f"\tNew band {nb}\t\tnr of fails: {nrnotattrib[nb]}")
+        logger.info(_bands_numbers(d.nkx, d.nky, bandsfinal[:, nb]))
     logger.info()
-    logger.info(" Signaling")
+    logger.info("\tSignaling")
     nrsignal = np.zeros((d.nbnd, CORRECT+1), dtype=int)
     for nb in range(max_band + 1):
         nk = -1
@@ -226,34 +221,29 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
             nrsignal[nb, s] = np.count_nonzero(signalfinal[:, nb] == s)
 
         logger.info()
-        logger.info(
-            "     "
-            + str(nb)
-            + f"         {NOT_SOLVED}: "
-            + str(nrsignal[nb, NOT_SOLVED])
-        )
-        _bands_numbers(d.nkx, d.nky, signalfinal[:, nb])
+        logger.info(f"\t{nb}\t\t{NOT_SOLVED}: {nrsignal[nb, NOT_SOLVED]}")
+        logger.info(_bands_numbers(d.nkx, d.nky, signalfinal[:, nb]))
 
     logger.info()
-    logger.info("     Resume of results")
+    logger.info("\tResume of results")
     logger.info()
-    logger.info(f"     nr k-points not attributed to a band (bandfinal={NOT_SOLVED})")
-    logger.info("     Band       nr k-points")
+    logger.info(f"\tnr k-points not attributed to a band (bandfinal={NOT_SOLVED})")
+    logger.info("\tBand\tnr k-points")
     for nb in range(max_band + 1):
-        logger.info("     ", nb, "         ", nrnotattrib[nb])
+        logger.info("\t", nb, "\t", nrnotattrib[nb])
 
     logger.info()
-    logger.info("     Signaling")
+    logger.info("\tSignaling")
 
-    signal_report = '    Bands | '
+    signal_report = '\tBands | '
     for signal in range(CORRECT+1):
         n_spaces = len(str(np.max(nrsignal[:, signal])))-1
         signal_report += ' '*n_spaces+str(signal) + '   '
     
-    signal_report += '\n'+'-'*len(signal_report)
+    signal_report += '\n\t'+'-'*len(signal_report)
 
     for nb in range(max_band + 1):
-        signal_report += f'\n     {nb}{" "*(4-len(str(nb)))} |' + ' '
+        signal_report += f'\n\t{nb}{" "*(4-len(str(nb)) + 1)} |' + ' '
         for signal, value in enumerate(nrsignal[nb]):
                 n_max = len(str(np.max(nrsignal[:, signal])))
                 n_spaces = n_max - len(str(value))
@@ -262,20 +252,14 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
 
     logger.info()
 
-    logger.info("     Bands not usable (not completed)")
+    logger.info("\tBands not usable (not completed)")
     for nb in range(max_band + 1):
         if nrsignal[nb, NOT_SOLVED] != 0:
-            logger.info(
-                "      band ", nb, "  failed attribution of ", nrsignal[nb, NOT_SOLVED], " k-points"
-            )
+            logger.info(f"\tband {nb} failed attribution of {nrsignal[nb, NOT_SOLVED]} k-points")
         if nrsignal[nb, MISTAKE] != 0:
-            logger.info(
-                "      band ", nb, "  has incongruences in ", nrsignal[nb, MISTAKE], " k-points"
-            )
+            logger.info(f"\tband {nb} has incongruences in {nrsignal[nb, MISTAKE]} k-points")
         if nrsignal[nb, POTENTIAL_MISTAKE] != 0:
-            logger.info(
-                "      band ", nb, f"  signals {POTENTIAL_MISTAKE} in", nrsignal[nb, POTENTIAL_MISTAKE], " k-points"
-            )
+            logger.info(f"\tband {nb} signals {POTENTIAL_MISTAKE} in {nrsignal[nb, POTENTIAL_MISTAKE]} k-points")
     logger.info()
 
     np.save(os.path.join(d.workdir, 'signalfinal.npy'), signalfinal)

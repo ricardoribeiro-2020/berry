@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 
 import numpy as np
@@ -54,16 +55,16 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
     material = MATERIAL(d.nkx, d.nky, d.nbnd, d.nks, d.eigenvalues,
                         connections, d.neighbors, logger, n_process=npr)
 
-    logger.info('\n  Calculating Vectors')
+    logger.info('\n\tCalculating Vectors')
     material.make_vectors(min_band=min_band, max_band=max_band)
 
-    logger.info('  Calculating Connections')
+    logger.info('\tCalculating Connections')
     material.make_connections(tol=tol)
 
-    logger.info('  Solving problem')
+    logger.info('\tSolving problem')
     material.solve()
 
-    logger.info('Clustering Done')
+    logger.info('\tClustering Done')
 
     with open(os.path.join(d.workdir, 'final.report'), 'w') as f:
         f.write(material.final_report)
@@ -83,6 +84,7 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
     with open(os.path.join(d.workdir, 'final_score.npy'), 'wb') as f:
         np.save(f, material.final_score)
 
+    sys.stdout.write('\n')
     logger.footer()
 
 if __name__ == "__main__":
