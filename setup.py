@@ -1,5 +1,7 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
+
 from _version import __version__
+
 
 def get_long_description():
     with open('README.md') as f:
@@ -12,10 +14,10 @@ def get_requirements():
 setup(
     name='berry',
     version=__version__,
-    author='ADD AUTHOR',
-    author_email='ADD EMAIL',
-    url='ADD URL',
-    description='ADD DESCRIPTION',
+    author='Berry Developers',
+    author_email='ricardo.ribeiro@physics.org',
+    url='https://ricardoribeiro-2020.github.io/berry/',
+    description='The berry suite of programs extracts the Bloch wavefunctions from DFT calculations in an ordered way so they can be directly used to make calculations.',
     long_description=get_long_description(),
     long_description_content_type='text/markdown',
     packages=find_packages(),
@@ -31,6 +33,7 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3 :: Only',
         'License :: OSI Approved :: MIT License',
         'Operating System :: linux',
         'Topic :: Scientific/Engineering :: Physics',

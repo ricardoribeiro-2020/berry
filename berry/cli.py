@@ -91,7 +91,7 @@ When running this CLI, the user must specify the program to run and the argument
         if BASIS:
             basis_parser = sub_parser.add_parser("basis", help="Finds problematic cases and make a local basis rotation of the wavefunctions.", description="Finds problematic cases and make a local basis rotation of the wavefunctions.")
         if R2K:
-            r2k_parser = sub_parser.add_parser("r2k", help="Calculates the grid of points in the k-space", description="Calculates the grid of points in the k-space")
+            r2k_parser = sub_parser.add_parser("r2k", help="Calculates the grid of points in the k-space.", description="Calculates the grid of points in the k-space.")
         if GEOMETRY:
             geometry_parser = sub_parser.add_parser("geometry", help="Calculates the Berry connections and the Berry curvature.", description="Calculates the Berry connections and the Berry curvature.")
         if CONDUCTIVITY:
