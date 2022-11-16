@@ -4,9 +4,10 @@ from itertools import product
 
 import os
 import re
+import sys
 import time
-import xml.etree.ElementTree as ET
 import logging
+import xml.etree.ElementTree as ET
 
 import numpy as np
 
@@ -153,7 +154,16 @@ class Preprocess:
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility
-        self.logger.info(f"Saved datafile.npy in {self.work_dir}")
+            self.logger.info("\tPHASE saved to file phase.npy")
+            self.logger.info("\tNeighbors saved to file neighbors.dat")
+            self.logger.info("\tNeighbors saved to file neighbors.npy")
+            self.logger.info("\tEIGENVALUES saved to file eigenvalues.npy (Ry)")
+            self.logger.info("\tOCCUPATIONS saved to file occupations.npy")
+            self.logger.info("\tPositions saved to file positions.npy (bohr)")
+            self.logger.info("\tKPOINTS saved to file kpoints.npy (2pi/bohr)")
+            self.logger.info("\tNKTOIJL saved to file nktoijl.npy, with convertion from nk to ijl")
+            self.logger.info("\tIJLTONK saved to file ijltonk.npy, with convertion from ijl to nk")
+            self.logger.info("\tData saved to file datafile.npy")
 
         self.logger.footer()
 
@@ -201,10 +211,10 @@ class Preprocess:
     def compute_scf(self):
         scf_out = self.scf[:-3] + ".out"
         if os.path.isfile(scf_out):
-            self.logger.info(f"{os.path.basename(scf_out)} already exists. Skipping scf calculation.")
+            self.logger.info(f"\t{os.path.basename(scf_out)} already exists. Skipping scf calculation.")
             return
         else:
-            self.logger.info(f"Running scf calculation.")
+            self.logger.info(f"\tRunning scf calculation.")
 
             command = f"{self.__mpi} pw.x -i {self.scf} > {scf_out}"
             os.system(command)
@@ -215,10 +225,10 @@ class Preprocess:
 
         nscf_out = self.nscf[:-3] + ".out"
         if os.path.isfile(nscf_out):
-            self.logger.info(f"{os.path.basename(nscf_out)} already exists. Skipping nscf calculation.")
+            self.logger.info(f"\t{os.path.basename(nscf_out)} already exists. Skipping nscf calculation.")
             # return
         else:
-            self.logger.info(f"Running nscf calculation.")
+            self.logger.info(f"\tRunning nscf calculation.")
 
             command = f"{self.__mpi} pw.x -i {self.nscf} > {nscf_out}"
             os.system(command)
@@ -228,7 +238,7 @@ class Preprocess:
         return self.a1 * i / self.nr1 + self.a2 * k / self.nr2 + self.a3 * l / self.nr3
 
     def _extract_data_from_run(self):
-        self.logger.info(f"Extracting data from {self.dft_data_file}")
+        self.logger.info(f"\n\tExtracting data from {self.dft_data_file}")
 
         root = ET.parse(self.dft_data_file).getroot()
         output = root.find("output")
@@ -240,46 +250,49 @@ class Preprocess:
         # Necessary due to different non backwards compatible versions of QE
         self.wfck2r = "wfck2r.oct" if dft_version >= 6.7 else "wfck2r.mat"
 
-        self.logger.info(f"DFT {def_program} version {dft_version}.\n")
+        self.logger.info(f"\n\tDFT {def_program} version {dft_version}.\n")
 
-        self.logger.info(f"Lattice vectors in units of a0 (bohr)")
+        self.logger.info(f"\n\tLattice vectors in units of a0 (bohr)")
         self.a1, self.a2, self.a3 = [np.array(list(map(float, it.text.split()))) for it in output.find("atomic_structure").find("cell")]
-        self.logger.info("a1:", self.a1)
-        self.logger.info("a2:", self.a2)
-        self.logger.info("a3:", self.a3)
+        self.logger.info("\t\ta1:", self.a1)
+        self.logger.info("\t\ta2:", self.a2)
+        self.logger.info("\t\ta3:", self.a3)
 
-        self.logger.info(f"Reciprocal lattice vectors in units of 2pi/a0 (2pi/bohr)")
+        self.logger.info(f"\n\tReciprocal lattice vectors in units of 2pi/a0 (2pi/bohr)")
         self.b1, self.b2, self.b3 = [np.array(list(map(float, it.text.split()))) for it in output.find("basis_set").find("reciprocal_lattice")]
-        self.logger.info("b1:", self.b1)
-        self.logger.info("b2:", self.b2)
-        self.logger.info("b3:", self.b3)
+        self.logger.info("\t\tb1:", self.b1)
+        self.logger.info("\t\tb2:", self.b2)
+        self.logger.info("\t\tb3:", self.b3)
 
-        self.logger.info("Number of points in real space in each direction")
+        self.logger.info("\n\tNumber of points in real space in each direction")
         self.nr1 = int(output.find("basis_set").find("fft_grid").attrib["nr1"])
         self.nr2 = int(output.find("basis_set").find("fft_grid").attrib["nr2"])
         self.nr3 = int(output.find("basis_set").find("fft_grid").attrib["nr3"])
         self.nr = self.nr1 * self.nr2 * self.nr3
+        self.logger.info(f"\t\tnr1: {self.nr1}")
+        self.logger.info(f"\t\tnr2: {self.nr1}")
+        self.logger.info(f"\t\tnr3: {self.nr1}")
+        self.logger.info(f"\t\tnr: {self.nr}")
         self.ref_point = self.point * self.nr1 * self.nr2
-        self.logger.info(f"Total points in real space: {self.nr}")
-        self.logger.info(f"Point were phases match: {int(self.ref_point)}")
+        self.logger.info(f"\tPoint were phases match: {int(self.ref_point)}")
 
         nbnd = int(output.find("band_structure").find("nbnd").text)
-        self.logger.info(f"Number of bands in the DFT calculation: {nbnd}")
+        self.logger.info(f"\tNumber of bands in the DFT calculation: {nbnd}")
         self.nelec = float(output.find("band_structure").find("nelec").text)
-        self.logger.info(f"Number of electrons: {self.nelec}")
+        self.logger.info(f"\tNumber of electrons: {self.nelec}")
         nks = int(output.find("band_structure").find("nks").text)
-        self.logger.info(f"Number of k-points in the DFT calculation: {nks}")
+        self.logger.info(f"\tNumber of k-points in the DFT calculation: {nks}")
 
         self.non_colinear = False if output.find("band_structure").find("noncolin").text == "false" else True
-        self.logger.info(f"Non-colinear calculation: {self.non_colinear}")
+        self.logger.info(f"\tNon-colinear calculation: {self.non_colinear}")
         self.lsda = False if output.find("band_structure").find("lsda").text == "false" else True
-        self.logger.info(f"Spin polarized calculation: {self.lsda}")
+        self.logger.info(f"\tSpin polarized calculation: {self.lsda}")
 
         self.vb = self.nelec - 2 if self.non_colinear or self.lsda else (self.nelec / 2) - 1
         if self.vb - int(self.vb) != 0:
             self.logger.warning(f"The system is a metal!")  # TODO: add supoort for metals
         self.vb = int(self.vb)
-        self.logger.info(f"Valence band is: {self.vb}\n")
+        self.logger.info(f"\tValence band is: {self.vb}\n")
 
         self.eigenvalues = 2 * np.array([list(map(float, it.text.split())) for it in output.find("band_structure").iter("eigenvalues")])
 
@@ -331,21 +344,23 @@ class Preprocess:
         return kpoints, nktoijl, ijltonk
 
     def _log_inputs(self):
-        self.logger.info("Inputs:")
-        self.logger.info(f"Unique reference name: {self.ref_name}")
-        self.logger.info(f"Starting k-point of the mesh: {self.k0}")
-        self.logger.info(f"Number of k-points in the mesh: {self.nkx}x{self.nky}x{self.nkz}")
-        self.logger.info(f"Step of the mesh: {self.step}")
-        self.logger.info(f"To calculate point in real space where all phases match: {self.point}")
-        self.logger.info(f"Number of bands to be calculated: {self.nbnd}\n")
+        self.logger.info("\tUsing python version: " + sys.version)
 
-        self.logger.info(f"Will use {self.npr} processors")
-        self.logger.info(f"Working directory: {self.work_dir}")
-        self.logger.info(f"Wfc directory: {self.wfc_dir}")
-        self.logger.info(f"DFT directory: {self.dft_dir}")
-        self.logger.info(f"DFT output directory: {self.out_dir}")
-        self.logger.info(f"DFT pseudopotential directory: {self.pseudo_dir}")
-        self.logger.info(f"Name of the scf input file: {self.scf}")
-        self.logger.info(f"Name of the nscf input file: {self.nscf}")
-        self.logger.info(f"Name of the dft data file: {self.dft_data_file}\n")
+        self.logger.info("\n\tInputs:")
+        self.logger.info(f"\tUnique reference name: {self.ref_name}")
+        self.logger.info(f"\tStarting k-point of the mesh: {self.k0}")
+        self.logger.info(f"\tNumber of k-points in the mesh: {self.nkx}x{self.nky}x{self.nkz}")
+        self.logger.info(f"\tStep of the mesh: {self.step}")
+        self.logger.info(f"\tTo calculate point in real space where all phases match: {self.point}")
+        self.logger.info(f"\tNumber of bands to be calculated: {self.nbnd}\n")
+
+        self.logger.info(f"\tWill use {self.npr} processors\n")
+        self.logger.info(f"\tWorking directory: {self.work_dir}")
+        self.logger.info(f"\tWfc directory: {self.wfc_dir}")
+        self.logger.info(f"\n\tDFT directory: {self.dft_dir}")
+        self.logger.info(f"\tDFT output directory: {self.out_dir}")
+        self.logger.info(f"\tDFT pseudopotential directory: {self.pseudo_dir}")
+        self.logger.info(f"\n\tName of the scf input file: {self.scf}")
+        self.logger.info(f"\tName of the nscf input file: {self.nscf}")
+        self.logger.info(f"\tName of the dft data file: {self.dft_data_file}\n")
 

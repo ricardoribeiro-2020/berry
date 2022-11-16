@@ -29,7 +29,7 @@ class log:
         logging.basicConfig(filename=program+'.log',
                             filemode='w',
 #                            encoding='utf-8',
-                            format='%(asctime)s   %(levelname)s: %(message)s',
+                            format='%(message)s',
                             datefmt='%m/%d/%Y %H:%M:%S',
                             level=level)
         self.logger = logging.getLogger(program)
@@ -38,7 +38,7 @@ class log:
 
         ch = logging.StreamHandler()
         ch.setLevel(logging.WARNING)
-        ch.setFormatter(logging.Formatter('%(asctime)s  %(levelname)s: %(message)s'))
+        ch.setFormatter(logging.Formatter('%(message)s'))
         self.logger.addHandler(ch)
     
     def header(self):

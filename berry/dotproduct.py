@@ -2,6 +2,7 @@ from multiprocessing import Pool, Array
 from typing import Tuple
 
 import os
+from time import time
 import ctypes
 import logging
 
@@ -17,6 +18,7 @@ except:
 
 #TODO: Figure out how to share the dpc array between processes inside a class
 def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
+    start = time()
 
     dphase = d.phase[:, nk] * d.phase[:, neighbor].conj()
 
@@ -27,6 +29,8 @@ def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
 
             dpc[nk, j, band0, band1] = np.einsum("k,k,k->", dphase, wfc0, wfc1)
             dpc[neighbor, jNeighbor, band1, band0] = dpc[nk, j, band0, band1].conj()
+
+    logger.debug(f"\tFinished of nk: {nk:>4}\tneighbor: {neighbor:>4}\tin: {(time() - start):>4.2f} seconds")
 
 
 def get_point_neighbors(nk: int, j: int) -> None:
@@ -39,7 +43,7 @@ def get_point_neighbors(nk: int, j: int) -> None:
     return None
 
 def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logging.INFO):
-    global dpc
+    global dpc, logger
     logger = log(logger_name, "DOT PRODUCT", logger_level)
 
     if not 0 < npr <= os.cpu_count():
@@ -89,7 +93,7 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
     ###########################################################################
     np.save(os.path.join(d.workdir, "dpc.npy"), dpc)
     np.save(os.path.join(d.workdir, "dp.npy"), dp)
-    logger.info(f"\tDot products saved to file dpc.npy")
+    logger.info(f"\n\tDot products saved to file dpc.npy")
     logger.info(f"\tDot products modulus saved to file dp.npy")
 
     ###########################################################################

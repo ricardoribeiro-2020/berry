@@ -2,6 +2,7 @@ from multiprocessing import Pool, Array
 from typing import Literal
 
 import os
+from time import time
 import ctypes
 import logging
 
@@ -37,7 +38,10 @@ def berry_connection(n_pos: int, n_gra: int):
         ##  if not, needs division by d.nr
         return bcc / d.nr
 
+    start = time()
     bcc = aux_connection()
+    logger.debug(f"\tberry_connection{n_pos}_{n_gra} calculated in {time() - start:.2f} seconds")
+
 
     np.save(os.path.join(d.workdir, f"berryConn{n_pos}_{n_gra}.npy"), bcc)
 
@@ -67,12 +71,14 @@ def berry_curvature(idx: int, idx_: int) -> None:
         ##  if not, needs division by d.nr
         return bcr / d.nr
 
+    start = time()
     bcr = aux_curvature()
+    logger.debug(f"\tberry_curvature{idx}_{idx_} calculated in {time() - start:.2f} seconds")
 
     np.save(os.path.join(d.workdir, f"berryCur{idx}_{idx_}.npy"), bcr)
 
 def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curvature", "connection", "both"] = "both", logger_name: str = "geometry", logger_level: int = logging.INFO):
-    global wfcgra
+    global wfcgra, logger
     logger = log(logger_name, "BERRY GEOMETRY", logger_level)
     
     logger.header()
@@ -109,6 +115,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
 
             with Pool(npr) as pool:
                 pool.starmap(berry_connection, work_load)
+            logger.info()
 
     if prop == "both" or prop == "curvature":
         for idx in range(min_band, max_band + 1):
@@ -118,6 +125,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
 
             with Pool(npr) as pool:
                 pool.starmap(berry_curvature, work_load)
+            logger.info()
 
     ###########################################################################
     # Finished

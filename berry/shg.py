@@ -139,7 +139,9 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ###########################################################################
-    logger.info(f"\tList of bands: {band_list}")
+    logger.info(f"\tUsing {npr} processes")
+    
+    logger.info(f"\n\tList of bands: {band_list}")
     logger.info(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
     logger.info(f"\tNumber of bands: {d.nbnd}")
     logger.info(f"\tk-points step, dk {d.step}")                                      # Defines the step for gradient calculation dk
@@ -195,7 +197,7 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
                     np.real(sigma[omega][1, 0, 0]),
                 )
             )
-    logger.info("Real part of SHG saved to file sigma2r.dat")
+    logger.info("\tReal part of SHG saved to file sigma2r.dat")
 
     with open(os.path.join(d.workdir, "sigma2i.dat"), "w") as sigm:
         sigm.write("# Energy (eV), sigma_xxx, sigma_yyy, sigma_xxy, sigma_xyx, sigma_xyy, sigma_yyx, sigma_yxy, sigma_yxx\n")
@@ -214,7 +216,7 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
                     np.imag(sigma[omega][1, 0, 0]),
                 )
             )
-    logger.info("Imaginary part of SHG saved to file sigma2i.dat")
+    logger.info("\tImaginary part of SHG saved to file sigma2i.dat")
 
     ###################################################################################
     # Finished

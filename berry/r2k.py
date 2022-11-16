@@ -1,6 +1,7 @@
 from multiprocessing import Pool, Array
 
 import os
+from time import time
 import ctypes
 import logging
 
@@ -52,19 +53,27 @@ def calculate_wfcgra(npr: int) -> np.ndarray:
 
 
 def r_to_k(banda: int, npr: int) -> None:
+    start = time()
     read_wfc_files(banda, npr)
+    logger.debug(f"\twfc files read in {time() - start:.2f} seconds")
 
+    start = time()
     calculate_wfcpos(npr)
+    logger.debug(f"\twfcpos{banda} calculated in {time() - start:.2f} seconds")
 
+    start = time()
     calculate_wfcgra(npr)
+    logger.debug(f"\twfcgra{banda} calculated in {time() - start:.2f} seconds")
 
+    start = time()
     #IDEA: Try saving this files into a folder in different chunks
     np.save(os.path.join(d.workdir, f"wfcpos{banda}.npy"), wfcpos)
     np.save(os.path.join(d.workdir, f"wfcgra{banda}.npy"), wfcgra)
+    logger.debug(f"\twfcpos{banda} and wfcgra{banda} saved in {time() - start:.2f} seconds\n")
 
 
 def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "r2k", logger_level: int = logging.INFO):
-    global grad, signalfinal, bandsfinal, wfct_k, wfcpos, wfcgra
+    global grad, signalfinal, bandsfinal, wfct_k, wfcpos, wfcgra, logger
     logger = log(logger_name, "R2K", logger_level)
 
     logger.header()
@@ -100,6 +109,7 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     grad = Gradient(h=[d.step, d.step], acc=2)                                  # Defines gradient function in 2D
     signalfinal = np.load(os.path.join(d.workdir, "signalfinal.npy"))
     bandsfinal = np.load(os.path.join(d.workdir, "bandsfinal.npy"))
+    logger.info(f"\tSignal and bands files loaded")
 
     buffer = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)
     wfct_k = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCT_K_SHAPE)
