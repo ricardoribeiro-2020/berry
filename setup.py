@@ -12,7 +12,7 @@ def get_requirements():
         return f.read().splitlines()
 
 setup(
-    name='berry',
+    name='berry_suite',
     version=__version__,
     author='Berry Developers',
     author_email='ricardo.ribeiro@physics.org',
