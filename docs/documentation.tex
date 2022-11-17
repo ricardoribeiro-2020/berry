@@ -7,6 +7,8 @@
 \usepackage{amsfonts}
 \usepackage{amssymb}
 \usepackage{graphicx}
+\usepackage[toc,page]{appendix}
+\usepackage{pdfpages}
 
 \titleformat{\chapter}[display]
   {\normalfont\bfseries}{}{0pt}{\huge}
@@ -37,13 +39,12 @@ v1.0}
   \vspace*{0.5cm}
 
 \today
-
  \end{center}
 \end{titlepage}
 
 \tableofcontents
 
-\chapter{Introduction}\label{ch:introduction}
+\chapter{Getting Started}\label{ch:introduction}
 
  This guide gives a general introduction to the \textbf{berry} suite of programs, including instalation and running.
  An introduction to the basics of electronic structure calculations is given, in the context of this suite.
@@ -109,6 +110,68 @@ ricardo.ribeiro@physics.org
 We aknowledge the Fundação para a Ciência e a Tecnologia (FCT)
 under project  QUEST2D \emph{Excitations in quantum 2D materials}
 PTDC/FIS-MAC/2045/2021 and in the framework of the Strategic Funding UIDB/04650/2020.
+
+
+
+
+
+
+\chapter{Instalation}
+
+\section{PIP install}
+
+To install the \textbf{berry} suite a pip install command is enough:
+\begin{verbatim}
+  pip install berry_suite
+\end{verbatim}
+
+
+\section{Requirements}
+
+This version of \textbf{berry} only supports the DFT package {\sc Quantum Espresso}, version v.6.6 or higher.
+
+So a working {\sc Quantum Espresso} instalation has to be in the system, and must be in the \$PATH.
+
+\section{Running}\label{sec:running}
+
+ To run, first one has to create a working directory where the results will be saved,
+ and inside it create a directory called \emph{dft}.
+
+ Inside \emph{dft} should go the pseudopotential files for the atomic species of the dft calculation
+and the file \emph{scf.in} with the details of the scf run.
+You can use another name for the file, but then you have to add a line in the input file of
+the script \textbf{preprocess} to change the default (see section \nameref{sec:preprocessing}).
+
+ This \emph{scf.in} file has to be a {\sc Quantum Espresso} scf run file;
+ this is the only one implemented so far.
+
+ Create an input file (as described in chapter \nameref{ch:workflow}, section \nameref{sec:preprocessing})
+ in the working directory.
+
+ All the scripts should be run from the working directory.
+ To run, a command of the form:
+ \begin{verbatim}
+  berry [-h] script parameter [options]
+ \end{verbatim}
+where the \texttt{script} is one of the following
+\begin{verbatim}
+ preprocess
+ wfcgen
+ dot
+ cluster
+ basis
+ r2k band
+ geometry
+ condutivity
+ shg
+\end{verbatim}
+and the parameter is dependent on which script is beeing run.
+
+These scripts should be run in sequence, and the \emph{berry} command assures that all the needed files are present for each run.
+
+Chapter \nameref{ch:workflow} explains what each script does, what parameters are required and what options they have.
+
+
 
 
 
@@ -262,9 +325,9 @@ and the same for $\psi_B$ relative to $\psi_B^-$ and $\psi_B^+$.
 
 \section{Graph Theory (GT)}
 
-Graph Theory (GT) studies the properties and the applications of a mathematical structure called a Graph. 
-In a strict sense, a set of vertices (nodes) $V$ and a set of edges $E$ describes a Graph, $G(V, E)$. 
-A vertex (node), $v\in V$, is a terminal point, and an edge, is a link between two nodes. 
+Graph Theory (GT) studies the properties and the applications of a mathematical structure called a Graph.
+In a strict sense, a set of vertices (nodes) $V$ and a set of edges $E$ describes a Graph, $G(V, E)$.
+A vertex (node), $v\in V$, is a terminal point, and an edge, is a link between two nodes.
 This link must follow some relation, $R(v_1, v_2)$, between these nodes, for example, a co-authorship (edge) between two authors (nodes).
 
 The edges are the set defined by
@@ -272,38 +335,38 @@ The edges are the set defined by
     E = \left\{(v_1, v_2) : v_1, v_2 \in V \wedge \exists\, R(v_1, v_2)\right\}
 \end{equation}
 
-The edges are oriented when the relationship between two nodes are diferent in each direction ($R(v_1, v_2) \neq R(v_2, v_1)$). 
-Thus, the graph is a directed graph, for example, the papers' citations (one paper cites another, but the opposite is not true). 
+The edges are oriented when the relationship between two nodes are diferent in each direction ($R(v_1, v_2) \neq R(v_2, v_1)$).
+Thus, the graph is a directed graph, for example, the papers' citations (one paper cites another, but the opposite is not true).
 However, if all pairs of nodes have the same edge in both directions ($ R(v_1, v_2) = R(v_2, v_1)$) or the orientation is irrelevant, its graph is undirected.
 
-Furthermore, all relations need not have the same weight. For example, getting back to the co-authorship graph, some authors may collaborate more times with a few than others. 
-Thus, the edge between these two authors may include this weight $\omega(v_1, v_2)$ (it is a weighted graph). 
-Nonetheless, if the weights $\omega_e$ of all edges $e$ are the same ($\forall\, e\in E\; : \;\omega_e = \omega$) or the edges expresse a binary relation (may exist or not), the graph is unweighted. 
+Furthermore, all relations need not have the same weight. For example, getting back to the co-authorship graph, some authors may collaborate more times with a few than others.
+Thus, the edge between these two authors may include this weight $\omega(v_1, v_2)$ (it is a weighted graph).
+Nonetheless, if the weights $\omega_e$ of all edges $e$ are the same ($\forall\, e\in E\; : \;\omega_e = \omega$) or the edges expresse a binary relation (may exist or not), the graph is unweighted.
 In this work, we will use unweighted and undirected graphs.
 
-Another essential concept is that of the subgraph. 
-A subgraph $g(V^\prime, E^\prime)$ is a graph formed by a subset of vertices $V^\prime \subset V$ and edges $E^\prime \subset E$ of a bigger graph $G(V, E)$. 
+Another essential concept is that of the subgraph.
+A subgraph $g(V^\prime, E^\prime)$ is a graph formed by a subset of vertices $V^\prime \subset V$ and edges $E^\prime \subset E$ of a bigger graph $G(V, E)$.
 
 A subgraph $g$, whose nodes do not have any edge between nodes of another subgraph $g^\prime, g \neq g^\prime$ is called a component.
 
-Graph theory is very well studied, and there are many implemented algorithms to study graphs' properties. 
+Graph theory is very well studied, and there are many implemented algorithms to study graphs' properties.
 We will use the \textit{networkx} python module for the implementation and analysis of graphs.
 
 
 
 \section{Unsupervised Machine Learning (UML)}
 
-AI solves problems that normally require a human to make decisions. 
-The cornerstone of Artificial Intelligence is designing agents that learn how to make informed decisions in possibly ever-changing environments without human supervision. Machine learning is a subset of AI where models learn patterns from datasets. 
-How an artificial agent learns these patterns classifies them into Supervised or Unsupervised machine learning (UML) models. 
+AI solves problems that normally require a human to make decisions.
+The cornerstone of Artificial Intelligence is designing agents that learn how to make informed decisions in possibly ever-changing environments without human supervision. Machine learning is a subset of AI where models learn patterns from datasets.
+How an artificial agent learns these patterns classifies them into Supervised or Unsupervised machine learning (UML) models.
 
-Unlike supervised machine learning, which uses data labeled by an expert and learned patterns from comparison, UML algorithms are used for clustering or association because they identify patterns from uncategorized data. 
+Unlike supervised machine learning, which uses data labeled by an expert and learned patterns from comparison, UML algorithms are used for clustering or association because they identify patterns from uncategorized data.
 These algorithms recognize patterns in the datasets using some metrics to evaluate differences or similarities between data.
 
-UML algorithms for clustering use a dataset of uncategorized points, and a  problem dependent metric. 
-The algorithm processes the points to form groups (clusters) represented by some pattern or structure determined by the metric. 
+UML algorithms for clustering use a dataset of uncategorized points, and a  problem dependent metric.
+The algorithm processes the points to form groups (clusters) represented by some pattern or structure determined by the metric.
 The algorithm is called exclusive when a datapoint belongs exclusively to a single cluster.
-The band-crossing problem lies in this class of algorithms due to its structure. 
+The band-crossing problem lies in this class of algorithms due to its structure.
 Thus, we will work with this type of clustering algorithm.
 
 
@@ -311,68 +374,13 @@ Thus, we will work with this type of clustering algorithm.
 
 
 
-
-\chapter{Instalation}
-
-\section{PIP install}
-
-To install the \textbf{berry} suite a pip install command is enough:
-\begin{verbatim}
-  pip install berry_suite
-\end{verbatim}
-
-
-\section{Requirements}
-
-This version of \textbf{berry} only supports the DFT package {\sc Quantum Espresso}, version v.6.6 or higher.
-
-So a working {\sc Quantum Espresso} instalation has to be in the system, and must be in the \$PATH.
-
-\section{Running}\label{sec:running}
-
- To run, first one has to create a working directory where the results will be saved,
- and inside it create a directory called \emph{dft}.
-
- Inside \emph{dft} should go the pseudopotential files for the atomic species of the dft calculation
-and the file \emph{scf.in} with the details of the scf run.
-You can use another name for the file, but then you have to add a line in the input file of
-the script \textbf{preprocess} to change the default (see section \nameref{sec:preprocessing}).
-
- This \emph{scf.in} file has to be a {\sc Quantum Espresso} scf run file;
- this is the only one implemented so far.
-
- Create an input file (as described in chapter \nameref{ch:workflow}, section \nameref{sec:preprocessing})
- in the working directory.
-
- All the scripts should be run from the working directory.
- To run, a command of the form:
- \begin{verbatim}
-  berry [-h] script parameter [options]
- \end{verbatim}
-where the \texttt{script} is one of the following
-\begin{verbatim}
- preprocess 
- wfcgen
- dot
- cluster
- basis
- r2k band
- geometry 
- condutivity 
- shg  
-\end{verbatim}
-
-These scripts should be run in sequence, and the \emph{berry} command assures that all the needed files are present for each run.
-
-The following chapter explains what each script does and what options they have.
-
-
-
 \chapter{Workflow}\label{ch:workflow}
+
+
 
 \section{Preprocessing}\label{sec:preprocessing}
  After creating the files and directories mentioned in section \nameref{sec:running}, the next thing is
- to run the script \textbf{preprocess}, 
+ to run the script \textbf{preprocess},
  \begin{verbatim}
   berry preprocess inputfile
  \end{verbatim}
@@ -520,6 +528,7 @@ It uses data from files \emph{dp.npy} and \emph{eigenvalues.npy} to establish co
    \item[\emph{signalfinal.npy}] signalfinal[k,b] is a measure of the quality of the attribution to a band.
  \end{description}
 
+ A detailed explanation of the algorithm is given in the appendix \nameref{cha:cluster}.
 
 
 \section{Basis rotation}
@@ -616,6 +625,12 @@ Both need two or three arguments.
 
 
 
+
+
+\begin{appendices}
+
+
+
 \chapter{Glossary}
 
 This glossary indicates the meaning of the variables used in the suite \textbf{berry}.
@@ -676,11 +691,7 @@ This glossary indicates the meaning of the variables used in the suite \textbf{b
 \end{tabularx}
 
 
-
-\chapter{Appendix}
-
-
-\section{List of files in the suite}
+\chapter{List of files in the suite}
  All programs of this package are in python 3.
 
 The package contains the python scripts in the main berry directory:
@@ -737,5 +748,30 @@ It is likely that some of these scripts will be merged with others
 while new ones will appear due to new functionalities.
 
 
+
+
+\chapter{Flowchart}
+\includepdf[scale=1]{figures/berry_flow_chart.pdf}
+
+
+\chapter{Algorithm of \emph{cluster} script}
+\label{cha:cluster}
+
+Algorithm of \emph{cluster} script
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\end{appendices}
 
 \end{document}
