@@ -167,7 +167,7 @@ For more information add the '-h' flag to the 'preprocess' subcommand.""")
     # ASSERTIONS
     ###########################################################################
     if args.version:
-        print(f"Berry Suite version {__version__}")
+        print(f"Berry Suite version: {__version__}")
         sys.exit(0)
     
     if args.enable_autocomplete:
