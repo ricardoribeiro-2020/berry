@@ -1,0 +1,156 @@
+\usepackage{latexsym}      % needed math symbols
+\usepackage{hyperref}
+\hypersetup{
+ colorlinks=true,
+ citecolor=blue,
+ linkcolor=blue,
+ urlcolor=blue,
+ pdfpagemode=UseNone,
+ pdfstartview=FitH}
+\usepackage{graphicx}      % for importing eps figures
+\usepackage{amsmath}       % for advanced math symbols
+\usepackage[affil-sl]{authblk} 			% found in preprint bundle package, http://ctan.org/pkg/preprint
+\usepackage[margin=2.5cm]{geometry} % paper and margin formats as set by SPP
+
+\usepackage{csquotes}
+\usepackage{enumerate}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{bbold}
+\usepackage{braket}
+\usepackage{physics}
+\usepackage{multicol}
+\usepackage{svg}
+\usepackage{float}
+\usepackage{tabularx}
+\usepackage{pdfpages}
+\usepackage[framemethod=tikz]{mdframed}
+\usepackage{pgfplots}
+\usepackage{comment}
+\usepackage{fancyhdr}
+\usepackage{appendix}
+\usepackage{multirow}
+\usepackage{siunitx}
+\usepackage[bottom]{footmisc}
+\usepackage{listings}
+\usepackage{qcircuit}
+\usepackage{stmaryrd}
+
+\usetikzlibrary{positioning}
+\usetikzlibrary{arrows,shapes}
+\usetikzlibrary{arrows.meta}
+\usepackage{tikz}
+
+
+\parindent 0.5cm    % paragraphs indent
+\topmargin=-2cm
+
+% SPP details
+% \newcommand{\spp}{39\textsuperscript{th}}
+% \newcommand{\sppvenue}{}
+%\newcommand{\sppvenue}{City, }
+% \newcommand{\sppdate}{20--22 October 2021}
+
+
+% title style
+\newcommand*{\TitleFont}{\bfseries \Large }
+
+% authblk style
+% \newcommand{\authorsep}{,\negmedspace}
+% \newcommand{\lastauthorsep}{}
+% \makeatletter
+% \renewcommand\AB@authnote[1]{{\textsuperscript{\normalfont#1}\ }}
+% \renewcommand\Authsep{}
+% \renewcommand\Authands{and }
+% \renewcommand\Authfont{\small {\bfseries}}
+% \renewcommand\Affilfont{\small	\itshape}
+% \setlength{\affilsep}{5pt}
+% \makeatother
+% \newcommand{\corremail}{\rm ~}
+
+% remove date
+% \date{}
+
+% for abstract style
+% \makeatletter
+% \newbox\abstract@box
+% \renewenvironment{abstract}
+%    {\global\setbox\abstract@box=\vbox\bgroup
+%      \hsize=\textwidth\linewidth=\textwidth
+%     \vspace{-2em}
+% 		\small
+% 		%\begin{center}
+% 		{\hspace{1.2em}\bfseries \abstractname\vspace{.0em}\vspace{\z@} }%
+% 		%\end{center}
+%     \quotation}
+%   {\endquotation\egroup}
+% % \expandafter\def\expandafter\@maketitle\expandafter{\@maketitle
+% % 	\ifvoid\abstract@box\else\unvbox\abstract@box\if@twocolumn\vskip1.5em\fi\fi}
+% \makeatother
+% \providecommand{\keywords}[1]{\vspace{.5em}\noindent \mdseries{\textbf{Keywords:}} #1}
+% \providecommand{\DOI}[1]{\vspace{#1\baselineskip}}
+% \providecommand{\dateline}[1]{\vspace*{-1\baselineskip}\normalsize Submitted: #1\vspace*{-1.5\baselineskip}}
+
+% for section formatting style
+\makeatletter
+\renewcommand\section{\@startsection
+   {section}{1}{0pt}%
+   {-\baselineskip}%
+   {0.1\baselineskip}%
+   {\normalfont\large\bfseries}}%
+\renewcommand\subsection{\@startsection
+   {subsection}{1}{0pt}%
+   {-\baselineskip}%
+   {0.1\baselineskip}%
+   {\normalfont\bfseries}}%
+\makeatother
+\renewcommand\thesection{\arabic{section}}
+
+% for the figure and tables, captions
+\usepackage{booktabs}
+\usepackage{dcolumn}
+\newcolumntype{d}[1]{D{.}{.}{#1}}
+
+\usepackage{caption}
+\captionsetup[table]{position=above,font={rm,small}}
+\captionsetup[figure]{font={rm,small}}
+
+% for citations formatting style
+\usepackage[numbers,square,sort&compress]{natbib}
+\setlength\bibsep{1pt}
+
+%%for first page styling
+%\providecommand{\articlenum}[0]{}
+%\usepackage{fancyhdr}
+\fancypagestyle{titlestyle}
+{
+  \renewcommand{\headrulewidth}{0pt}
+  \renewcommand{\footrulewidth}{0.1pt}
+  \fancyhf[l]{}
+  \fancyhf[c]{ }
+  \fancyhf[r]{ }
+  \fancyfoot[l]{}
+  \fancyfoot[c]{1}
+  \fancyfoot[r]{}
+}
+
+% styling for the second page onwards
+\renewcommand{\headrulewidth}{0pt}
+%\renewcommand{\footrulewidth}{0.1pt}
+\fancyhf[l]{}
+\fancyhf[r]{}
+\fancyhf[c]{}
+\fancyfoot[l]{}
+\fancyfoot[c]{\thepage}
+\fancyfoot[r]{}
+\pagestyle{fancy}
+
+% other packages and macros
+\usepackage{bm}
+\renewcommand{\vec}[1]{\text{\bfseries #1}}
+
+
+\definecolor{myblue1}{HTML}{3262B0}
+\definecolor{myblue2}{HTML}{3FACCF}
+\definecolor{myred1}{HTML}{B43333}
