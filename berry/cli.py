@@ -15,12 +15,21 @@ from _version import __version__
 
 class CustomParser(argparse.ArgumentParser):
     def _check_value(self, action, value):
-        if not isinstance(action.choices, range):
-            super()._check_value(action, value)
-        elif action.choices is not None and value not in action.choices:
+        if isinstance(action.choices, dict):
+            if 'preprocess' in action.choices.keys() and value not in action.choices.keys():
+                msg = f"""invalid program choice: {value}.
+This error probably means you are trying to run a program in the incorrect order and therefore do not have the required files.
+Try the program in the following order: 'preprocess', 'wfcgen', 'dot', 'cluster', 'r2k', 'geometry', 'condutivity', 'shg'."""
+                raise argparse.ArgumentTypeError(msg)
+            elif 'both' in action.choices.keys() and value not in action.choices.keys():
+                msg = f"""invalid program choice in geometry program: {value}. Please choose from the following: {action.choices.keys()}"""
+
+        elif isinstance(action.choices, range) and action.choices is not None and value not in action.choices:
             first, last = action.choices[0], action.choices[-1]
             msg = f"invalid choice: {value}. Choose from {first} up to (and including) {last}."
             raise argparse.ArgumentError(action, msg)
+        else:
+            super()._check_value(action, value)
 
 def restricted_float(x):
     try:
@@ -174,7 +183,7 @@ For more information add the '-h' flag to the 'preprocess' subcommand.""")
         args = parser.parse_args()
 
     ###########################################################################
-    # ASSERTIONS
+    # HANDLE BERRY SUITE OPTIONAL ARGUMENTS
     ###########################################################################
     if args.version:
         print(f"Berry Suite version: {__version__}")
