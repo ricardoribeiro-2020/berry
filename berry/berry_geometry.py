@@ -77,9 +77,9 @@ def berry_curvature(idx: int, idx_: int) -> None:
 
     np.save(os.path.join(d.workdir, f"berryCur{idx}_{idx_}.npy"), bcr)
 
-def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curvature", "connection", "both"] = "both", logger_name: str = "geometry", logger_level: int = logging.INFO):
+def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curvature", "connection", "both"] = "both", logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
     global wfcgra, logger
-    logger = log(logger_name, "BERRY GEOMETRY", logger_level)
+    logger = log(logger_name, "BERRY GEOMETRY", logger_level, flush)
     
     logger.header()
     

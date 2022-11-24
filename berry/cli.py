@@ -15,12 +15,21 @@ from _version import __version__
 
 class CustomParser(argparse.ArgumentParser):
     def _check_value(self, action, value):
-        if not isinstance(action.choices, range):
-            super()._check_value(action, value)
-        elif action.choices is not None and value not in action.choices:
+        if isinstance(action.choices, dict):
+            if 'preprocess' in action.choices.keys() and value not in action.choices.keys():
+                msg = f"""invalid program choice: {value}.
+This error probably means you are trying to run a program in the incorrect order and therefore do not have the required files.
+Try the program in the following order: 'preprocess', 'wfcgen', 'dot', 'cluster', 'r2k', 'geometry', 'condutivity', 'shg'."""
+                raise argparse.ArgumentTypeError(msg)
+            elif 'both' in action.choices.keys() and value not in action.choices.keys():
+                msg = f"""invalid program choice in geometry program: {value}. Please choose from the following: {action.choices.keys()}"""
+
+        elif isinstance(action.choices, range) and action.choices is not None and value not in action.choices:
             first, last = action.choices[0], action.choices[-1]
             msg = f"invalid choice: {value}. Choose from {first} up to (and including) {last}."
             raise argparse.ArgumentError(action, msg)
+        else:
+            super()._check_value(action, value)
 
 def restricted_float(x):
     try:
@@ -79,6 +88,7 @@ When running this CLI, the user must specify the program to run and the argument
 
         preprocess_parser = sub_parser.add_parser("preprocess", help="Run and extract data from DFT calculations. This should be the first to run.", description="Run and extract data from DFT calculations. This should be the first to run.")
         preprocess_parser.add_argument("input_file", type=str, help="Path to input file with the run parameters.")
+        preprocess_parser.add_argument("-flush", type=str, help="Flushes output into stdout.")
         preprocess_parser.add_argument("-o", default="preprocess", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
         preprocess_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
 
@@ -103,10 +113,12 @@ When running this CLI, the user must specify the program to run and the argument
         if WFCGEN:
             wfc_parser.add_argument("-nk"  , type=int, metavar=f"[0-{d.nks-1}]"  , default=None, choices=range(d.nks)  , help="K-point to generate the wavefunction for all bands (default: All).")
             wfc_parser.add_argument("-band", type=int, metavar=f"[0-{d.nbnd-1}]", default=None, choices=range(d.nbnd), help="Band to generate the wavefunction for a single k-point (default: All).")
+            wfc_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             wfc_parser.add_argument("-o", default="wfc", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             wfc_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
         if DOT:
             dot_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
+            dot_parser.add_argument("-flush", type=str, help="Flushes output into stdout.")
             dot_parser.add_argument("-o", default="dot", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             dot_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
         if CLUSTER:
@@ -114,17 +126,20 @@ When running this CLI, the user must specify the program to run and the argument
             cluster_parser.add_argument("-mb", type=int,              default=0,    metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)             , help="Minimum band to consider (default: 0)")
             cluster_parser.add_argument("-np", type=int,              default=1,    metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
             cluster_parser.add_argument("-t",  type=restricted_float, default=0.95, metavar="[0.0-1.0]",  help="Tolerance used for graph construction (default: 0.95)")
+            cluster_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             cluster_parser.add_argument("-o", default="cluster", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             cluster_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
         if BASIS:
             basis_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{d.nbnd-1})"   , choices=range(d.nbnd)             , help="Maximum band to consider")
             basis_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
+            basis_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             basis_parser.add_argument("-o", default="basis", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             basis_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
         if R2K:
             r2k_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{d.nbnd-1})"   , choices=range(d.nbnd)             , help="Maximum band to consider")
             r2k_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
             r2k_parser.add_argument("-mb", type=int, default=0, metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)             , help="Minimum band to consider (default: 0)")
+            r2k_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             r2k_parser.add_argument("-o", default="r2k", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             r2k_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
         if GEOMETRY:
@@ -132,6 +147,7 @@ When running this CLI, the user must specify the program to run and the argument
             geometry_parser.add_argument("-np"  , type=int, default=1     , metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1)         , help="Number of processes to use (default: 1)")
             geometry_parser.add_argument("-mb"  , type=int, default=0     , metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)                      , help="Minimum band to consider (default: 0)")
             geometry_parser.add_argument("-prop", type=str, default="both"                                 , choices=["both", "connection", "curvature"], help="Specify which proprety to calculate. (default: both)")
+            geometry_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             geometry_parser.add_argument("-o", default="geometry", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             geometry_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
         if CONDUCTIVITY:
@@ -140,6 +156,7 @@ When running this CLI, the user must specify the program to run and the argument
             conductivity_parser.add_argument("-eM"  , type=float, default=2.5                                                                          , help="Maximum energy in Ry units (default: 2.5).")
             conductivity_parser.add_argument("-eS" , type=float, default=0.001                                                                        , help="Energy step in Ry units (default: 0.001).")
             conductivity_parser.add_argument("-brd", type=float, default=0.01j                                                                        , help="Energy broading in Ry units (default: 0.01).")
+            conductivity_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             conductivity_parser.add_argument("-o", default="conductivity", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             conductivity_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
         if SHG:
@@ -148,6 +165,7 @@ When running this CLI, the user must specify the program to run and the argument
             shg_parser.add_argument("-eM"  , type=float, default=2.5                                                                          , help="Maximum energy in Ry units (default: 2.5).")
             shg_parser.add_argument("-eS" , type=float, default=0.001                                                                        , help="Energy step in Ry units (default: 0.001).")
             shg_parser.add_argument("-brd", type=float, default=0.01j                                                                        , help="Energy broading in Ry units (default: 0.01).")
+            shg_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             shg_parser.add_argument("-o", default="shg", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
             shg_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
     except NameError as err:
@@ -158,16 +176,17 @@ For more information add the '-h' flag to the 'preprocess' subcommand.""")
 
         preprocess_parser = sub_parser.add_parser("preprocess", help="Extract DFT calculations from specific program.", description="Extract DFT calculations from specific program.")
         preprocess_parser.add_argument("input_file", type=str, help="Path to input file from where to extract the run parameters.")
+        preprocess_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
         preprocess_parser.add_argument("-o", default="preprocess", type=str, metavar="file_path", help="Name of output log file. If extension is provided it will be ignored!")
         preprocess_parser.add_argument("-v"        , action="store_true", help="Increase output verbosity")
     finally:
         args = parser.parse_args()
 
     ###########################################################################
-    # ASSERTIONS
+    # HANDLE BERRY SUITE OPTIONAL ARGUMENTS
     ###########################################################################
     if args.version:
-        print(f"Berry Suite version {__version__}")
+        print(f"Berry Suite version: {__version__}")
         sys.exit(0)
     
     if args.enable_autocomplete:
@@ -319,6 +338,7 @@ def preprocessing_cli(args: argparse.Namespace):
 
     args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
     args_dict["logger_name"] = args.o
+    args_dict["flush"] = args.flush
 
     Preprocess(**args_dict).run() 
 
@@ -338,6 +358,7 @@ def generatewfc_cli(args: argparse.Namespace):
     args_dict["logger_name"] = args.o
     args_dict["nk_points"] = args.nk
     args_dict["bands"] = args.band
+    args_dict["flush"] = args.flush
 
     WfcGenerator(**args_dict).run()
 
@@ -356,6 +377,7 @@ def dotproduct_cli(args: argparse.Namespace):
     args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
     args_dict["logger_name"] = args.o
     args_dict["npr"] = args.np
+    args_dict["flush"] = args.flush
 
     run_dot(**args_dict)
 
@@ -371,6 +393,7 @@ def clustering_cli(args: argparse.Namespace):
     args_dict["max_band"] = args.Mb
     args_dict["min_band"] = args.mb
     args_dict["tol"] = args.t
+    args_dict["flush"] = args.flush
 
     run_clustering(**args_dict)
 
@@ -384,6 +407,7 @@ def basisrotation_cli(args: argparse.Namespace):
     args_dict["logger_name"] = args.o
     args_dict["npr"] = args.np
     args_dict["max_band"] = args.Mb
+    args_dict["flush"] = args.flush
 
     run_basis_rotation(**args_dict)
 
@@ -403,6 +427,7 @@ def r2k_cli(args: argparse.Namespace):
     args_dict["npr"] = args.np
     args_dict["min_band"] = args.mb
     args_dict["max_band"] = args.Mb
+    args_dict["flush"] = args.flush
 
     run_r2k(**args_dict)
 
@@ -422,6 +447,7 @@ def berry_props_cli(args: argparse.Namespace):
     args_dict["min_band"] = args.mb
     args_dict["max_band"] = args.Mb
     args_dict["prop"] = args.prop
+    args_dict["flush"] = args.flush
 
     run_berry_geometry(**args_dict)
 
@@ -442,6 +468,7 @@ def conductivity_cli(args: argparse.Namespace):
     args_dict["energy_max"] = args.eM
     args_dict["energy_step"] = args.eS
     args_dict["broadning"] = args.brd
+    args_dict["flush"] = args.flush
 
     run_conductivity(**args_dict)
 
@@ -463,6 +490,7 @@ def shg_cli(args: argparse.Namespace):
     args_dict["energy_max"] = args.eM
     args_dict["energy_step"] = args.eS
     args_dict["broadning"] = args.brd
+    args_dict["flush"] = args.flush
 
     run_shg(**args_dict)
 

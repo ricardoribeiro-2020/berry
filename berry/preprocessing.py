@@ -22,7 +22,7 @@ Data = Dict[str, Union[int, str, float]]
 class Preprocess:
     def __init__(self, k0: List[float], nkx: int, nky: int, nkz: int, step: float, nbnd: int, logger_name: str = "preprocess", logger_level: int = logging.INFO, 
                 npr: int = 1, dft_dir: str = "dft", scf: str = "scf.in", nscf: str = "", wfc_dir: str = "wfc", 
-                point: float = 1.178097, program: str = "QE", ref_name: str = now,):
+                point: float = 1.178097, program: str = "QE", ref_name: str = now, flush: bool = False):
         self.work_dir = os.getcwd() + "/"
         self.k0 = k0
         self.nkx = nkx
@@ -38,7 +38,7 @@ class Preprocess:
         self.point = point
         self.program = program
         self.ref_name = ref_name
-        self.logger = log(logger_name, "PREPROCESS", logger_level)
+        self.logger = log(logger_name, "PREPROCESS", logger_level, flush)
 
         self.nscf_kpoints = ""
         self.__mpi = "" if self.npr == 1 else f"mpirun -np {self.npr}"

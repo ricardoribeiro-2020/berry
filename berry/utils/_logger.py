@@ -19,13 +19,14 @@ def prepare_message(method):
     return wrapper
 
 class log:
-    def __init__(self, program, title, level=logging.INFO):
+    def __init__(self, program, title, level=logging.INFO, flush: bool = True):
         Path(program).parent.mkdir(parents=True, exist_ok=True)
 
         self.program = program
         self.title = title
         self.version = __version__
         self.level = level
+        self.flush = flush
         logging.basicConfig(filename=program+'.log',
                             filemode='w',
 #                            encoding='utf-8',
@@ -47,19 +48,26 @@ class log:
 
     @prepare_message
     def debug(self, message):
+        if self.flush:
+            print(message, flush=True)
         self.logger.debug(message)
 
     @prepare_message
     def info(self, message):
-        print(message)
+        if self.flush:
+            print(message, flush=True)
         self.logger.info(message)
 
     @prepare_message
     def error(self, message):
+        if self.flush:
+            print(message, flush=True)
         self.logger.error(message)
 
     @prepare_message
     def warning(self, message):
+        if self.flush:
+            print(message, flush=True)
         self.logger.warning(message)
     
     def footer(self):
