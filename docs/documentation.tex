@@ -7,6 +7,16 @@
 \usepackage{amsfonts}
 \usepackage{amssymb}
 \usepackage{graphicx}
+\usepackage[toc,page]{appendix}
+\usepackage{pdfpages}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{setspace}
+\usepackage{hyperref}
+
+\input{spp}
+
+
 
 \titleformat{\chapter}[display]
   {\normalfont\bfseries}{}{0pt}{\huge}
@@ -37,7 +47,6 @@ v1.0}
   \vspace*{0.5cm}
 
 \today
-
  \end{center}
 \end{titlepage}
 
@@ -48,53 +57,24 @@ v1.0}
  This guide gives a general introduction to the \textbf{berry} suite of programs, including instalation and running.
  An introduction to the basics of electronic structure calculations is given, in the context of this suite.
 
- All programs of this package are in python 3.
 
-The package contains the python scripts:
-\begin{itemize}
- \item preprocessing.py
- \item generatewfc.py
- \item dotproduct.py
- \item compara.py
- \item interpolation.py
- \item basisrotation.py
- \item r2k.py
- \item berryConnection.py
- \item berryCurvature.py
- \item condutivity.py
- \item shg.py
-\end{itemize}\medskip
+\section{What \textbf{berry} does}
 
-and the auxiliary and visualization scripts:
-\begin{itemize}
- \item draw2D\_machine.py
- \item draw2D\_corrected.py
- \item drawberry.py
- \item drawcurvature.py
- \item emailSender.py
- \item viewdata.py
- \item viewdot1.py
- \item viewdot.py
- \item vieweigenvalues.py
- \item viewneighbors.py
- \item viewoccupations.py
- \item viewr.py
-\end{itemize}\medskip
+The \textbf{berry} suite of programs extracts the Bloch wavefunctions from DFT calculations in an ordered way
+so they can be directly used to make calculations.
 
-Also with some subroutines (depend on the other scripts):
+In practice it retrieves the wavefunctions and their gradients in reciprocal space totally ordered
+by unentangled bands, where continuity (analyticity) applies.
+
+With the Bloch wavefunctions, berry can calculate:
 \begin{itemize}
- \item headerfooter.py
- \item contatempo.py
- \item parser.py
- \item loaddata.py
- \item dft.py
- \item comutator.py
- \item write\_k\_points.py
- \item NestablePool.py
+  \item Berry connections
+  \item Berry curvatures
+  \item Linear optical conductivity
+  \item Second harmonic generation (SHG) optical conductivity
 \end{itemize}
 
-It is likely that some of these scripts will be merged with others
-while new ones will appear due to new functionalities.
+
 
 
 
@@ -109,7 +89,6 @@ which is also the main developer.\medskip
 
 Other contributors include
 \begin{itemize}
- \item Ícaro Jael Moura (Fortaleza, Brasil) for the exploratory work and testing;
  \item Irving Leander Reascos Valencia (Braga, Portugal) for improving the performance
  and AI work;
  \item Fábio Carneiro (Braga, Portugal) for the parallelization of the python code
@@ -117,8 +96,11 @@ Other contributors include
  \item Nuno Castro (LIP-Minho, Braga, Portugal) for coordinating AI work;
  \item Gonçalo Ventura (Porto, Portugal) for the equations for non-linear optical properties
  calculated from the Berry connections;
+ \item Ícaro Jael Moura (Fortaleza, Brasil) for the exploratory work and testing;
  \item Afonso Duarte Ribeiro, author of the logo.
 \end{itemize}
+
+
 
 
 \section{Contacts}
@@ -129,7 +111,7 @@ https://ricardoribeiro-2020.github.io/berry/\medskip
 
 All files for instalation can be found there.
 
-There is still no mailling list for reporting bugs or other questions, but an email can be sent to
+There is no mailling list yet for reporting bugs or other questions, but an email can be sent to
 ricardo.ribeiro@physics.org
 
 \section{Aknowledgement}
@@ -138,11 +120,122 @@ We aknowledge the Fundação para a Ciência e a Tecnologia (FCT)
 under project  QUEST2D \emph{Excitations in quantum 2D materials}
 PTDC/FIS-MAC/2045/2021 and in the framework of the Strategic Funding UIDB/04650/2020.
 
+
+
+
+
+
+\chapter{Instalation and running}
+
+\section{PIP install}
+
+To install the \textbf{berry} suite a pip install command is enough:
+\begin{verbatim}
+  pip install berry-suite
+\end{verbatim}
+
+
+\section{Requirements}
+
+This version of \textbf{berry} only supports the DFT package {\sc Quantum Espresso}, version v.6.6 or higher.
+
+So a working {\sc Quantum Espresso} instalation has to be in the system, and must be in the \$PATH.
+
+This version was tested with python 3.8 and 3.10, but likely works with other versions of python3.
+
+
+\section{Running}\label{sec:running}
+
+ To run, first one has to create a working directory where the results will be saved,
+ and inside it create a directory called \emph{dft}.
+
+ Inside \emph{dft} should go the pseudopotential files for the atomic species of the dft calculation
+and the file \emph{scf.in} with the details of the scf run.
+You can use another name for the file, but then you have to add a line in the input file of
+the script \texttt{preprocess} to change the default (see section \nameref{sec:preprocessing}).
+
+
+ This \emph{scf.in} file has to be a {\sc Quantum Espresso} scf run file;
+ this is the only one implemented so far.
+
+ Create an input file (as described in chapter \nameref{ch:workflow}, section \nameref{sec:preprocessing})
+ in the working directory.
+
+ \newpage
+Scheme of working directory:
+\begin{verbatim}
+ working_directory|
+                  |input_file
+                  |dft|
+                      |scf.in
+                      |pseudopotentials.upf
+\end{verbatim}
+\bigskip
+
+ All the scripts should be run from the working directory.
+ To run, a command of the form:
+ \begin{verbatim}
+  berry [package options] script parameter [script options]
+ \end{verbatim}
+where the \texttt{script} is one of the following
+\begin{verbatim}
+ preprocess
+ wfcgen
+ dot
+ cluster
+ basis
+ r2k
+ geometry
+ condutivity
+ shg
+\end{verbatim}
+and the parameter is dependent on which script is beeing run.
+The command \texttt{berry} is a command line interface (CLI) of the package.
+
+These scripts should be run in sequence, in the order shown, and the \texttt{berry} command assures
+that all the needed files are present for each run.
+The package options are shown in table \ref{tab:package_options}.
+
+\begin{table}[h]
+ \centering
+ \caption{The package options.}\label{tab:package_options}
+\begin{tabular}[]{lr}
+\hline
+  \texttt{-h}, \texttt{--help}     &    Shows this help message and exit \\
+  \texttt{--version}               &    Displays current Berry version \\
+  \texttt{--enable-autocomplete}   &    Enables autocomplete for the berry CLI\\
+  \texttt{--disable-autocomplete}  &    Disables autocomplete for the berry CLI\\
+\hline
+\end{tabular}
+\bigskip
+\end{table}
+
+Chapter \nameref{ch:workflow} explains what each script does,
+what parameters are required and what options they have.
+
+\includepdf[scale=0.8]{figures/berry_flow_chart.pdf}
+
+The flowchart of the previous page explains how \textbf{berry} works.
+
+First a preprocessing script is run which runs the DFT calculations, reads data from those
+calculations, and saves it in files ready to be read by the folllowing scripts.
+
+Then another script reads the wavefunctions from the DFT calculations and make them coherent.
+This is done with the help of a script from the DFT suite.
+
+The main part is the one that classifies each wavefunction into a band, assuring continuity.
+Once this classification is done, the gradient in reciprocal space of the Bloch factors
+of the wavefunctions can be calculated.
+
+After that, Berry connections and curvatures, as well as other calculations can be performed.
+
+
+\chapter{Theoretical background to \emph{berry}}
+
 \section{Electronic structure calculations basics}
 
 \subsection*{Crystal}
-A crystal is defined by its translational symmetry.
-A set of atoms, a pattern, is replicated all over space in one, two or three dimensions.
+A crystal is a set of atoms, forming a pattern, that is replicated all over space in one, two or three dimensions.
 It forms a crystal \emph{lattice}.
 
 Here we will deal only with 2D materials, so the pattern, which is called \emph{unit cell},
@@ -247,7 +340,7 @@ That is the first goal of this suite of programs.
 \subsection*{Band crossings}\label{ssec:bandcrossings}
 
 It is clear that the problem of classifying the eigenstates by bands where analycity applies is
-only problematic at degeneracies i.e. band crossings.
+ problematic at degeneracies i.e. band crossings.
 
 There, any linear combination of eigenstates is also an eigenstate.
 
@@ -269,21 +362,6 @@ There are two ways to workaround this problem and restore analycity.
 One is to interpolate the wavefunction at $k$ using the closest eigenstates of band $A$ and then the ones of band $B$.
 The other is to apply an unitary transformation.
 
-\paragraph*{Interpolation}
-Assume that $\psi_A^-$ and $\psi_A^+$ are the wavefunctions immediatly at left and right of $k$ that belong to band $A$,
-and $\psi_B^-$ and $\psi_B^+$ are the same for band $B$.
-Wavefunctions of bands $A$ and $B$ in the same point in momentum space are orthogonal, so $\psi_A^- \perp \psi_B^-$
-and $\psi_A^+ \perp \psi_B^+$.
-Even a simple interpolation
-\begin{align}
- \psi_A &= \dfrac{1}{2}\left( \psi_A^- + \psi_A^+\right) \\
- \psi_B &= \dfrac{1}{2}\left( \psi_B^- + \psi_B^+\right)
-\end{align}
-will lead to $\psi_A \perp \psi_B$ and restore analycity within the numerical precision,
-since $\psi_A^-$ and $\psi_A^+$ are very close and continuous,
-and the same for $\psi_B^-$ and $\psi_B^+$.
-This results from the continuity of the hamiltonean in momentum space.
-
 
 \paragraph*{Unitary transformation}
 The most frequent way of restoring analycity is to apply an unitary transformation
@@ -300,89 +378,76 @@ In practice, this is done by minimizing the difference betwenn $\psi_A$ and both
 and the same for $\psi_B$ relative to $\psi_B^-$ and $\psi_B^+$.
 
 
+\section{Graph Theory (GT)}
+
+Graph Theory (GT) studies the properties and the applications of a mathematical structure called a Graph.
+In a strict sense, a set of vertices (nodes) $V$ and a set of edges $E$ describes a Graph, $G(V, E)$.
+A vertex (node), $v\in V$, is a terminal point, and an edge, is a link between two nodes.
+This link must follow some relation, $R(v_1, v_2)$, between these nodes, for example, a co-authorship (edge) between two authors (nodes).
+
+The edges are the set defined by
+\begin{equation}
+    E = \left\{(v_1, v_2) : v_1, v_2 \in V \wedge \exists\, R(v_1, v_2)\right\}
+\end{equation}
+
+The edges are oriented when the relationship between two nodes are diferent in each direction ($R(v_1, v_2) \neq R(v_2, v_1)$).
+Thus, the graph is a directed graph, for example, the papers' citations (one paper cites another, but the opposite is not true).
+However, if all pairs of nodes have the same edge in both directions ($ R(v_1, v_2) = R(v_2, v_1)$) or the orientation is irrelevant, its graph is undirected.
+
+Furthermore, all relations need not have the same weight. For example, getting back to the co-authorship graph, some authors may collaborate more times with a few than others.
+Thus, the edge between these two authors may include this weight $\omega(v_1, v_2)$ (it is a weighted graph).
+Nonetheless, if the weights $\omega_e$ of all edges $e$ are the same ($\forall\, e\in E\; : \;\omega_e = \omega$) or the edges expresse a binary relation (may exist or not), the graph is unweighted.
+In this work, we will use unweighted and undirected graphs.
+
+Another essential concept is that of the subgraph.
+A subgraph $g(V^\prime, E^\prime)$ is a graph formed by a subset of vertices $V^\prime \subset V$ and edges $E^\prime \subset E$ of a bigger graph $G(V, E)$.
+
+A subgraph $g$, whose nodes do not have any edge between nodes of another subgraph $g^\prime, g \neq g^\prime$ is called a component.
+
+Graph theory is very well studied, and there are many implemented algorithms to study graphs' properties.
+We will use the \textit{networkx} python module for the implementation and analysis of graphs.
 
 
-\chapter{Instalation}
 
-\section{Download}
-The github packages should be downloaded from\medskip
+\section{Unsupervised Machine Learning (UML)}
 
- https://github.com/ricardoribeiro-2020/berry/archive/master.zip\medskip
+AI solves problems that normally require a human to make decisions.
+The cornerstone of Artificial Intelligence is designing agents that learn how to make informed decisions in possibly ever-changing environments without human supervision. Machine learning is a subset of AI where models learn patterns from datasets.
+How an artificial agent learns these patterns classifies them into Supervised or Unsupervised machine learning (UML) models.
 
-unziped in the directory where the instalation is to be done and the directory structure kept.
+Unlike supervised machine learning, which uses data labeled by an expert and learned patterns from comparison, UML algorithms are used for clustering or association because they identify patterns from uncategorized data.
+These algorithms recognize patterns in the datasets using some metrics to evaluate differences or similarities between data.
 
-With this, each python script of the suite should run, giving the full path to the script.
-
-\section{Requirements}
-
-This software uses python3 with the following libraries, that have to be installed
-(most of these should already be there by default):
-\begin{itemize}
- \item numpy
- \item sys
- \item time
- \item joblib
- \item math
- \item os
- \item findiff
- \item matplotlib.pyplot
- \item mpl\_toolkits.mplot3d
- \item xml.etree.ElementTree
-\end{itemize}
+UML algorithms for clustering use a dataset of uncategorized points, and a  problem dependent metric.
+The algorithm processes the points to form groups (clusters) represented by some pattern or structure determined by the metric.
+The algorithm is called exclusive when a datapoint belongs exclusively to a single cluster.
+The band-crossing problem lies in this class of algorithms due to its structure.
+Thus, we will work with this type of clustering algorithm.
 
 
-This version of \textbf{berry} only supports the DFT package {\sc Quantum Espresso}, version v.6.6 or higher.
-
-So a working {\sc Quantum Espresso} instalation has to be in the system, and must be in the \$PATH.
-
-\section{Running}\label{sec:running}
-
- To run, first one has to create a working directory where the results will be saved,
- and inside it create a directory called \emph{dft}.
-
- Inside \emph{dft} should go the pseudopotential files for the atomic species of the dft calculation
-and the file \emph{scf.in} with the details of the scf run.
-You can use another name for the file, but then you have to add a line in the input file of
-the script \textbf{preprocessing.py} to change the default (see section \nameref{sec:preprocessing}).
-
- This \emph{scf.in} file has to be a {\sc Quantum Espresso} scf run file;
- this is the only one implemented so far.
-
- Create an input file (as described in chapter \nameref{ch:workflow}, section \nameref{sec:preprocessing})
- in the working directory.
-
- All the scripts should be run from the working directory, using the full path to the python scripts.
-
-\paragraph{Sequence} of programs to run should be the following:
-\begin{verbatim}
- preprocessing.py   inputfile
- generatewfc.py
- dotproduct.py
- compara.py [k-point]
- interpolation.py [band] or basisrotation.py [band]
- r2k.py  band1 [band2]
- berryConnection.py  band1 [band2]
- berryCurvature.py   band1 [band2]
- condutivity.py   band1 band2 [inputfile]
- shg.py   band1 band2 [inputfile]
-\end{verbatim}
-In brackets are optional parameters.
 
 
 
 
 \chapter{Workflow}\label{ch:workflow}
 
+
+
 \section{Preprocessing}\label{sec:preprocessing}
  After creating the files and directories mentioned in section \nameref{sec:running}, the next thing is
- to run the script \textbf{preprocessing.py}, which will do the following:
+ to run the script \texttt{preprocess},
+ \begin{verbatim}
+  berry preprocess input_file [script options]
+ \end{verbatim}
+ which will do the following:
  \begin{enumerate}
-  \item Reads file with the description of the run wanted.
+  \item Reads file \texttt{inputfile} with the description of the run wanted.
   \item Runs the scf calculation using {\sc Quantum Espresso}, if it has not ran before.
-  \item Generates an nscf input file according to the input data of the run and runs an nscf calculation,
+  \item Generates an nscf input file according to the input file and runs an nscf calculation,
   using {\sc Quantum Espresso}, if it has not ran before.
   \item Reads data from the nscf calculation and saves to a file.
-  \item Makes several simple calculations that will be used afterwards in other scripts, and save them to several files.
+  \item Makes several simple calculations that will be used afterwards in other scripts,
+  and save them to several files.
  \end{enumerate}
 
  An input file for the berry run has to be created in the working directory with several parameters.
@@ -397,12 +462,12 @@ The minimum parameters needed are:
 An example of the minimum input file is shown in figure \ref{code:inputfile}.
 A full list of the parameters that are accepted with the respective defaults (if any)
 is shown in table \ref{tab:variables_preprocessing}.
-There is a unique reference number that is attributed when running \textbf{preprocessing.py},
-that can be changed in the input file, but it not recomendable, because it is too easy to forget
+There is a unique reference number that is attributed when running \texttt{preprocess},
+that can be changed in the input file, but is not recomendable, because it is too easy to forget
 to change that variable in the input file and attribute the same value for different runs.
 
 \begin{figure}[h]
- \centering\caption{Example of input file for \textbf{preprocessing.py}.}
+ \centering
 \begin{verbatim}
   k0 0.00 0.00 0.00
   nkx 100
@@ -411,6 +476,7 @@ to change that variable in the input file and attribute the same value for diffe
   step 0.005
   nbnd 8
 \end{verbatim}
+\caption{Example of input file for \texttt{preprocess}.}
 \label{code:inputfile}
 \end{figure}
 
@@ -418,23 +484,23 @@ to change that variable in the input file and attribute the same value for diffe
 
 \begin{table}[h]
  \centering
- \caption{List of variables for the input file of \textbf{preprocessing.py}.}
+ \caption{List of variables for the input file of \texttt{preprocess}.}
 
  \begin{tabularx}{\textwidth}{Xl}
- \textbf{Role of keyword}  & \textbf{Variable (and defaults)}\\
+ \textbf{Role of keyword}                     & \textbf{Variable (and defaults)}\\
 \hline
- origin of k-points  & k0 \\
- number of k-points in each direction  & nkx, nky, nkz \\
- step of the k-points  & step \\
- number of bands to be calculated  & nbnd \\
+ origin of k-points (3 real numbers)           & k0 \\
+ number of k-points in each direction (integer)& nkx, nky, nkz \\
+ step of the k-points (real number)            & step \\
+ number of bands to be calculated (integer)    & nbnd \\
  \hline
- number of processors  & npr = 1 \\
- dft directory  & dftdirectory = 'dft/' \\
- scf file name  &     name\_scf = 'scf.in' \\
- directory where wavefunctions will be saved  &     wfcdirectory = 'wfc/' \\
- point in real space where all phases match  & point = 1.178097 \\
- software for DFT  &  program = 'QE' \\
- Unique reference of run & refname = date and time \\
+ number of processors                         & npr = 1 \\
+ dft directory                                & dftdirectory = 'dft/' \\
+ scf file name                                & name\_scf = 'scf.in' \\
+ directory where wavefunctions will be saved  & wfcdirectory = 'wfc/' \\
+ point in real space where all phases match   & point = 1.178097 \\
+ software for DFT                             & program = 'QE' \\
+ Unique reference of run                      & refname = date and time \\
 %  DFT prefix  & prefix = '' \\
 %  DFT output directory & outdir = ''\\
  \hline
@@ -445,8 +511,8 @@ to change that variable in the input file and attribute the same value for diffe
 
 
 
-\newpage
-The script \textbf{preprocessing.py} creates the files:
+
+The script \texttt{preprocess} creates the files:
 \begin{itemize}
  \item \emph{phase.npy}
  \item \emph{neighbors.npy}
@@ -465,6 +531,21 @@ File \emph{neighbors.npy} lists the neighbors of each k-point
 File \emph{phase.npy} saves for each (k,r) the phase factor of the Bloch functions.
 
 This finishes the preparatory phase.
+The options for \texttt{preprocess} are shown in table \ref{tab:options_preprocess}.
+
+\begin{table}[h]
+ \centering
+ \caption{Options for script \texttt{preprocess}}\label{tab:options_preprocess}
+\begin{tabular}[]{lr}
+\hline
+  \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
+  \texttt{-o file\_path}        & Name of output log file\\
+                                & Extension will be ignored \\
+  \texttt{-v}                   & Increase output verbosity \\
+  \hline
+\end{tabular}
+\end{table}
+
 
 \section{Extraction of wavefunctions}
 
@@ -472,79 +553,138 @@ The next step is to extract the wavefunctions from the format used in the DFT pa
 (in this case it is {\sc Quantum Espresso}),
 make them coherent and save them in a format adequate for the \textbf{berry} suite.
 
-The script that does this job is \textbf{generatewfc.py}.
+The script that does this job is \texttt{wfcgen}:
+\begin{verbatim}
+  berry wfcgen [script options]
+\end{verbatim}
 
 It uses the package wfck2r.x of the {\sc Quantum Espresso} suite to extract and save the wavefunctions
-from the original format to a text file, in position space, one for each k-point and band.
+from the original format to a numpy file, in position space, one for each k-point and band.
+It uses the same number of processes as used before in the DFT calculations.
 
-Then a point in position space is choosen (see table \ref{tab:variables_preprocessing}),
+After extracting the wavefunctions,
+ a point in position space is choosen (see table \ref{tab:variables_preprocessing}),
 away from points of high symmetry, and all wavefunctions
-are multiplied by a phase such that at that point all wavefunctions have zero phase.
+are multiplied by a phase such that at that point all have zero phase (are real).
 
-Then the wavefunctions are saved in the directory choosen to save them
-(see table \ref{tab:variables_preprocessing}; default is \emph{./wfc/}),
-and the files will be named in the form \emph{k0**b0XX.wfc} where ** is replaced by the number of the k point
+The wavefunctions are then saved in the directory choosen to save them
+(see table \ref{tab:variables_preprocessing}; default is \emph{working\_directory/}\emph{wfc/}),
+and the files will be named in the form \emph{k0**b0XX.wfc} where \emph{**} is replaced by the number of the k point
 and \emph{XX} is replaced by the number of the band.
-Bands are as given by the DFT software i.e. ordered by energy, and the lowest energy band is numbered zero and so on.
+
+Bands are as given by the DFT software i.e. ordered by energy,
+and the lowest energy band is numbered zero and so on.
+
+The options for \texttt{wfcgen} are shown in table \ref{tab:options_wfcgen}.
+The default is to generate all formated wavefunctions, but for debugging it may be useful
+to generate just for a singke k-point or a single wavefunction, for which we have the options
+\texttt{-nk} and \texttt{-band} (has to be used in conjunction with \texttt{-nk}).
+
+\begin{table}[h]
+ \centering
+ \caption{Options for script \texttt{wfcgen}}\label{tab:options_wfcgen}
+\begin{tabular}[]{lr}
+\hline
+  \texttt{-nk}                  & Generates wavefunctions for a single k-point  \\
+                                &  (default: All) \\
+  \texttt{-band}                & Generates wavefunctions for a single k-point\\
+                                &  and band (default: All) \\
+  \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
+  \texttt{-o file\_path}        & Name of output log file\\
+                                & Extension will be ignored \\
+  \texttt{-v}                   & Increase output verbosity \\
+  \hline
+\end{tabular}
+\end{table}
 
 
 \section{Dot product}
 
-\textbf{dotproduct.py} reads the wavefunctions saved in directory \emph{./wfc/},
+\texttt{dot} reads the wavefunctions saved in directory \emph{wfc},
 removes the phase factor of the Bloch functions, and calculates the dot product
 of the Bloch factors of the neighboring k points.
+
+\begin{verbatim}
+  berry dot [script options]
+\end{verbatim}
 
 The neighboring k points are the four nearest neighbors, as determined in the preprocessing
 and saved in file \emph{neighbors.npy}.
 
 In the end we get two files \emph{dpc.npy} and \emph{dp.npy}:
 \begin{itemize}
- \item \emph{dpc.npy} contains for each pair of k-points and bands the dot product of the wavefunctions
+ \item \emph{dpc.npy} contains for each pair of k-points and bands the dot product of the Bloch factors
  \item \emph{dp.npy} contains the modulus of \emph{dpc.npy}
 \end{itemize}
+The options for \texttt{dot} are shown in table \ref{tab:options_dot}
+
+\begin{table}[h]
+ \centering
+ \caption{Options for script \texttt{dot}}\label{tab:options_dot}
+\begin{tabular}[]{lr}
+\hline
+  \texttt{-np}                  & Number of processes to use (default: 1) \\
+  \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
+  \texttt{-o file\_path}        & Name of output log file.\\
+                                & Extension will be ignored. \\
+  \texttt{-v}                   & Increase output verbosity \\
+  \hline
+\end{tabular}
+\end{table}
 
 
-\section{Establishing the bands}
-Find which eigenvalues/eigenfunctions have continuity, by running program \textbf{compara.py}.
 
-This program reads the dot product file \emph{dp.dat} and uses it to check continuity.
+\section{Find the bands}
+To find which eigenvalues/eigenfunctions have continuity, one runs script \texttt{cluster}.
+
+\begin{verbatim}
+  berry cluster [script options]
+\end{verbatim}
+
+This script uses graph theory and unsupervised machine learning to establish electronic bands
+that are analytic in k-space.
+
+It uses data from files \emph{dp.npy} and \emph{eigenvalues.npy} to establish continuity
+between wavefunctions of neighboring k-points.
 
  It retrieves two files:
  \begin{description}
-   \item[\emph{bandsfinal.npy}] stores an array bandsfinal[k,b] = number of band that is continuous to band b
-   \item[\emph{signalfinal.npy}] signalfinal[k,b] equals -1 if there is an inconsistency at
-   that k-point or a number $\ge0$
-  giving the number of times it found a continuity. The larger the value, the better.
+   \item[\emph{bandsfinal.npy}] stores an array bandsfinal[k,b] = number of band that is continuous to band b.
+   \item[\emph{signalfinal.npy}] signalfinal[k,b] is a measure of the quality of the attribution to a band.
  \end{description}
 
- \textbf{compara.py} may need to be run several times until the results are good.
- Not that it improves as the number of trials increases, but the starting point
- (which is choosen randomly, but can be specified explicitly as an input parameter)
- may simply be a better one to find the continuities.
+ A detailed explanation of the algorithm is given in the appendix \nameref{cha:cluster}.
+
+ The options for \texttt{cluster} are shown in table \ref{tab:options_cluster}.
+
+\begin{table}[h]
+ \centering
+ \caption{ Options for script \texttt{cluster}}\label{tab:options_cluster}
+ \begin{tabular}[]{lr}
+ \hline
+   \texttt{-mb}                  & Minimum band to consider (default: 0) \\
+   \texttt{-np}                  & Number of processes to use (default: 1) \\
+   \texttt{-t [0.0-1.0]}         & Tolerance used for graph construction (default: 0.95) \\
+   \texttt{-h}, \texttt{--help}  & Show a help message and exit \\
+   \texttt{-o file\_path}        & Name of output log file\\
+                                 & Extension will be ignored \\
+   \texttt{-v}                   & Increase output verbosity \\
+   \hline
+ \end{tabular}
+ \end{table}
 
 
-\section{Interpolation}
- As discussed in subsection \ref{ssec:bandcrossings} of the \nameref{ch:introduction},
- there may be a few k points where there are actual discontinuities and so need to restore analitycity.
-
- For this, \textbf{interpolation.py} should be run, which uses the interpolation method described in that subsection.
-
- The interpolation done by \textbf{interpolation.py} is not a simple mean value but a polinomial interpolation
- that uses up to six surrounding k points to do the job.
-
- It will create new interpolated wavefunctions with extension \emph{.wfc1}, that will be used in subsequent calculations.
-
- Since you probably just want to interpolate in the bands that are well determined, and argument with the last band number
- is needed.
- \begin{verbatim}
-  python3 interpolate.py [band number]
- \end{verbatim}
 
 \section{Basis rotation}
- Instead of the interpolation suggested in the last section, it is more frequent that a basis rotation
- is applied to the wavefunctions in such a way as to maximize continuity.
+ It is frequent that a basis rotation has to be applied to some wavefunctions in such a way
+ as to maximize continuity, where there is a degeneracy.
 
- For this, \textbf{basisrotation.py} can be run.
+ For this, \texttt{basis} can be run.
+
+ \begin{verbatim}
+  berry basis [script options]
+ \end{verbatim}
+
  It works like this:
  Consider a point in k-space and two wavefunctions $|\Psi_1\rangle$ and $|\Psi_2\rangle$
  that have been signaled as not continuous to the neighboring wavefunctions $|\Psi_A\rangle$ and $|\Psi_B\rangle$
@@ -572,69 +712,144 @@ This program reads the dot product file \emph{dp.dat} and uses it to check conti
   \max \langle \Psi_B|\Psi_B'\rangle &= \max \left( \langle \Psi_B|\Psi_1\rangle b_1 + \langle \Psi_B|\Psi_2\rangle b_2\right)
  \end{align*}
 
-
-
  It will create new wavefunctions with extension \emph{.wfc1}, that will be used in subsequent calculations.
+The options for \texttt{basis} are shown in table \ref{tab:options_basis}
 
- Since you probably just want to interpolate in the bands that are well determined, and argument with the last band number
- is needed.
- \begin{verbatim}
-  python3 basisrotation.py [band number]
- \end{verbatim}
+\begin{table}[h]
+ \centering
+ \caption{Options for script \texttt{basis}}\label{tab:options_basis}
+ \begin{tabular}[]{lr}
+ \hline
+   \texttt{-np}                  & Number of processes to use (default: 1) \\
+   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
+   \texttt{-o file\_path}        & Name of output log file\\
+                                 & Extension will be ignored \\
+   \texttt{-v}                   & Increase output verbosity \\
+   \hline
+ \end{tabular}
+\end{table}
+
 
 \section{Convert wavefunctions to k space}
 
-With the bands right, now proceeds to calculate the wavefunctions in k-space and their gradients.
+With the bands well defined, it is now necessary to proceed to calculate the wavefunctions in k-space and their gradients.
 
-For that, run \textbf{r2k.py} with one or two arguments:
-\begin{itemize}
- \item If one, will calculate from band 0 to the value inputed.
- \item If two, will calculate for the set of bands between the two values, inclusive.
-\end{itemize}
+For that, run \texttt{r2k}:
+\begin{verbatim}
+  berry r2k highest_band [script options]
+ \end{verbatim}
 
- Will save the wavefunctions of each band in a compressed file \emph{wfcpos\#.gz} where \# = number of band.
- This will be a dictionary with a label for each position in real space (from 0 to nr) and for each label
- a numpy array with the complex value of the wavefunction for each k point in momentum space.
+It will calculate from band 0 to the value of the band given (\texttt{highest\_band}),
+unless a minimum band is given.
+The highest band has to be given because in principle not all bands that were initialy calculated will
+be complete, and it doesn't make sense to use them in further calculations.
 
- Will save the gradients of each band in a compressed file \emph{wfcgra\#.gz} where \# = number of band.
+The wave functions originaly are saved for each k-point in a file, and the file contains the value of the wavefunction in each
+point of the real space.
+This program converts this format to one where for each point in real space there is a file with all the values of wavefunctions
+of the same band as a function of k-points, which is suitable to diferentiate.
+\begin{equation*}
+ \Psi_{\pmb{k}}(\pmb{r}) \rightarrow \Psi_{\pmb{r}}(\pmb{k})
+\end{equation*}
+
+Will save the wavefunctions of each band in a compressed file \emph{wfcpos\#.npy} where \# = number of band
+and the gradients of each band in a compressed file \emph{wfcgra\#.npy} where \# = number of band.
+The options for \texttt{r2k} are shown in table \ref{tab:options_r2k}.
+
+\begin{table}[h]
+ \centering
+ \caption{Options for script \texttt{r2k}}\label{tab:options_r2k}
+\begin{tabular}[]{lr}
+\hline
+  \texttt{-np}                  & Number of processes to use (default: 1) \\
+  \texttt{-mb}                  & Minimum band to consider (default: 0) \\
+  \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
+  \texttt{-o file\_path}        & Name of output log file\\
+                                & Extension will be ignored\\
+  \texttt{-v}                   & Increase output verbosity \\
+  \hline
+\end{tabular}
+\end{table}
+
+
 
 \section{Calculation of the Berry connections and curvatures}
 
-The Berry connections (equation \ref{eq:berry}) are calculated using the script \textbf{berryConnection.py}
-and the Berry curvature with \textbf{berryCurvature.py}.
+The Berry connections (equation \ref{eq:berry}) and curvature are calculated using the script \texttt{geometry}.
+\begin{verbatim}
+  berry geometry highest_band [script options]
+ \end{verbatim}
 
-These scrips must have one or two integers as input.
 
-If it is just one, the scripts will calculate for all combinations of bands from the first up to the
-number given as input.
+The highest band is the number of the last band to be used in the calculations.
+In principle, it will be the same as the one used in \texttt{r2k}.
+The options for \texttt{geometry} are shown in table \ref{tab:options_geometry}.
 
-If two integers are given, they will only calculate the Berry connection (or curvature) for that pair of bands.
+\begin{table}[h]
+ \centering
+ \caption{Options for script \texttt{geometry}}\label{tab:options_geometry}
+\begin{tabular}[]{lr}
+\hline
+  \texttt{-np}                  & Number of processes to use (default: 1) \\
+  \texttt{-mb}                  & Minimum band to consider (default: 0) \\
+  \texttt{-prop} [both,connection,curvature] &  Specify which property to calculate. (default: both)\\
+  \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
+  \texttt{-o file\_path}        & Name of output log file\\
+                                & Extension will be ignored\\
+  \texttt{-v}                   & Increase output verbosity \\
+  \hline
+\end{tabular}
+\end{table}
+
 
 
 \section{Optical conductivity and second harmonic generation}
-Calculate the linear condutivity by running \textbf{condutivity.py}
-and the second harmonic condutivity by running \textbf{shg.py}.
 
-Both need two or three arguments.
+To calculate the linear condutivity, the script \texttt{condutivity} should be used
+and for the second harmonic condutivity, the script \texttt{shg}.
+\begin{verbatim}
+  berry conductivity highest_band [script options]
+ \end{verbatim}
+ and
+ \begin{verbatim}
+  berry shg highest_band [script options]
+ \end{verbatim}
 
- If there are two:  the first is the last filled band, the second is last empty band.
- If the first argument is negative, it will only consider transitions from one band to the other, while if it is positive it will consider all bands below the first value and all the empty bands up to the second value.
- Real part has to be always positive and zero below the gap.
-
- The third argument, if it exists, is the name of an input file that should have the values wanted for\medskip
-
-\begin{tabularx}{\textwidth}{Xl}
- enermax  2.5            & Maximum energy (Ry)\\
- enerstep  0.001         & Energy step (Ry)\\
- broadning  0.01j        & energy broadning (Ry) \\
-\end{tabularx}
-\medskip
-
-(these are the default values, if there is no input file)
+The highest band is the number of the last band to be used in the calculations,
+and has to be higher than the valence band.
+There are several options for the calculation that can be changed and are listed in
+table \ref{tab:options_conductivity}.
 
 
+\begin{table}[h]
+ \centering
+ \caption{Options for scripts \texttt{conductivity} and \texttt{shg}.}\label{tab:options_conductivity}
+\begin{tabular}[]{lr}
+\hline
+  \texttt{-np}                  & Number of processes to use (default: 1) \\
+  \texttt{-eM}                  & Maximum energy in Ry units (default: 2.5) \\
+  \texttt{-eS}                  & Energy step in Ry units (default: 0.001) \\
+  \texttt{-brd}                 & Energy broading in Ry units (default: 0.01) \\
+  \texttt{-h}, \texttt{--help}  & Show a help message and exit \\
+  \texttt{-o file\_path}        & Name of output log file\\
+                                & Extension will be ignored\\
+  \texttt{-v}                   & Increase output verbosity \\
+  \hline
+\end{tabular}
+\end{table}
+
+These scrips calculate the conductivity between 0 and the maximum energy (in Ry),
+with a step (energy step) and a broadning.
+
+The details of these calculations can be found in
+\begin{verbatim}
+ https://arxiv.org/abs/2006.02744
+\end{verbatim}
 
 
+
+
+\begin{appendices}
 
 
 
@@ -698,7 +913,474 @@ This glossary indicates the meaning of the variables used in the suite \textbf{b
 \end{tabularx}
 
 
+\chapter{List of files in the suite}
+ All programs of this package are in python 3.
+
+The package contains the python scripts in the main berry directory:
+\begin{itemize}
+ \item preprocessing.py
+ \item generatewfc.py
+ \item dotproduct.py
+ \item clustering\_bands.py
+ \item basisrotation.py
+ \item r2k.py
+ \item berry\_geometry.py
+ \item condutivity.py
+ \item shg.py
+\end{itemize}\medskip
+
+and the auxiliary files:
+\begin{itemize}
+  \item cli.py
+  \item \_\_init\_\_.py
+  \item \_version.py
+\end{itemize}\medskip
 
 
+Visualization scripts are in directory 'viz':
+\begin{itemize}
+ \item draw2D\_machine.py
+ \item draw2D\_corrected.py
+ \item viz\_geometry.py
+ \item viz\_wfc.py
+\end{itemize}\medskip
+
+Also the subroutines (depend on the other scripts) are in directory '\_subroutines':
+\begin{itemize}
+ \item headerfooter.py
+ \item contatempo.py
+ \item parserQE.py
+ \item loaddata.py
+ \item dft.py
+ \item comutator.py
+ \item write\_k\_points.py
+ \item clustering\_libs.py
+ \item clustering\_signaling.py
+\end{itemize}
+
+Some utilities are in directory 'utils':
+\begin{itemize}
+  \item emailSender.py
+  \item jit.py
+  \item \_logger.py
+  \item NestablePool.py
+\end{itemize}
+
+It is likely that some of these scripts will be merged with others
+while new ones will appear due to new functionalities.
+
+
+
+
+
+
+\chapter{Algorithm of \texttt{cluster} script}
+\label{cha:cluster}
+
+
+    \section{Algorithm}
+    This solution employs different techniques to solve the bands crossing problem as graph theory and unsupervised machine learning methods.
+    The bands clustering algorithm uses the information of k-points' wavefunctions, the dot products of their Bloch factors, and their corresponding band energy.
+    Thus, the solver algorithm iterates between two main pieces: the component identification based on graph theory and the samples assignment using unsupervised machine learning methods.
+
+The solver's objective is to get closer to the best solution in each iteration by maximizing the number of solved bands.
+
+The bands clustering algorithm uses the wave functions, their dot products, and their corresponding band energy for these calculations.
+
+The output are five files that will be used by other programs, and will be described below.
+
+In the following sections we will discuss in more detail the purpose of each band clustering algorithm's part and how it works.
+
+
+
+\subsection{Problem configuration and notation definition}
+
+We first need to organize the information problem in a convenient data structure.
+The essential elements we have are the energies $E_{k,n}$ for each k-point $\vec{k}\equiv \left(k_x, k_y\right)$ and band $n$, the k-points' neighbor identification, and the dot product between the neighboring Bloch factors.
+The \textit{loaddata} module gives the algorithm most of this information; however, this module does not contain the dot product data; it is in the \textit{dp.npy} file.
+
+First, we create a mixed entity using a k-point and its band energy as if it were a vector on a "bands-energy" space.
+In the following, a variable $\vec{p}$ identifies a point in this space.
+Thus, this variable $\vec{p}$ contains the k-point coordinates and an eigenenergy of the k-point (which is a band designation).
+
+\begin{equation}
+    \vec{p} \equiv \left(k_x, k_y, E_{k,n}\right)
+\end{equation}
+
+The set of all k-points identifiers ($k$ indices) is $K$, where $K \equiv \left[k = 0,\dots,  N-1\right]$, and $\vec{K}\equiv \left\{\vec{k}_0, \vec{k}_1, \dots, \vec{k}_{N-1}\right\}$ is the set of all k-points vectors.
+$N$ is the total number of k-points.
+It is possible to define an index $p$ which uniquely determines a wavefunction' Bloch factors:
+\begin{equation}
+    p = n\, N + k
+\end{equation}
+We call $P$ to the set of all $p$'s.
+$n$ is the original band as attributed by the DFT software; we define the set of $n$'s: $B\equiv\left[0, n_B-1\right]$.
+$n_B$ is the total number of bands.
+
+
+Then
+\begin{equation}
+    P \equiv \left[0, n_B N -1\right]
+\end{equation}
+
+It leads to
+\begin{equation}
+    E_{k,n} = E_p,\hspace{1cm} k\in K, \; n\in B,\; p\in P
+\end{equation}
+
+Let us consider the points $p$ and $q$ $\in P$, with $q$ is neighbor of $p$
+(by neighbor we mean that the k-points that are implicit in the varaibles are adjacent in $x$ or $y$ directions in reciprocal space);
+the dot product between their Bloch factors is given by $0\leq \left|\braket{p}{q}\right|< 1$.
+If the Bloch factors $p$ and $q$ belong to the same band, and the band is analytic, since they are close together, their dot product should be close to one.
+On the other hand, this dot product should be close to zero if $p$ and $q$ belong to different bands, since different bands are orthogonal.
+
+Thus, this data seems to give all the information necessary to solve the band-crossing problem.
+However, from a computational point of view, more is needed;
+during the implementation of this solution, several problems were found, and just a few of them were solved successfully.
+
+Regardless, the dot product information is not wholly needless for values close to one $\left|\braket{p}{q}\right|\approx 1$;
+it is possible to form groups of well-constructed groups of points.
+The existence of points and a way of measuring relations between them reminds the graph concept.
+This is the motivation for one of the algorithm's parts:
+use graph theory methods to identify these groups and, after that, use unsupervised machine learning techniques to classify them.
+
+Consequently, this information makes it possible to construct the first data structure.
+It is a graph $G(V, E)$ ($V$ is a set of vertices or nodes, and $E$ is a set of edges (connections)) where each point $p$ is a node, so that $V=P$, and if the connection (dot-product) is more significant than an adequate tolerance $\mathrm{TOL}$, there is an edge between these nodes.
+For simplicity, this graph is undirected and does not have weights on its edges.
+
+\begin{equation}
+    E = \left\{(p,q)\;|\;p,q\in P \;\;\wedge\;\; \left|\braket{p}{q}\right| > \mathrm{TOL}\right\}
+\end{equation}
+
+Therefore, the initial state of the problem is prepared in a convenient data structures.
+The next step is the solver algorithm that will use that data and the graph previously constructed as the initial solution point.
+The solver algorithm will iterate over this information.
+
+\subsection{Solver Algorithm}
+
+The solver algorithm (SA) is an optimization process based on iteration for solving the band-crossing problem.
+As discussed before, this algorithm iterates between two parts.
+One piece is based on graph theory (GT), and the other is based on unsupervised machine-learning (UML) techniques.
+The initial conditions for this algorithm were described in the previous section.
+This SA follows the flux chart in figure \ref{fig:flux_chart}.
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/Fluxchart.pdf}
+    \caption{Flowchart with a simplified description of the solver algorithm.}
+    \label{fig:flux_chart}
+\end{figure}
+
+
+The SA can be simply described as various iterations starting in an initial state, and as a result some points are not attributed to their initial band and others are noted as having a strong connection between them.
+We call components to the sets of points with connections and if there are no connections, the single point is also considered a component.
+In the first iteration, these components were computed by constructing the graph using the dot-product information only.
+
+The initial state of an iteration is the best result of the previous iterations, since SA  is an optimization algorithm.
+
+One SA iteration involves identifying the components, given the initial state in the form of a graph.
+Then, clustering these components gives larger components, that will form a new state that will be used as a initial state of the next iteration.
+The optimization process ends when the result does not change between iterations, reaching a stationary solution or the relaxation parameter reaches the minimum value.
+This relaxation value is a parameter for the second part of the algorithm, and will be discussed in more detail later.
+
+
+\subsection{Identification of problems and component detection}
+
+The concept of a component in GT is necessary to understand this part of the SA.
+A component is a sub-graph (i.e., a smaller graph $g$ belonging to a bigger one $G$ where $g\subset G$), with edges (connections) between its nodes, but no connections with the nodes of other components, as shown in the example in figure \ref{fig:components}.
+
+
+\begin{figure}
+    \centering
+    \begin{subfigure}[b]{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/Graph.pdf}
+        \caption{}
+        \label{fig:Ca}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{figures/Components.pdf}
+        \caption{}
+        \label{fig:Cb}
+    \end{subfigure}
+    \caption{Figure \ref{fig:Ca} represents a general graph $G(V, E)$ where the vertices $V$ are the gray circles, and the edges $E$ are the line that connects them. Figure \ref{fig:Cb} shows the $G$'s components. Each component is identified with a different color.}
+    \label{fig:components}
+\end{figure}
+
+These components are straightforward to identify using existing GT techniques, but as expected, they are not the final result are just portions of a band.
+For this reason, it is essential to classify these components to form completed bands.
+Hence, the SA uses UML techniques to perform the assignment.
+
+This algorithm gives very good results for some materials; however, there are problems.
+Namely, a few points create "loops" between prohibited points.
+It is a prohibited path because, there should be no connection between two points in the same k-point (that is two wavefunctions with the same k-point must not belong to the same band).
+This results in the algorithm assuming two components that should be separated as a single component.
+
+
+Two types of points create these "loops."
+One of them is straightforward to identify; they are degenerate points up to a numerical error
+(i.e., for $p$ and $q \in P$ and the same $k$-point, their energy is numerically the same, $E_p=E_q$).
+Thus, it is only necessary to identify them and see if they create these forbidden paths.
+When found, the connection is broken.
+
+The second type of points are not strictly degenerate but have the same behavior, complicating their detection.
+These more peculiar points are in high energy bands and, besides other inconveniences, limit the algorithm to obtain better results.
+Nonetheless, for both types of problems, we need a more substantial justification for this behavior.
+
+
+
+
+\subsection{Unsupervised Machine Learning Techniques to Band Clustering}
+
+Since the SA uses UML techniques to classify the components, it is necessary to establish a clear notation.
+We call clusters the components with many points that can not join to another large component, because they are geometricaly incompatibles.
+These clusters are electronic bands of eingenenergies with part of their points attributed.
+We call samples to the rest of components, that can be assigned to clusters.
+When a cluster has the number of nodes (points $p$) equal to the total number of $k$-points, $N$, this cluster is solved (the band is solved). Otherwise, it is an incomplete cluster, and the sample assignment tries to complete it.
+
+Supervised machine learning methods require large quantities of labeled examples, which we do not have. Thus, this problem lies in the unsupervised machine learning (UML) problems category. Consequently, this SA's part aims to identify the samples that complete the clusters using these UML methods.
+
+The UML method needs a way to compare samples to clusters and evaluates the attribution. Therefore, let us define the similarity between two objects, $\mathrm{X}$ and $\mathrm{Y}$, $\mathcal{S}(\mathrm{X}, \mathrm{Y})$. The $\mathcal{S}(\mathrm{X}, \mathrm{Y})$ value measures how similar these objects are based on one chosen metric. When the similarity is higher, the objects are more similar. We will use a normalized similarity.
+So, the $\mathcal{S}$ value must satisfy the following properties:
+
+\begin{enumerate}
+    \item It is positive, $\mathcal{S}(\mathrm{X}, \mathrm{Y}) > 0$
+    \item It is symetric, $\mathcal{S}(\mathrm{X}, \mathrm{Y}) = \mathcal{S}(\mathrm{Y}, \mathrm{X})$
+    \item It is maximum when $\mathrm{X}=\mathrm{Y}$, $\mathcal{S}(\mathrm{X}, \mathrm{X})=1$
+\end{enumerate}
+
+On the other hand, we use a similarity metric between samples and clusters that only needs their representative points. A cluster has many well-connected points, but only a few are required for comparison with a candidate sample to join the cluster. Only the cluster and sample boundary points may establish relations between them. Then, these are the representative points.
+
+Identifying the representative points is an undersampling technique.
+We use the convolution of the Prewitt operator, $(G_x, G_y)$, with the cluster's k-space projection $A$ to determine their edges.
+The matrix $A$ has the shape of k-space; each matrix's entry, $A_{k_x,k_y}$, is one if the cluster includes a point $\vec{p}(p)$ with that $k$-point and zero otherwise.
+
+ This operator is a simple discrete gradient that identifies high-frequency variations. These variations define the cluster's edges.
+
+
+\begin{equation}
+    A_{k_x,k_y} = \left\{
+    \begin{array}{cc}
+        1, & \vec{k} \in \vec{K}_\text{Cluster}\subset \vec{K} \\
+        0, & \text{otherwise}
+    \end{array}
+    \right.
+\end{equation}
+
+The Prewitt operator $G_x$ and $G_y$ is defined as:
+
+\begin{multicols}{2}
+    \begin{equation}
+        G_x = \left[
+            \begin{array}{ccc}
+                -1 & 0 & 1 \\
+                -1 & 0 & 1 \\
+                -1 & 0 & 1
+            \end{array}
+            \right]
+    \end{equation}
+    \begin{equation}
+        G_y = G_x^T=\left[
+            \begin{array}{ccc}
+                -1 & -1 & -1 \\
+                0  & 0  & 0  \\
+                1  & 1  & 1
+            \end{array}
+            \right]
+    \end{equation}
+\end{multicols}
+
+Then, the gradient on the $\alpha=\{x,y\}$ direction of $A$ is
+
+\begin{equation}
+    A_\alpha = G_\alpha \ast A,\hspace{1.5cm}\alpha=\{x,y\}
+\end{equation}
+where $\ast$ is the convolution operator and the representative cluster edges are given by.
+
+\begin{equation}
+    \text{edges} = \sqrt{A_x^2+A_y^2} > 0
+\end{equation}
+
+Now, we can explicitly choose a metric to define the similarity that we will use.
+A similarity score between neighboring representative points is a weighted mean between the modulus of the dot product $\left|\braket{p}{q}\right|$, and a function $f_p(E_q)$ of the energies $E_q$ of the neighbor point $q$.
+
+The similarity of a cluster with a sample is defined as the mean of the individual similarity score between neighboring representative points.
+
+Thus, the similarity score, $s_p^q$, between the cluster's $p\in P$ point and its sample's $q \in P$ neighbor is:
+
+\begin{equation}
+    s_p^q = \alpha\left|\braket{p}{q}\right| + \left(1-\alpha\right)f_p(E_q)
+\end{equation}
+
+The value of $\alpha$ is a relaxation parameter in the optimization process.
+Its initial value is $1/2$, and it diminishes on each iteration.
+The $\alpha$'s minimum value is $0$ due to normalization.
+The function $f_p(E_q)$ computes the normalized difference between the best-expected energy $E_{\text{best}}$ with the actual $q$'s energy, $E_q$.
+
+\begin{equation}
+    f_p(E_q) = \frac{\text{min}\{\Delta E_\text{best}^{i}\}_i}{\Delta E_\text{best}^q},\hspace{1.5cm} \Delta E_a^b = |E_a-E_b|
+\end{equation}
+\begin{equation}
+    i \in \left\{n N + k: \forall_n\hspace{0.2cm}n\in B\right\}
+\end{equation}
+
+We consider a smooth variation of bands in bands-energy space. Thus, the energy profile in each band's $\vec{p}$ point can be approximated by a second-order polinomial. This approximation allows us to calculate the best energy value $E_\text{best}$ by extrapolation from the neighboring points that belong to the cluster.
+If there are not enough points to fit the curve, the $p$'s energy is used,  $E_\text{best}=E_p$.
+
+Comparing all possible energy values $E_i$ for the corresponding $q$'s $k$-point $k$, the value that minimizes the difference with the best energy is obtained.
+
+
+
+
+Then, the similarity $\mathcal{S}(\mathrm{C},\mathrm{S})$ between the cluster $\mathrm{C}$ and sample $\mathrm{S}$  is
+
+\begin{equation}
+    \mathcal{S}(\mathrm{C},\mathrm{S}) = \frac{1}{4\tilde{N}}\sum_{p\in \mathrm{C}}\sum_{q\in\mathrm{S}} s_p^q,\hspace{1.5cm}\mathrm{C},\mathrm{S}\subset P
+\end{equation}
+
+Where $\tilde{N}$ is the total number of points in the sample's edge. The factor of 4 appears because each $q$ point generally contains four neighbors.
+
+Assigning samples to clusters uses similarity values, trying to maximize it between them.
+Hence, all the samples are compared to all clusters to obtain their similarities. The classification is made iteratively. For each iteration, one sample is assigned to the best cluster. After that, the similarity scores are recalculated between the samples and the modified cluster.
+
+This UML algorithm is the SA's bottleneck in executing time. This complication comes from the fact that this part is mostly computed linearly (i.e., the result on each iteration depends on the previous result). Therefore parallelizing it is challenging.
+
+Ultimately, all the samples are assigned to one cluster leading to a band solution.
+However, as mentioned before, many problematic points exist.
+In particular, high energy bands usually have many oscilations, and in this case the assumption of smooth variation is inaccurate, and the metric criteria has to be improved.
+
+
+
+
+
+\subsection{Evaluation and optimization of the result}
+The full SA is determinist because the result is always the same for the same conditions. However, after one SA iteration (GT and UML methods), it obtains one solution for the band-crossing problem.
+Different iterations obtain different number of bands completed and correct, which we want to maximize.
+Bands may have points wrongly attributed to them, and so an verification and evaluation is needed.
+
+We use two stages to evaluate the iteration result.
+The first one considers only the dot-product information.
+It identifies and signals points acording to their assignment as indicated in table \ref{tab:signals1}.
+A point is correctly assigned when the mean dot-product $\overline{\left|\braket{p}{q}\right|}$ is close to one.
+
+\begin{table}[H]
+    \center
+    \caption{Signals for the attribution of points to bands.}\label{tab:signals1}
+    \begin{tabular}{ccc}
+        \hline
+        Signal & Description       & Condition                                  \\\hline
+        $0$    & Not solved        &                                            \\
+        $1$    & Wrong             & $\overline{\left|\braket{p}{q}\right|} \leq 0.2$        \\
+        $2$    & Degenerate        &                                            \\
+        $3$    & Potential mistake & $0.2 < \overline{\left|\braket{p}{q}\right|} \leq 0.8$  \\
+        $4$    & Potential correct & $0.8 < \overline{\left|\braket{p}{q}\right|} \leq 0.9 $ \\
+        $5$    & Correct           & $\overline{\left|\braket{p}{q}\right|} > 0.9$           \\\hline
+    \end{tabular}
+\end{table}
+
+This stage signals some points that require more analysis, namelly the ones that are signaled as potentialy correct or mistaken.
+The second stage of evaluation analyzes these points to decide if they are effectively correct or not.
+This evaluation uses the energy continuity criteria (i.e., the bands need to be analytical in bands-energy space).
+Using the energy profile approximation by a second-order polynomial, it is possible to evaluate the continuity for each point's direction.
+Thus, each point receives a new signal value related to the number of directions $D$, that preserves the energy continuity.
+
+\begin{table}[H]
+    \center
+    \caption{Signals for the attribution of points to bands.}\label{tab:signals2}
+    \begin{tabular}{ccc}
+        \hline
+        Signal & Description       & Condition                                  \\\hline
+        $0$    & Not solved        &                                            \\
+        $1$    & Wrong             & $D=0$        \\
+        $2$    & Degenerate        &                                            \\
+        $3$    & Other             & $0<D<4$  \\
+        $4$    & Correct           & $D = 4$           \\\hline
+    \end{tabular}
+
+\end{table}
+
+
+Furthermore,  the total solution (all solved bands) is scored using the dot-product criteria.
+The score is the mean overall $\overline{\left|\braket{p}{q}\right|}$ of the $p$-points of the band.
+This new information makes it possible to compare the final solution with the one of the previous iteration.
+
+We consider the best result the one that reaches more solved bands and a larger score for each band.
+Consequently, this result will be the starting point for the next iteration.
+
+The points not attributed, the mistakes, and the doubtful points became nodes with no connections.
+The points signaled as correct form well-constructed bands' portions.
+Thus, these points are nodes with edges between them.
+Accordingly, the collection of these nodes and edges forms the new graph.
+Therefore, the new initial state is ready and compatible with the first step of the SA (it needs the data in a graph form).
+
+The next iterations will try to solve the wrong attributions to obtain a better result until it reaches a stationary point or the relaxation criteria ends.
+
+
+
+
+\section{Bands Clustering program (BCP)}
+
+The python program \textit{bands\_clustering.py} implements the steps needed to use the algorithm explained previously. This program reads and prepares all the dependencies to perform the bands clustering algorithm in the \textit{bands\_libs.py} program.
+
+The BCP uses the results of the previous berry suit algorithms. The needed results from the previously ran programs are:
+
+\begin{table}[H]
+    \center
+    \caption{Previous berry suit programs save their results in various files. This table shows the required ones.}
+    \begin{tabular}{lr}
+        \hline
+        Description & File \\
+        \hline
+        The material's main data & \textit{datafile.npy}\\
+        The modulus of Bloch's factor dot products $\left|\braket{p}{q}\right|$ & \textit{dp.npy}\\
+        The eigenvalues & \textit{eigenvalues.npy}\\
+        A list with the neighbors of each $k$-point & \textit{neighbors.npy}\\
+
+        \hline
+    \end{tabular}
+\end{table}
+
+The berry suite must be installed in the python environment. Then, the following command line executes the BC program in the material directory.
+
+\begin{verbatim}
+    $ berry cluster
+\end{verbatim}
+
+Note that running the algorithm is only possible if all the dependencies exist.
+
+Also, it is possible to change some of the default behaviour by passing some parameters, which are shown in table \ref{tab:options}.
+
+\begin{table}[H]
+    \center
+    \caption{Parameters that are received as optional arguments to the BCP.}\label{tab:options}
+    \begin{tabular}{lcr}
+        \hline
+        Description & Flag & Default \\
+        \hline
+        The maximum band to solve  & Mb & $n_B$\\
+        The minimum band to consider & -mb & $0$\\
+        Number of processes to use & -np & $1$\\
+        Dot-product tolerance used for graph construction & -t & $0.95$\\
+
+        \hline
+    \end{tabular}
+\end{table}
+
+
+
+
+
+
+
+
+
+
+
+
+
+\end{appendices}
 
 \end{document}

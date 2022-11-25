@@ -78,9 +78,9 @@ def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.nd
 
 #TODO: ADD assertions to all functions in order to check if the inputs are correct
 #IDEA: Maybe create a type checking decorator (USE pydantic)
-def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, broadning: complex = 0.01j, logger_name: str = "condutivity", logger_level: int = logging.INFO) -> None:
+def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, broadning: complex = 0.01j, logger_name: str = "condutivity", logger_level: int = logging.INFO, flush: bool = True):
     global band_list, berry_connections, OMEGA_SHAPE, CONST, VK
-    logger = log(logger_name, "CONDUCTIVITY", logger_level)
+    logger = log(logger_name, "CONDUCTIVITY", logger_level, flush)
 
     logger.header()
 
@@ -105,16 +105,18 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ########################################################################### 
-    logger.info(f"List of bands: {band_list}")
-    logger.info(f"Number of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
-    logger.info(f"Number of bands: {d.nbnd}")
-    logger.info(f"k-points step, dk {d.step}")                                    # Defines the step for gradient calculation dk
+    logger.info(f"\tUsing {npr} processes")
 
-    logger.info(f"Maximum energy (Ry): {energy_max}")
-    logger.info(f"Energy step (Ry): {energy_step}")
-    logger.info(f"Energy broadning (Ry): {np.imag(broadning)}")
-    logger.info(f"Constant 4e^2/hslash 1/(2pi)^2 in Rydberg units: {np.imag(CONST)}")
-    logger.info(f"Volume (area) in k space: {VK}\n")
+    logger.info(f"\n\tList of bands: {band_list}")
+    logger.info(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
+    logger.info(f"\tNumber of bands: {d.nbnd}")
+    logger.info(f"\tk-points step, dk {d.step}")                                    # Defines the step for gradient calculation dk
+
+    logger.info(f"\n\tMaximum energy (Ry): {energy_max}")
+    logger.info(f"\tEnergy step (Ry): {energy_step}")
+    logger.info(f"\tEnergy broadning (Ry): {np.imag(broadning)}")
+    logger.info(f"\tConstant 4e^2/hslash 1/(2pi)^2 in Rydberg units: {np.imag(CONST)}")
+    logger.info(f"\tVolume (area) in k space: {VK}\n")
 
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS
@@ -148,7 +150,7 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
                     np.real(sigma[omega][0, 1]),
                 )
             )
-    logger.info("Real part of conductivity saved to file sigmar.dat")
+    logger.info("\tReal part of conductivity saved to file sigmar.dat")
 
     with open(os.path.join(d.workdir, "sigmai.dat"), "w") as sigm:
         sigm.write("# Energy (eV), sigma_xx,  sigma_yy,  sigma_yx,  sigma_xy\n")
@@ -163,7 +165,7 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
                     np.imag(sigma[omega][0, 1]),
                 )
             )
-    logger.info("Imaginary part of conductivity saved to file sigmai.dat")
+    logger.info("\tImaginary part of conductivity saved to file sigmai.dat")
 
     ###########################################################################
     # Finished

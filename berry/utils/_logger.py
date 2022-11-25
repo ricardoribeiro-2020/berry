@@ -19,17 +19,18 @@ def prepare_message(method):
     return wrapper
 
 class log:
-    def __init__(self, program, title, level=logging.INFO):
+    def __init__(self, program, title, level=logging.INFO, flush: bool = True):
         Path(program).parent.mkdir(parents=True, exist_ok=True)
 
         self.program = program
         self.title = title
         self.version = __version__
         self.level = level
+        self.flush = flush
         logging.basicConfig(filename=program+'.log',
                             filemode='w',
 #                            encoding='utf-8',
-                            format='%(asctime)s   %(levelname)s: %(message)s',
+                            format='%(message)s',
                             datefmt='%m/%d/%Y %H:%M:%S',
                             level=level)
         self.logger = logging.getLogger(program)
@@ -38,7 +39,7 @@ class log:
 
         ch = logging.StreamHandler()
         ch.setLevel(logging.WARNING)
-        ch.setFormatter(logging.Formatter('%(asctime)s  %(levelname)s: %(message)s'))
+        ch.setFormatter(logging.Formatter('%(message)s'))
         self.logger.addHandler(ch)
     
     def header(self):
@@ -47,19 +48,26 @@ class log:
 
     @prepare_message
     def debug(self, message):
+        if self.flush:
+            print(message, flush=True)
         self.logger.debug(message)
 
     @prepare_message
     def info(self, message):
-        print(message)
+        if self.flush:
+            print(message, flush=True)
         self.logger.info(message)
 
     @prepare_message
     def error(self, message):
+        if self.flush:
+            print(message, flush=True)
         self.logger.error(message)
 
     @prepare_message
     def warning(self, message):
+        if self.flush:
+            print(message, flush=True)
         self.logger.warning(message)
     
     def footer(self):

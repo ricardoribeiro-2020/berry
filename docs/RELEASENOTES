@@ -7,9 +7,10 @@ Therefore, the input and output of most programs may not be compatible with olde
 
 The main differences in this version are:
 
-- Implementation of a machine learning algorithm to improve the selection of the bands.
+- Implementation of a AI algorithm to improve the selection of the bands.
 
 - Paralelization of most the code, which resulted in a large decrease in wall clock running time.
 
 - Code more conformed with PEP8 and usual practices.
 
+- Implementation of a pip instalation.
