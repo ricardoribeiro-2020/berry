@@ -109,7 +109,7 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
                                         bandsfinal[kpproblem, bnproblem[:, 1]])))
     logger.info("\tk-points\n", kpproblem)
     logger.info("\tin bands\n", bnproblem)
-    logger.info("\tmach  bands\n", machbandproblem)
+    logger.info("\tmatch  bands\n", machbandproblem)
 
 #   logger.info(karray)
 #   logger.info(karray[0])
