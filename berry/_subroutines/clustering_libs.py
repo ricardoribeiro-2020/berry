@@ -946,7 +946,7 @@ class MATERIAL:
         
         self.degenerate_final = np.array(self.degenerate_final)
 
-    def print_report(self, signal_report: np.ndarray) -> None:
+    def print_report(self, signal_report: np.ndarray, description:str) -> None:
         '''
         Shows on screen the report for each band.
 
@@ -954,7 +954,7 @@ class MATERIAL:
             signal_report : array_like
                 An array with the k-point's signal information.
         '''
-        final_report = '\n\t====== REPORT ======\n'
+        final_report = f'\n\t\t====== {description} ======\n'
         bands_report = []
         MAX = np.max(signal_report) + 1
         ###########################################################################
@@ -966,7 +966,7 @@ class MATERIAL:
             report.append(np.round(self.final_score[bn], 4))                # Set the final score
             bands_report.append(report)
 
-            self.logger.info(f'\t\tNew Band: {bn}\tnr fails: {report[0]}')
+            self.logger.info(f'\t\t\tNew Band: {bn}\tnr fails: {report[0]}')
             if self.logger.level == logging.DEBUG:
                 _bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
 
@@ -974,9 +974,9 @@ class MATERIAL:
         # Set up the data representation
         ###########################################################################
         bands_report = np.array(bands_report)
-        final_report += '\n\t Signaling: how many events ' + \
+        final_report += '\n\t\t Signaling: how many events ' + \
                         'in each band signaled.\n'
-        bands_header = '\n\t Band | '
+        bands_header = '\n\t\t Band | '
 
         header = list(range(MAX)) + [' ']
         for signal, value in enumerate(header):
@@ -985,14 +985,14 @@ class MATERIAL:
             n_spaces = len(str(np.max(bands_report[:, signal])))-1
             bands_header += ' '*n_spaces+str(value) + '   '
 
-        final_report += bands_header + '\n\t'
+        final_report += bands_header + '\n\t\t'
         final_report += '-'*len(bands_header)
 
         for bn, report in enumerate(bands_report):
             # Make the report
             #  bn    |    0    0   0     0     0   nks
             bn += self.min_band
-            final_report += f'\n\t {bn}{" "*(4-len(str(bn)))} |' + ' '
+            final_report += f'\n\t\t {bn}{" "*(4-len(str(bn)))} |' + ' '
             for signal, value in enumerate(report):
                 if signal < MAX:
                     value = int(value)
@@ -1122,6 +1122,7 @@ class MATERIAL:
         # The previous and best result are stored
         ###########################################################################
         ALPHA = 0.5   # The initial alpha is 0.5. 0.5*<i|j> + 0.5*f(E)
+        COUNT = 0     # Counter iteration
         bands_final_flag = True
         self.bands_final_prev = np.copy(self.bands_final)
         self.best_bands_final = np.copy(self.bands_final)
@@ -1136,17 +1137,18 @@ class MATERIAL:
         # Algorithm
         ###########################################################################
         while bands_final_flag and ALPHA >= min_alpha:
-            print()
+            COUNT += 1
+            self.logger.info()
             self.logger.info(f'\n\n\tClustering samples for TOL: {ALPHA}')
             self.get_components(alpha=ALPHA)                    # Obtain components from a Graph
 
-            self.logger.info('\tCalculating output')        
+            self.logger.info('\t\tCalculating output')        
             self.obtain_output()                            # Compute the result
-            self.print_report(self.signal_final)            # Print result
+            self.print_report(self.signal_final, 'Report Number: {COUNT} considering dot-product information')                           # Print result
 
-            self.logger.info('\n\tValidating result')     
+            self.logger.info('\n\t\tValidating result using energy continuity criteria')     
             self.correct_signal()                           # Evaluate the energy continuity and perform a new Graph
-            self.print_report(self.correct_signalfinal)     # Print result
+            self.print_report(self.correct_signalfinal, 'Validation Report Number: {COUNT} considering  energy continuity criteria')     # Print result
             
             # Verification if the result is similar to the previous one
             bands_final_flag = np.sum(np.abs(self.bands_final_prev - self.bands_final)) != 0
@@ -1184,8 +1186,9 @@ class MATERIAL:
         self.signal_final = np.copy(self.best_signal_final)
         self.degenerate_final = np.copy(self.degenerate_best)
         
-        self.print_report(self.signal_final)
-        self.print_report(self.correct_signalfinal)
+        self.logger.info('\n\tSolution Report\n')
+        self.print_report(self.signal_final, 'Final Report considering dot-product information')
+        self.print_report(self.correct_signalfinal, 'Validation Report considering energy continuity criteria')
 
 class COMPONENT:
     '''
