@@ -8,6 +8,7 @@ import sys
 import time
 import logging
 import xml.etree.ElementTree as ET
+import platform
 
 import numpy as np
 
@@ -17,8 +18,6 @@ from berry._subroutines.parserQE import parser
 now = time.strftime("%d-%m-%Y_%H:%M:%S", time.gmtime())
 Data = Dict[str, Union[int, str, float]]
 
-#NOTE: Apperently using a different number of processes slightly changes the calculated values for the eigenvalues 
-#NOTE: talk to professor if ouput dir should match the dft and wfc dir or not. Currently when the workdir is not in the same dir as the dft and wfc dir the ouput does not stay in the same dir.
 class Preprocess:
     def __init__(self, k0: List[float], nkx: int, nky: int, nkz: int, step: float, nbnd: int, logger_name: str = "preprocess", logger_level: int = logging.INFO, 
                 npr: int = 1, dft_dir: str = "dft", scf: str = "scf.in", nscf: str = "", wfc_dir: str = "wfc", 
@@ -138,7 +137,7 @@ class Preprocess:
             np.save(fich, self.nr3)  # Number of points of wfc in real space z direction
             np.save(fich, self.nr)  # Total number of points of wfc in real space
             np.save(fich, self.nbnd)  # Number of bands
-            np.save(fich, "self.BERRYPATH")  # Path of BERRY files  #TODO: Talk to professor about this not being necessary
+            np.save(fich, "self.BERRYPATH")  # Path of BERRY files  #TODO: Talk about this not being necessary
             np.save(fich, self.ref_point)  # Point in real space where all phases match
             np.save(fich, self.work_dir)  # Working directory
             np.save(fich, self.non_colinear)  # If the calculation is noncolinear
@@ -274,7 +273,7 @@ class Preprocess:
         self.logger.info(f"\t\tnr3: {self.nr1}")
         self.logger.info(f"\t\tnr: {self.nr}")
         self.ref_point = self.point * self.nr1 * self.nr2
-        self.logger.info(f"\tPoint were phases match: {int(self.ref_point)}")
+        self.logger.info(f"\n\tPoint where phases match: {int(self.ref_point)}")
 
         nbnd = int(output.find("band_structure").find("nbnd").text)
         self.logger.info(f"\tNumber of bands in the DFT calculation: {nbnd}")
@@ -344,7 +343,7 @@ class Preprocess:
         return kpoints, nktoijl, ijltonk
 
     def _log_inputs(self):
-        self.logger.info("\tUsing python version: " + sys.version)
+        self.logger.info("\tUsing python version: " + platform.python_version())
 
         self.logger.info("\n\tInputs:")
         self.logger.info(f"\tUnique reference name: {self.ref_name}")
