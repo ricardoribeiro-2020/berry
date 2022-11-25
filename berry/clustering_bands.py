@@ -31,22 +31,22 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
         os.mkdir(OUTPUT_PATH)
         logger.warning(f'The {OUTPUT_PATH} was created.')
 
-    logger.info(f'Min band: {min_band}    Max band: {max_band}')
-    logger.info(f'Tolerance: {tol}')
-    logger.info(f'Number of CPUs: {npr}\n')
+    logger.info(f'\tMin band: {min_band}    Max band: {max_band}')
+    logger.info(f'\tTolerance: {tol}')
+    logger.info(f'\tNumber of CPUs: {npr}\n')
 
-    logger.info(f"Unique reference of run:{d.refname}")
-    logger.info(f"Directory where the wfc are:{d.wfcdirectory}")
-    logger.info(f"Number of k-points in each direction:{d.nkx}, {d.nky}, {d.nkz}")
-    logger.info(f"Total number of k-points:{d.nks}")
-    logger.info(f"Number of bands:{d.nbnd}\n")
-    logger.info("Neighbors loaded")
-    logger.info("Eigenvalues loaded")
+    logger.info(f"\tUnique reference of run:{d.refname}")
+    logger.info(f"\tDirectory where the wfc are:{d.wfcdirectory}")
+    logger.info(f"\tNumber of k-points in each direction:{d.nkx}, {d.nky}, {d.nkz}")
+    logger.info(f"\tTotal number of k-points:{d.nks}")
+    logger.info(f"\tNumber of bands:{d.nbnd}\n")
+    logger.info("\tNeighbors loaded")
+    logger.info("\tEigenvalues loaded")
 
     connections = np.load(os.path.join(d.workdir, "dp.npy"))
-    logger.info("Modulus of direct product loaded\n")
+    logger.info("\tModulus of direct product loaded\n")
 
-    logger.info("Finished reading data\n")
+    logger.info("\tFinished reading data\n")
 
     ###########################################################################
     # 3. CLUSTERING ALGORITHM
@@ -55,16 +55,16 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
     material = MATERIAL(d.nkx, d.nky, d.nbnd, d.nks, d.eigenvalues,
                         connections, d.neighbors, logger, n_process=npr)
 
-    logger.info('\n\tCalculating Vectors')
+    logger.info('\tCalculating Vectors')
     material.make_vectors(min_band=min_band, max_band=max_band)
 
-    logger.info('\tCalculating Connections')
+    logger.info('\n\tCalculating Connections')
     material.make_connections(tol=tol)
 
     logger.info('\tSolving problem')
     material.solve()
 
-    logger.info('\tClustering Done')
+    logger.info('\n\tClustering Done')
 
     with open(os.path.join(d.workdir, 'final.report'), 'w') as f:
         f.write(material.final_report)

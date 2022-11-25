@@ -673,7 +673,7 @@ class MATERIAL:
         ###########################################################################
         # Identify connected components inside the GRAPH
         ###########################################################################
-        self.logger.info('\n\n\tNumber of Components: ')
+        self.logger.info('\n\n\tNumber of Components: '.rstrip('\n'))
         self.logger.info(f'\t{nx.number_connected_components(self.GRAPH)}')
         self.components = [COMPONENT(self.GRAPH.subgraph(c),
                                      self.kpoints_index,
@@ -954,7 +954,7 @@ class MATERIAL:
             signal_report : array_like
                 An array with the k-point's signal information.
         '''
-        final_report = '\n\t====== REPORT ======\n\n'
+        final_report = '\n\t====== REPORT ======\n'
         bands_report = []
         MAX = np.max(signal_report) + 1
         ###########################################################################
@@ -966,7 +966,7 @@ class MATERIAL:
             report.append(np.round(self.final_score[bn], 4))                # Set the final score
             bands_report.append(report)
 
-            self.logger.info(f'\t\n\tNew Band: {bn}\tnr fails: {report[0]}')
+            self.logger.info(f'\t\tNew Band: {bn}\tnr fails: {report[0]}')
             if self.logger.level == logging.DEBUG:
                 _bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
 
@@ -1144,7 +1144,7 @@ class MATERIAL:
             self.obtain_output()                            # Compute the result
             self.print_report(self.signal_final)            # Print result
 
-            self.logger.info('\tValidating result')     
+            self.logger.info('\n\tValidating result')     
             self.correct_signal()                           # Evaluate the energy continuity and perform a new Graph
             self.print_report(self.correct_signalfinal)     # Print result
             

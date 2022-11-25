@@ -23,19 +23,19 @@ if __name__ == "__main__":
     # Reading data needed for the run
     berrypath = d.berrypath
 
-    LOG.info(f"     Unique reference of run:{d.refname}")
-    LOG.info(f"     Directory where the wfc are:{d.wfcdirectory}")
-    LOG.info(f"     Number of k-points in each direction:{d.nkx}, {d.nky}, {d.nkz}")
-    LOG.info(f"     Total number of k-points:{d.nks}")
-    LOG.info(f"     Number of bands:{d.nbnd}")
+    LOG.info(f"\tUnique reference of run:{d.refname}")
+    LOG.info(f"\tDirectory where the wfc are:{d.wfcdirectory}")
+    LOG.info(f"\tNumber of k-points in each direction:{d.nkx}, {d.nky}, {d.nkz}")
+    LOG.info(f"\tTotal number of k-points:{d.nks}")
+    LOG.info(f"\tNumber of bands:{d.nbnd}")
     print()
-    LOG.info("     Neighbors loaded")
-    LOG.info("     Eigenvalues loaded")
+    LOG.info("\tNeighbors loaded")
+    LOG.info("\tEigenvalues loaded")
 
     connections = np.load("dp.npy")
-    LOG.info("     Modulus of direct product loaded")
+    LOG.info("\tModulus of direct product loaded")
 
-    LOG.info("     Reading files bandsfinal.npy and signalfinal.npy")
+    LOG.info("\tReading files bandsfinal.npy and signalfinal.npy")
     with open("bandsfinal.npy", "rb") as fich:
         bandsfinal = np.load(fich)
     fich.close()
@@ -44,7 +44,7 @@ if __name__ == "__main__":
     fich.close()
 
     print()
-    LOG.info("     Finished reading data")
+    LOG.info("\tFinished reading data")
     print()
 
     My, Mx = np.meshgrid(np.arange(d.nky), np.arange(d.nkx))
@@ -71,9 +71,9 @@ if __name__ == "__main__":
         if signal < CORRECT:
             error_directions.append([k, bn])
             directions.append(scores)
-        LOG.debug(f'K point: {k} Band: {bn}')
-        LOG.debug(f'    New Signal: {signal}')
-        LOG.debug(f'    Directions: {scores}')
+        LOG.debug(f'\tK point: {k} Band: {bn}')
+        LOG.debug(f'\tNew Signal: {signal}')
+        LOG.debug(f'\tDirections: {scores}')
     
     error_directions = np.array(error_directions)
     directions = np.array(directions)
@@ -102,7 +102,7 @@ if __name__ == "__main__":
         bands_report.append(report)
 
     bands_report = np.array(bands_report)
-    final_report += '\n Signaling: how many events ' + \
+    final_report += ' Signaling: how many events ' + \
                     'in each band d.\n'
     bands_header = '\n Band | '
 
