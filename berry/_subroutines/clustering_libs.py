@@ -673,8 +673,8 @@ class MATERIAL:
         ###########################################################################
         # Identify connected components inside the GRAPH
         ###########################################################################
-        self.logger.info('\n\n\tNumber of Components: '.rstrip('\n'))
-        self.logger.info(f'\t{nx.number_connected_components(self.GRAPH)}')
+        self.logger.info('\n\n\t\tNumber of Components: '.rstrip('\n'))
+        self.logger.info(f'\t\t{nx.number_connected_components(self.GRAPH)}')
         self.components = [COMPONENT(self.GRAPH.subgraph(c),
                                      self.kpoints_index,
                                      self.matrix)
@@ -709,8 +709,8 @@ class MATERIAL:
             else:
                 # If it can, then it is a sample.
                 samples.append(component)
-        self.logger.info(f'\tPhase 1: {len(self.solved)}/{self.nbnd} Solved')
-        self.logger.info(f'\tInitial clusters: {len(clusters)} Samples: {len(samples)}')
+        self.logger.info(f'\t\tPhase 1: {len(self.solved)}/{self.nbnd} Solved')
+        self.logger.info(f'\t\tInitial clusters: {len(clusters)} Samples: {len(samples)}')
 
         ###########################################################################
         # Assigning samples to clusters by selecting the best option
@@ -753,13 +753,13 @@ class MATERIAL:
             self.logger.debug(f'\t\t{count[0]}/{count[1]} Sample corrected: {score}')
             if clusters[bn].N == self.nks:
                 #  If the number of nodes inside the component equals the total number of k points, the cluster is considered solved
-                self.logger.debug('Cluster Solved')
+                self.logger.debug('\n\tCluster Solved')
                 self.solved.append(clusters.pop(bn))
 
-        self.logger.info(f'\tPhase 2: {len(self.solved)}/{self.nbnd} Solved')
+        self.logger.info(f'\t\tPhase 2: {len(self.solved)}/{self.nbnd} Solved')
 
         if len(self.solved)/self.nbnd < 1:
-            self.logger.info(f'\tNeclusters: {len(clusters)}')
+            self.logger.info(f'\t\tNew clusters: {len(clusters)}')
 
         self.clusters : list[COMPONENT] = clusters
 
@@ -954,7 +954,7 @@ class MATERIAL:
             signal_report : array_like
                 An array with the k-point's signal information.
         '''
-        final_report = f'\n\t\t====== {description} ======\n'
+        final_report = f'\n\t====== {description} ======\n'
         bands_report = []
         MAX = np.max(signal_report) + 1
         ###########################################################################
@@ -1142,13 +1142,13 @@ class MATERIAL:
             self.logger.info(f'\n\n\tClustering samples for TOL: {ALPHA}')
             self.get_components(alpha=ALPHA)                    # Obtain components from a Graph
 
-            self.logger.info('\t\tCalculating output')        
+            self.logger.info('\n\t\tCalculating output')        
             self.obtain_output()                            # Compute the result
-            self.print_report(self.signal_final, 'Report Number: {COUNT} considering dot-product information')                           # Print result
+            self.print_report(self.signal_final, f'Report Number: {COUNT} considering dot-product information')                           # Print result
 
             self.logger.info('\n\t\tValidating result using energy continuity criteria')     
             self.correct_signal()                           # Evaluate the energy continuity and perform a new Graph
-            self.print_report(self.correct_signalfinal, 'Validation Report Number: {COUNT} considering  energy continuity criteria')     # Print result
+            self.print_report(self.correct_signalfinal, f'Validation Report Number: {COUNT} considering  energy continuity criteria')     # Print result
             
             # Verification if the result is similar to the previous one
             bands_final_flag = np.sum(np.abs(self.bands_final_prev - self.bands_final)) != 0
