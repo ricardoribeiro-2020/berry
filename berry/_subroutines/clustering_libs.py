@@ -1139,7 +1139,7 @@ class MATERIAL:
         while bands_final_flag and ALPHA >= min_alpha:
             COUNT += 1
             self.logger.info()
-            self.logger.info(f'\n\n\tClustering samples for TOL: {ALPHA}')
+            self.logger.info(f'\n\n\t* Iteration: {COUNT} - Clustering samples for TOL: {ALPHA}')
             self.get_components(alpha=ALPHA)                    # Obtain components from a Graph
 
             self.logger.info('\n\t\tCalculating output')        
@@ -1186,7 +1186,7 @@ class MATERIAL:
         self.signal_final = np.copy(self.best_signal_final)
         self.degenerate_final = np.copy(self.degenerate_best)
         
-        self.logger.info('\n\tSolution Report\n')
+        self.logger.info('\n\n\tSolution Report\n')
         self.print_report(self.signal_final, 'Final Report considering dot-product information')
         self.print_report(self.correct_signalfinal, 'Validation Report considering energy continuity criteria')
 

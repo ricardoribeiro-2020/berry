@@ -95,7 +95,7 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     ###################################################################################
     logger.info()
     logger.info("\t**********************")
-    logger.info("\tProblems not solved")
+    logger.info("\n\tProblems not solved")
     if degeneratefinal.shape[0] == 0:
         logger.footer()
         exit(0)
@@ -107,9 +107,11 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     bnproblem = bnproblem[bands_use]
     machbandproblem = np.array(list(zip(bandsfinal[kpproblem, bnproblem[:, 0]],
                                         bandsfinal[kpproblem, bnproblem[:, 1]])))
-    logger.info("\tk-points\n", kpproblem)
-    logger.info("\tin bands\n", bnproblem)
-    logger.info("\tmatch  bands\n", machbandproblem)
+
+    list_str = lambda l:' (' + ', '.join(map(str, l)) + ') '
+    logger.info("\tk-points\n\t", ', '.join(map(str, kpproblem)))
+    logger.info("\tin bands\n\t", ', '.join(map(list_str, bnproblem)))
+    logger.info("\tmatch  bands\n\t", ', '.join(map(list_str, machbandproblem)))
 
 #   logger.info(karray)
 #   logger.info(karray[0])
