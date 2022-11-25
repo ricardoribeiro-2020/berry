@@ -38,11 +38,11 @@ class WfcGenerator:
         self.logger.header()
         self._log_run_params()
         if isinstance(self.nk_points, range):
-            self.logger.info("Will run for all k-points and bands")
-            self.logger.info(f"There are {d.nks} k-points and {d.nbnd} bands.\n")
+            self.logger.info("\tWill run for all k-points and bands")
+            self.logger.info(f"\tThere are {d.nks} k-points and {d.nbnd} bands.\n")
 
             for nk in self.nk_points:
-                self.logger.info(f"Calculating wfc for k-point {nk}")
+                self.logger.info(f"\tCalculating wfc for k-point {nk}")
                 self._wfck2r(nk, 0, d.nbnd)
         else:
             if isinstance(self.bands, range):
