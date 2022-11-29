@@ -1197,9 +1197,9 @@ class MATERIAL:
             self.correct_signalfinal[k_ot, bn_ot] = CORRECT-1                                       # Signaling as CORRECT the repeated k-points
 
     def report(self):
-        self.final_report += '*********************************************************************************\n'
-        self.final_report += '|                               SOLUTION REPORT                                 |\n'
-        self.final_report += '*********************************************************************************\n\n'
+        self.final_report += '*************************************************************************************************\n'
+        self.final_report += '|                                       SOLUTION REPORT                                         |\n'
+        self.final_report += '*************************************************************************************************\n\n'
 
         self.final_report += f'\n\tLegend for the report:\n'
         self.final_report += EVALUATE_RESULT_HELP
@@ -1228,6 +1228,9 @@ class MATERIAL:
             bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2               # Final band
         
             self.final_report += f'\n\t\t K-point: {k1} bands: {bn1}, {bn2}' # Report
+        
+        if len(problems) > 0:
+            self.final_report += f'\n\t    These points was corrected.'
 
         if len(self.degenerates) > 0:
             n = len(self.degenerates)
@@ -1242,25 +1245,33 @@ class MATERIAL:
                 self.final_report += f'\n\t\t {i}* K-point: {k1} Bands: {bn1}, {bn2}'
             self.final_report += f'\n\n\t\tThese points requires run the basis correction program to make their bands usable.'
 
+        if len(self.degenerate_final) > 0:
+            n = len(self.degenerate_final)
+            self.final_report += f'\n\n\tIt identified {n} points where at least one neighbor with a dot-product between 0.5 and 0.8.'
+            self.final_report += f'\n\t    Note that they may not be degenerate points under energy criteria. Then, they are not signaled and no corrections will be applied.'
+            self.final_report += f'\n\t    However, they are saved in the degeneratefinal.npy file too if you decided to analyze their problems.'
+            for k, (bn1, bn2) in self.degenerate_final:
+                self.final_report += f'\n\t\t * K-point: {k} Bands: {bn1}, {bn2}'
+
         n_recomended = 0
         n_max = self.max_solved
         for i, s in enumerate(self.final_score):
-            if s <= 0.99 and i <= self.max_solved:
+            if s <= 0.99 and i < self.max_solved:
                 break
             n_recomended += 1
         
         self.final_report += f'\n\n\tThe band clustering program solved {self.max_solved} bands.'
-        self.final_report += f'\n\tIt is recommended use until band number {n_recomended}.'
+        self.final_report += f'\n\tIt is recommended use until band number {n_recomended-1}.'
 
         if self.max_solved > n_recomended:
             self.final_report += f'\n\tNote that the other bands must be correct but a human verification is required.'
             n_max = n_recomended
 
         if len(problems) > 0:
-            self.final_report += f'\n\tIt is recommended run the program basis rotation in the following manner'
+            self.final_report += f'\n\tBefore use the result run the program basis rotation in the following manner'
             self.final_report += f'\n\t\t $ berry basis {n_max}'
 
-        self.final_report += '\n\n*********************************************************************************\n'
+        self.final_report += '\n\n*************************************************************************************************\n'
 
         return self.final_report
 
