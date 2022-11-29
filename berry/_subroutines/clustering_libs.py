@@ -518,6 +518,7 @@ class MATERIAL:
         # Solve problems that a degenerate point may cause
         ###########################################################################
         degnerates = []
+        problems = []
         for d1, d2 in self.degenerados:
             '''
             The degenerate points may cause problems.
@@ -525,6 +526,8 @@ class MATERIAL:
             '''
             if not self.find_path(d1, d2):
                 # Verify if exist a path that connects two forbidden points
+                # The points does not cause problems but are degenerated, then, they are signaled
+                # The basis rotation program will solve them.
                 degnerates.append([d1, d2])
                 continue
             # Obtains the neighbors from each degenerate point that cause problems
@@ -532,7 +535,11 @@ class MATERIAL:
             N2 = np.array(self.get_neigs(d2))
             if len(N1) == 0 or len(N2) == 0:
                 continue
-            self.logger.info(f'\tProblem:\n\t{d1}: {N1}\n\t{d2}: {N2}\n')
+            problem = {
+                d1 : N1,
+                d2 : N2,
+            }
+            self.logger.debug(f'\tProblem:\n\t{d1}: {N1}\n\t{d2}: {N2}\n')
             NKS = self.nks
             if len(N1) > 1 and len(N2) > 1:
                 def n2_index(n1): return np.where(N2 % NKS == n1 % NKS)
@@ -562,8 +569,16 @@ class MATERIAL:
             else:
                 N1_ = [n[np.argmin(np.abs(n-n1))] for n in N]
                 N2_ = [n[np.argmax(np.abs(n-n1))] for n in N]
-
-            self.logger.info(f'\tSolution:\n\t{d1}: {N1_}\n\t{d2}: {N2_}\n')
+            solution = {
+                d1 : N1_,
+                d2 : N2_
+            }
+            problems.append({
+                'points' : [d1, d2],
+                'problem' : problem,
+                'solution' : solution
+            })
+            self.logger.debug(f'\tSolution:\n\t{d1}: {N1_}\n\t{d2}: {N2_}\n')
             for k in N1:
                 self.GRAPH.remove_edge(k, d1)
             for k in N2:
@@ -575,6 +590,45 @@ class MATERIAL:
                 self.GRAPH.add_edge(k, d2)
         
         self.degenerates = np.array(degnerates)
+
+        ###########################################################################
+        # Show the degenerate points that causes problems
+        ###########################################################################
+        self.solved_problems_info : list[str, list] = ['', []]
+        self.solved_problems_info[0] = '\n\tThe number of points with forbidden paths between them is: ' + str(len(problems))
+        if len(problems) > 0:
+            self.solved_problems_info[0] += '\n    Problems in points:'
+            self.logger.info('\t*** It was found and solved points with forbidden paths ***')
+            self.logger.info('\t    The problems and their solutions are:')
+        
+        calc_k_bn = lambda p: (p % self.nks, p // self.nks + self.min_band )
+        for problem_dic in problems:
+            d1, d2 = problem_dic['points']
+            problem = problem_dic['problem']
+            solution = problem_dic['solution']
+            self.logger.info(f'\t    * Problem:')
+            k1, bn1 = calc_k_bn(d1)
+            _, bn2 = calc_k_bn(d2)
+            self.solved_problems_info[1].append([d1, d2])
+            self.logger.info(f'\n\t\tK-point: {k1} in bands: {bn1}, {bn2}')
+            self.logger.info(f'\t\t   {k1}, {bn1} has edges with:')
+            for k, bn in map(calc_k_bn, problem[d1]):
+                self.logger.info(f'\t\t    k: {k} bn: {bn}')
+            self.logger.info(f'\t\t   {k1}, {bn2} has edges with:')
+            for k, bn in map(calc_k_bn, problem[d2]):
+                self.logger.info(f'\t\t    k: {k} bn: {bn}')
+            self.logger.info(f'\t      Solution:')
+            self.logger.info(f'\t\t   {k1}, {bn1} has edges with:')
+            for k, bn in map(calc_k_bn, solution[d1]):
+                self.logger.info(f'\t\t    k: {k} bn: {bn}')
+            self.logger.info(f'\t\t   {k1}, {bn2} has edges with:')
+            for k, bn in map(calc_k_bn, solution[d2]):
+                self.logger.info(f'\t\t    k: {k} bn: {bn}')
+
+        if len(problems) > 0:
+            self.logger.info('\n\t    Note that this solutions may fail but the next iterations will try to correct them')
+
+            
 
     def parallelize(self, process_name: str, f: Callable, iterator: Union[list, np.ndarray], *args) -> np.ndarray:
         '''
@@ -837,7 +891,7 @@ class MATERIAL:
         # Signaling and storage of degenerate k-points.
         ###########################################################################
 
-        for d1, d2 in self.degenerados:
+        for d1, d2 in self.degenerates:
             # Signaling the numerically degenerate points Ei ~ Ej
             k1 = d1 % self.nks                                              # k point
             bn1 = d1 // self.nks + self.min_band                            # band
@@ -1002,7 +1056,7 @@ class MATERIAL:
                 final_report += ' '*n_spaces+str(value) + '   '
         final_report += '\n'
         self.logger.info(final_report)              # Show on screen
-        self.final_report = final_report    # Store for saving on a file
+        return final_report
     
     def correct_signal(self) -> None:
         '''
@@ -1105,6 +1159,27 @@ class MATERIAL:
             self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)                       # Save the currect result
             self.correct_signalfinal[k_ot, bn_ot] = CORRECT-1                                       # Signaling as CORRECT the repeated k-points
 
+    def report(self):
+        self.logger.info('\n\n\t********** SOLUTION REPORT **********\n')
+        self.final_report += self.print_report(self.signal_final, 'Final Report considering dot-product information')
+        self.final_report += '\n'
+        self.final_report += self.print_report(self.correct_signalfinal, 'Validation Report considering energy continuity criteria')
+
+        p_report, problems = self.solved_problems_info
+
+        self.final_report += p_report
+        for d1, d2 in problems:
+            k1 = d1 % self.nks                                              # k point
+            bn1 = d1 // self.nks + self.min_band                            # band
+            k2 = d2 % self.nks                                              # k point
+            bn2 = d2 // self.nks + self.min_band                            # band
+            Bk1 = self.bands_final[k1] == bn1                               # Find in which  band the k-point was attributed
+            Bk2 = self.bands_final[k2] == bn2                               # Find in which  band the k-point was attributed
+            bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1               # Final band
+            bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2               # Final band
+        
+            self.final_report += f'\n\t\t K-point: {k1} bands: {bn1}, {bn2}' # Report
+
     def solve(self, step: float=0.1, min_alpha: float=0) -> None:
         '''
         This method is the main algorithm which iterates between solutions
@@ -1125,6 +1200,7 @@ class MATERIAL:
         ALPHA = 0.5   # The initial alpha is 0.5. 0.5*<i|j> + 0.5*f(E)
         COUNT = 0     # Counter iteration
         bands_final_flag = True
+        self.final_report = ''
         self.bands_final_prev = np.copy(self.bands_final)
         self.best_bands_final = np.copy(self.bands_final)
         self.best_score = np.zeros(self.total_bands, dtype=float)
@@ -1186,10 +1262,8 @@ class MATERIAL:
         self.final_score = np.copy(self.best_score)
         self.signal_final = np.copy(self.best_signal_final)
         self.degenerate_final = np.copy(self.degenerate_best)
-        
-        self.logger.info('\n\n\tSolution Report\n')
-        self.print_report(self.signal_final, 'Final Report considering dot-product information')
-        self.print_report(self.correct_signalfinal, 'Validation Report considering energy continuity criteria')
+
+        self.logger.info(self.report())
 
 class COMPONENT:
     '''
