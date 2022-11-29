@@ -102,7 +102,12 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     # Consider just the ones below last band wanted
     kpproblem = degeneratefinal[:, 0]
     bnproblem = degeneratefinal[:, [1, 2]]
-    bands_use = np.logical_and(bnproblem[:, 0] <= max_band, bnproblem[:, 1] <= max_band)
+    S1 = signalfinal[kpproblem, bnproblem[:, 0]]
+    S2 = signalfinal[kpproblem, bnproblem[:, 1]]
+    bands_use = np.logical_and(bnproblem[:, 0] <= max_band, bnproblem[:, 1] <= max_band, S1 == DEGENERATE, S2 == DEGENERATE)
+    if np.sum(bands_use) == 0:
+        logger.footer()
+        exit(0)
     kpproblem = kpproblem[bands_use]
     bnproblem = bnproblem[bands_use]
     machbandproblem = np.array(list(zip(bandsfinal[kpproblem, bnproblem[:, 0]],

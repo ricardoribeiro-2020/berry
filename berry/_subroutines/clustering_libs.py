@@ -1215,6 +1215,7 @@ class MATERIAL:
 
         p_report, problems = self.solved_problems_info
 
+        self.final_report += '\n\tSummary:\n'
         self.final_report += p_report
 
         point2k_bn = lambda p: (p % self.nks, p // self.nks + self.min_band)
@@ -1256,7 +1257,7 @@ class MATERIAL:
         n_recomended = 0
         n_max = self.max_solved
         for i, s in enumerate(self.final_score):
-            if s <= 0.99 and i < self.max_solved:
+            if s <= 0.99 and i <= self.max_solved:
                 break
             n_recomended += 1
         
@@ -1268,8 +1269,8 @@ class MATERIAL:
             n_max = n_recomended
 
         if len(problems) > 0:
-            self.final_report += f'\n\tBefore use the result run the program basis rotation in the following manner'
-            self.final_report += f'\n\t\t $ berry basis {n_max}'
+            self.final_report += f'\n\tBefore use the result run the program basis rotation in the following manner:'
+            self.final_report += f'\n\n\t\t $ berry basis {n_max}'
 
         self.final_report += '\n\n*************************************************************************************************\n'
 
