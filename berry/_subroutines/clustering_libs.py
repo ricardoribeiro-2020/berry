@@ -39,6 +39,7 @@ NOT_SOLVED = 0
 N_NEIGS = 4
 
 EVALUATE_RESULT_HELP = '''
+    ---------------Report considering dot-product information--------------
             C -> Mean dot-product <i|j> of each k-point
             ---------------------------------------------------------
             Value |                              Description
@@ -49,10 +50,11 @@ EVALUATE_RESULT_HELP = '''
             3     :  POTENTIAL_MISTAKE     C <= 0.8
             4     :  POTENTIAL_CORRECT     0.8 < C < 0.9
             5     :  CORRECT               C > 0.9
-
+    -----------------------------------------------------------------------
 '''
 
 VALIDATE_RESULT_HELP = '''
+    --------------Report considering energy continuity criteria------------
             N -> Number of directions that preserves energy continuity.
             ---------------------------------------------------------
             Value |                              Description
@@ -62,7 +64,7 @@ VALIDATE_RESULT_HELP = '''
             2     :  DEGENERATE            It is a degenerate point.
             3     :  OTHER                 0 < N < 4
             4     :  CORRECT               N = 4
-
+    -----------------------------------------------------------------------
 '''
 
 
@@ -1199,11 +1201,13 @@ class MATERIAL:
         self.final_report += '|                               SOLUTION REPORT                                 |\n'
         self.final_report += '*********************************************************************************\n\n'
 
+        self.final_report += f'\n\tLegend for the report:\n'
         self.final_report += EVALUATE_RESULT_HELP
-        report_s1, report_a1 = self.print_report(self.signal_final, 'Final Report considering dot-product information', show=False)
-        self.final_report += report_s1
         self.final_report += '\n'
         self.final_report += VALIDATE_RESULT_HELP
+        self.final_report += '\n'
+        report_s1, report_a1 = self.print_report(self.signal_final, 'Final Report considering dot-product information', show=False)
+        self.final_report += report_s1
         self.final_report += '\n'
         retport_s2, report_a2 = self.print_report(self.correct_signalfinal, 'Validation Report considering energy continuity criteria', show=False)
         self.final_report += retport_s2
@@ -1212,11 +1216,12 @@ class MATERIAL:
         p_report, problems = self.solved_problems_info
 
         self.final_report += p_report
+
+        point2k_bn = lambda p: (p % self.nks, p // self.nks + self.min_band)
+
         for d1, d2 in problems:
-            k1 = d1 % self.nks                                              # k point
-            bn1 = d1 // self.nks + self.min_band                            # band
-            k2 = d2 % self.nks                                              # k point
-            bn2 = d2 // self.nks + self.min_band                            # band
+            k1, bn1 = point2k_bn(d1)
+            k2, bn2 = point2k_bn(d2)
             Bk1 = self.bands_final[k1] == bn1                               # Find in which  band the k-point was attributed
             Bk2 = self.bands_final[k2] == bn2                               # Find in which  band the k-point was attributed
             bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1               # Final band
@@ -1224,28 +1229,38 @@ class MATERIAL:
         
             self.final_report += f'\n\t\t K-point: {k1} bands: {bn1}, {bn2}' # Report
 
-        if len(problems) > 0:
-            self.final_report += f'\n\t\tThese points requires run the basis correction program to make their bands usable.'
+        if len(self.degenerates) > 0:
+            n = len(self.degenerates)
+            self.final_report += f'\n\n\tThe number of degenerate points is: {n}\n'
+            for i, (d1, d2) in enumerate(self.degenerates):
+                k1, bn1 = point2k_bn(d1)
+                k2, bn2 = point2k_bn(d2)
+                Bk1 = self.bands_final[k1] == bn1                               # Find in which  band the k-point was attributed
+                Bk2 = self.bands_final[k2] == bn2                               # Find in which  band the k-point was attributed
+                bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1               # Final band
+                bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2               # Final band
+                self.final_report += f'\n\t\t {i}* K-point: {k1} Bands: {bn1}, {bn2}'
+            self.final_report += f'\n\n\t\tThese points requires run the basis correction program to make their bands usable.'
 
         n_recomended = 0
         n_max = self.max_solved
         for i, s in enumerate(self.final_score):
-            if s <= 0.99 and i < self.max_solved:
+            if s <= 0.99 and i <= self.max_solved:
                 break
             n_recomended += 1
         
-        self.final_report += f'\n\t\tThe band clustering program solved {self.max_solved} bands.'
-        self.final_report += f'\n\t\tIt is recommended use until band number {n_recomended}.'
+        self.final_report += f'\n\n\tThe band clustering program solved {self.max_solved} bands.'
+        self.final_report += f'\n\tIt is recommended use until band number {n_recomended}.'
 
         if self.max_solved > n_recomended:
-            self.final_report += f'\n\t\tNote that the other bands must be correct but a human verification is required.'
+            self.final_report += f'\n\tNote that the other bands must be correct but a human verification is required.'
             n_max = n_recomended
 
         if len(problems) > 0:
-            self.final_report += f'\n\t\tIt is recommended run the program basis rotation in the following manner'
-            self.final_report += f'\n\t\t\t $ berry basis {n_max}'
+            self.final_report += f'\n\tIt is recommended run the program basis rotation in the following manner'
+            self.final_report += f'\n\t\t $ berry basis {n_max}'
 
-        self.final_report += '*********************************************************************************\n'
+        self.final_report += '\n\n*********************************************************************************\n'
 
         return self.final_report
 
