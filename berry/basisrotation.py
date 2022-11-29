@@ -211,20 +211,20 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     for nb in range(max_band + 1):
         nk = -1
         nrnotattrib[nb] = np.count_nonzero(signalfinal[:, nb] == NOT_SOLVED)
-        logger.info()
-        logger.info(f"\tNew band {nb}\t\tnr of fails: {nrnotattrib[nb]}")
-        logger.info(_bands_numbers(d.nkx, d.nky, bandsfinal[:, nb]))
-    logger.info()
-    logger.info("\tSignaling")
+        logger.debug()
+        logger.debug(f"\tNew band {nb}\t\tnr of fails: {nrnotattrib[nb]}")
+        logger.debug(_bands_numbers(d.nkx, d.nky, bandsfinal[:, nb]))
+    logger.debug()
+    logger.debug("\tSignaling")
     nrsignal = np.zeros((d.nbnd, CORRECT+1), dtype=int)
     for nb in range(max_band + 1):
         nk = -1
         for s in range(CORRECT+1):
             nrsignal[nb, s] = np.count_nonzero(signalfinal[:, nb] == s)
 
-        logger.info()
-        logger.info(f"\t{nb}\t\t{NOT_SOLVED}: {nrsignal[nb, NOT_SOLVED]}")
-        logger.info(_bands_numbers(d.nkx, d.nky, signalfinal[:, nb]))
+        logger.debug()
+        logger.debug(f"\t{nb}\t\t{NOT_SOLVED}: {nrsignal[nb, NOT_SOLVED]}")
+        logger.debug(_bands_numbers(d.nkx, d.nky, signalfinal[:, nb]))
 
     logger.info()
     logger.info("\tResume of results")

@@ -984,6 +984,7 @@ class MATERIAL:
             #  Band |    0    1   2     3     4      5 ...
             n_spaces = len(str(np.max(bands_report[:, signal])))-1
             bands_header += ' '*n_spaces+str(value) + '   '
+        bands_header += '   Score'
 
         final_report += bands_header + '\n\t\t'
         final_report += '-'*len(bands_header)
@@ -999,7 +1000,7 @@ class MATERIAL:
                 n_max = len(str(np.max(bands_report[:, signal])))
                 n_spaces = n_max - len(str(value))
                 final_report += ' '*n_spaces+str(value) + '   '
-
+        final_report += '\n'
         self.logger.info(final_report)              # Show on screen
         self.final_report = final_report    # Store for saving on a file
     
