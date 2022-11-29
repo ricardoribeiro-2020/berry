@@ -38,8 +38,36 @@ NOT_SOLVED = 0
 
 N_NEIGS = 4
 
+EVALUATE_RESULT_HELP = '''
+            C -> Mean dot-product <i|j> of each k-point
+            ---------------------------------------------------------
+            Value |                              Description
+            ------------------------------------------------------
+            0     :                        The point is not solved
+            1     :  MISTAKE               C <= 0.2
+            2     :  DEGENERATE            It is a degenerate point.
+            3     :  POTENTIAL_MISTAKE     C <= 0.8
+            4     :  POTENTIAL_CORRECT     0.8 < C < 0.9
+            5     :  CORRECT               C > 0.9
+
+'''
+
+VALIDATE_RESULT_HELP = '''
+            N -> Number of directions that preserves energy continuity.
+            ---------------------------------------------------------
+            Value |                              Description
+            ---------------------------------------------------------
+            0     :                        The point is not solved
+            1     :  MISTAKE               N = 0
+            2     :  DEGENERATE            It is a degenerate point.
+            3     :  OTHER                 0 < N < 4
+            4     :  CORRECT               N = 4
+
+'''
+
+
 def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
-    '''
+    f'''
     This function attributes the correspondent signal using
     the dot product between each neighbor.
 
@@ -597,7 +625,7 @@ class MATERIAL:
         self.solved_problems_info : list[str, list] = ['', []]
         self.solved_problems_info[0] = '\n\tThe number of points with forbidden paths between them is: ' + str(len(problems))
         if len(problems) > 0:
-            self.solved_problems_info[0] += '\n    Problems in points:'
+            self.solved_problems_info[0] += '\n\t    Problems in points:'
             self.logger.info('\t*** It was found and solved points with forbidden paths ***')
             self.logger.info('\t    The problems and their solutions are:')
         
@@ -626,7 +654,7 @@ class MATERIAL:
                 self.logger.info(f'\t\t    k: {k} bn: {bn}')
 
         if len(problems) > 0:
-            self.logger.info('\n\t    Note that this solutions may fail but the next iterations will try to correct them.\n')
+            self.logger.info('\n\t    Note that these solutions may fail but the next iterations will try to correct them.\n')
 
             
 
@@ -1000,13 +1028,19 @@ class MATERIAL:
         
         self.degenerate_final = np.array(self.degenerate_final)
 
-    def print_report(self, signal_report: np.ndarray, description:str) -> None:
+    def print_report(self, signal_report: np.ndarray, description:str, show:bool=True) -> None:
         '''
         Shows on screen the report for each band.
 
         Parameters
             signal_report : array_like
                 An array with the k-point's signal information.
+            description : string
+                Describes the table
+            show : bool
+                If it is true then the table is shown. Otherwise, the string and the report are returned.
+        Return
+            final_report : string
         '''
         final_report = f'\n\t====== {description} ======\n'
         bands_report = []
@@ -1020,9 +1054,9 @@ class MATERIAL:
             report.append(np.round(self.final_score[bn], 4))                # Set the final score
             bands_report.append(report)
 
-            self.logger.info(f'\t\t\tNew Band: {bn}\tnr fails: {report[0]}')
+            self.logger.debug(f'\t\t\tNew Band: {bn}\tnr fails: {report[0]}')
             if self.logger.level == logging.DEBUG:
-                _bands_numbers(self.nkx, self.nky, self.bands_final[:, bn])
+                self.logger.debug(_bands_numbers(self.nkx, self.nky, self.bands_final[:, bn]))
 
         ###########################################################################
         # Set up the data representation
@@ -1032,13 +1066,12 @@ class MATERIAL:
                         'in each band signaled.\n'
         bands_header = '\n\t\t Band | '
 
-        header = list(range(MAX)) + [' ']
+        header = list(range(MAX)) + ['Score']
         for signal, value in enumerate(header):
             # Make the header
             #  Band |    0    1   2     3     4      5 ...
             n_spaces = len(str(np.max(bands_report[:, signal])))-1
             bands_header += ' '*n_spaces+str(value) + '   '
-        bands_header += '   Score'
 
         final_report += bands_header + '\n\t\t'
         final_report += '-'*len(bands_header)
@@ -1055,8 +1088,10 @@ class MATERIAL:
                 n_spaces = n_max - len(str(value))
                 final_report += ' '*n_spaces+str(value) + '   '
         final_report += '\n'
-        self.logger.info(final_report)              # Show on screen
-        return final_report
+        if show:
+            self.logger.info(final_report)              # Show on screen
+            return None
+        return final_report, bands_report
     
     def correct_signal(self) -> None:
         '''
@@ -1160,10 +1195,19 @@ class MATERIAL:
             self.correct_signalfinal[k_ot, bn_ot] = CORRECT-1                                       # Signaling as CORRECT the repeated k-points
 
     def report(self):
-        self.logger.info('\n\n\t********** SOLUTION REPORT **********\n')
-        self.final_report += self.print_report(self.signal_final, 'Final Report considering dot-product information')
+        self.final_report += '*********************************************************************************\n'
+        self.final_report += '|                               SOLUTION REPORT                                 |\n'
+        self.final_report += '*********************************************************************************\n\n'
+
+        self.final_report += EVALUATE_RESULT_HELP
+        report_s1, report_a1 = self.print_report(self.signal_final, 'Final Report considering dot-product information', show=False)
+        self.final_report += report_s1
         self.final_report += '\n'
-        self.final_report += self.print_report(self.correct_signalfinal, 'Validation Report considering energy continuity criteria')
+        self.final_report += VALIDATE_RESULT_HELP
+        self.final_report += '\n'
+        retport_s2, report_a2 = self.print_report(self.correct_signalfinal, 'Validation Report considering energy continuity criteria', show=False)
+        self.final_report += retport_s2
+        self.final_report += '\n'
 
         p_report, problems = self.solved_problems_info
 
@@ -1179,6 +1223,29 @@ class MATERIAL:
             bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2               # Final band
         
             self.final_report += f'\n\t\t K-point: {k1} bands: {bn1}, {bn2}' # Report
+
+        if len(problems) > 0:
+            self.final_report += f'\n\t\tThese points requires run the basis correction program to make their bands usable.'
+
+        n_recomended = 0
+        n_max = self.max_solved
+        for i, s in enumerate(self.final_score):
+            if s <= 0.99 and i < self.max_solved:
+                break
+            n_recomended += 1
+        
+        self.final_report += f'\n\t\tThe band clustering program solved {self.max_solved} bands.'
+        self.final_report += f'\n\t\tIt is recommended use until band number {n_recomended}.'
+
+        if self.max_solved > n_recomended:
+            self.final_report += f'\n\t\tNote that the other bands must be correct but a human verification is required.'
+            n_max = n_recomended
+
+        if len(problems) > 0:
+            self.final_report += f'\n\t\tIt is recommended run the program basis rotation in the following manner'
+            self.final_report += f'\n\t\t\t $ berry basis {n_max}'
+
+        self.final_report += '*********************************************************************************\n'
 
         return self.final_report
 
@@ -1264,7 +1331,7 @@ class MATERIAL:
         self.final_score = np.copy(self.best_score)
         self.signal_final = np.copy(self.best_signal_final)
         self.degenerate_final = np.copy(self.degenerate_best)
-
+        self.max_solved = max_solved
         self.logger.info(self.report())
 
 class COMPONENT:
