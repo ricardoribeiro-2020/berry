@@ -1251,6 +1251,7 @@ class MATERIAL:
             self.final_report += f'\n\n\tIt identified {n} points where at least one neighbor with a dot-product between 0.5 and 0.8.'
             self.final_report += f'\n\t    Note that they may not be degenerate points under energy criteria. Then, they are not signaled and no corrections will be applied.'
             self.final_report += f'\n\t    However, they are saved in the degeneratefinal.npy file too if you decided to analyze their problems.'
+            self.final_report += '\n\t    Problems in points:'
             for k, bn1, bn2 in self.degenerate_final:
                 self.final_report += f'\n\t\t * K-point: {k} Bands: {bn1}, {bn2}'
 
@@ -1270,7 +1271,7 @@ class MATERIAL:
 
         if len(problems) > 0:
             self.final_report += f'\n\tBefore use the result run the program basis rotation in the following manner:'
-            self.final_report += f'\n\n\t\t $ berry basis {n_max}'
+            self.final_report += f'\n\n\t\t $ berry basis {n_max - 1}'
 
         self.final_report += '\n\n*************************************************************************************************\n'
 
