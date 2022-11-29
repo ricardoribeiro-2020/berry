@@ -410,9 +410,9 @@ class MATERIAL:
         self.degenerados = self.parallelize('Finding degenerate points', obtain_degenerates, enumerate(self.vectors))
 
         if len(self.degenerados) > 0:
-            self.logger.info('\tDegenerate Points: ')
+            self.logger.debug('\tDegenerate Points: ')
             for d in self.degenerados:
-                self.logger.info(f'\t\t{d}')
+                self.logger.debug(f'\t\t{d}')
 
         self.ENERGIES = energies
         self.nbnd = nbnd-min_band
@@ -611,22 +611,22 @@ class MATERIAL:
             _, bn2 = calc_k_bn(d2)
             self.solved_problems_info[1].append([d1, d2])
             self.logger.info(f'\n\t\tK-point: {k1} in bands: {bn1}, {bn2}')
-            self.logger.info(f'\t\t   {k1}, {bn1} has edges with:')
+            self.logger.info(f'\t\t   k: {k1}, band: {bn1} has edges with:')
             for k, bn in map(calc_k_bn, problem[d1]):
                 self.logger.info(f'\t\t    k: {k} bn: {bn}')
-            self.logger.info(f'\t\t   {k1}, {bn2} has edges with:')
+            self.logger.info(f'\t\t   k: {k1}, band: {bn2} has edges with:')
             for k, bn in map(calc_k_bn, problem[d2]):
                 self.logger.info(f'\t\t    k: {k} bn: {bn}')
-            self.logger.info(f'\t      Solution:')
-            self.logger.info(f'\t\t   {k1}, {bn1} has edges with:')
+            self.logger.info(f'\n\t      Solution:')
+            self.logger.info(f'\t\t   k: {k1}, band: {bn1} has edges with:')
             for k, bn in map(calc_k_bn, solution[d1]):
                 self.logger.info(f'\t\t    k: {k} bn: {bn}')
-            self.logger.info(f'\t\t   {k1}, {bn2} has edges with:')
+            self.logger.info(f'\t\t   k: {k1}, band: {bn2} has edges with:')
             for k, bn in map(calc_k_bn, solution[d2]):
                 self.logger.info(f'\t\t    k: {k} bn: {bn}')
 
         if len(problems) > 0:
-            self.logger.info('\n\t    Note that this solutions may fail but the next iterations will try to correct them')
+            self.logger.info('\n\t    Note that this solutions may fail but the next iterations will try to correct them.\n')
 
             
 
@@ -1179,6 +1179,8 @@ class MATERIAL:
             bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2               # Final band
         
             self.final_report += f'\n\t\t K-point: {k1} bands: {bn1}, {bn2}' # Report
+
+        return self.final_report
 
     def solve(self, step: float=0.1, min_alpha: float=0) -> None:
         '''
