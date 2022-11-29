@@ -1250,8 +1250,7 @@ class MATERIAL:
             self.final_report += f'\n\n\tIt identified {n} points where at least one neighbor with a dot-product between 0.5 and 0.8.'
             self.final_report += f'\n\t    Note that they may not be degenerate points under energy criteria. Then, they are not signaled and no corrections will be applied.'
             self.final_report += f'\n\t    However, they are saved in the degeneratefinal.npy file too if you decided to analyze their problems.'
-            for (k, bns) in self.degenerate_final:
-                bn1, bn2 = bns
+            for k, bn1, bn2 in self.degenerate_final:
                 self.final_report += f'\n\t\t * K-point: {k} Bands: {bn1}, {bn2}'
 
         n_recomended = 0
