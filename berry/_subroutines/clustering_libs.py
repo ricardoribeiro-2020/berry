@@ -1267,7 +1267,7 @@ class MATERIAL:
         n_recomended = 0
         n_max = self.max_solved
         for i, s in enumerate(self.final_score):
-            if s <= TOL_USABLE and i <= self.max_solved and np.sum(report_a2[i, [0, 1]]) == 0:
+            if s <= TOL_USABLE or i > self.max_solved or np.sum(report_a2[i, [0, 1]]) > 0:
                 break
             n_recomended += 1
         
