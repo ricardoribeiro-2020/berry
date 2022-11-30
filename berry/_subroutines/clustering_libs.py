@@ -1232,19 +1232,25 @@ class MATERIAL:
         
         if len(problems) > 0:
             self.final_report += f'\n\t    These points was corrected.'
+        
+        filter_deg = lambda k1, bn1, bn2: np.any(np.all(np.array([k1, bn1, bn2]) == self.degenerate_final, axis=1))
+        degenerates = []
 
-        if len(self.degenerates) > 0:
-            n = len(self.degenerates)
+        for i, (d1, d2) in enumerate(self.degenerates):
+            k1, bn1 = point2k_bn(d1)
+            k2, bn2 = point2k_bn(d2)
+            Bk1 = self.bands_final[k1] == bn1                               # Find in which  band the k-point was attributed
+            Bk2 = self.bands_final[k2] == bn2                               # Find in which  band the k-point was attributed
+            bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1               # Final band
+            bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2               # Final band
+            if filter_deg(k1, bn1, bn2):
+                degenerates.append([k1, bn1, bn2])
+
+        if len(degenerates) > 0:
+            n = len(degenerates)
             self.final_report += f'\n\n\tThe number of degenerate points is: {n}\n'
-            for i, (d1, d2) in enumerate(self.degenerates):
-                k1, bn1 = point2k_bn(d1)
-                k2, bn2 = point2k_bn(d2)
-                Bk1 = self.bands_final[k1] == bn1                               # Find in which  band the k-point was attributed
-                Bk2 = self.bands_final[k2] == bn2                               # Find in which  band the k-point was attributed
-                bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1               # Final band
-                bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2               # Final band
-                if np.any(np.array([k1, bn1, bn2]) == self.degenerate_final):
-                    self.final_report += f'\n\t\t * K-point: {k1} Bands: {bn1}, {bn2}'
+            for k1, bn1, bn2 in degenerates:
+                self.final_report += f'\n\t\t * K-point: {k1} Bands: {bn1}, {bn2}'
             self.final_report += f'\n\n\t   These points requires run the basis correction program to make their bands usable.'
 
         if len(self.degenerate_final) > 0:
@@ -1271,7 +1277,7 @@ class MATERIAL:
             self.final_report += f'\n\tNote that the other bands must be correct but a human verification is required.'
             n_max = n_recomended
 
-        if len(problems) > 0:
+        if len(degenerates) > 0:
             self.final_report += f'\n\tBefore use the result run the program basis rotation in the following manner:'
             self.final_report += f'\n\n\t\t $ berry basis {n_max - 1}'
 
