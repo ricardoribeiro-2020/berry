@@ -1243,22 +1243,24 @@ class MATERIAL:
                 Bk2 = self.bands_final[k2] == bn2                               # Find in which  band the k-point was attributed
                 bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1               # Final band
                 bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2               # Final band
-                self.final_report += f'\n\t\t {i}* K-point: {k1} Bands: {bn1}, {bn2}'
-            self.final_report += f'\n\n\t\tThese points requires run the basis correction program to make their bands usable.'
+                if np.any(np.array([k1, bn1, bn2]) == self.degenerate_final):
+                    self.final_report += f'\n\t\t * K-point: {k1} Bands: {bn1}, {bn2}'
+            self.final_report += f'\n\n\t   These points requires run the basis correction program to make their bands usable.'
 
         if len(self.degenerate_final) > 0:
             n = len(self.degenerate_final)
             self.final_report += f'\n\n\tIt identified {n} points where at least one neighbor with a dot-product between 0.5 and 0.8.'
             self.final_report += f'\n\t    Note that they may not be degenerate points under energy criteria. Then, they are not signaled and no corrections will be applied.'
             self.final_report += f'\n\t    However, they are saved in the degeneratefinal.npy file too if you decided to analyze their problems.'
-            self.final_report += '\n\t    Problems in points:'
-            for k, bn1, bn2 in self.degenerate_final:
+            self.final_report += '\n\t    Points:'
+            i_sort = np.argsort([k for k, _, _ in self.degenerate_final])
+            for k, bn1, bn2 in self.degenerate_final[i_sort]:
                 self.final_report += f'\n\t\t * K-point: {k} Bands: {bn1}, {bn2}'
 
         n_recomended = 0
         n_max = self.max_solved
         for i, s in enumerate(self.final_score):
-            if s <= 0.99 and i <= self.max_solved:
+            if s <= 0.98 and i <= self.max_solved:
                 break
             n_recomended += 1
         
