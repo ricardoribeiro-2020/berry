@@ -1263,10 +1263,11 @@ class MATERIAL:
             for k, bn1, bn2 in self.degenerate_final[i_sort]:
                 self.final_report += f'\n\t\t * K-point: {k} Bands: {bn1}, {bn2}'
 
+        TOL_USABLE = 0.95           # Minimum score to consider a band as usable.
         n_recomended = 0
         n_max = self.max_solved
         for i, s in enumerate(self.final_score):
-            if s <= 0.98 and i <= self.max_solved:
+            if s <= TOL_USABLE or i > self.max_solved or np.sum(report_a2[i, [0, 1]]) > 0:
                 break
             n_recomended += 1
         
