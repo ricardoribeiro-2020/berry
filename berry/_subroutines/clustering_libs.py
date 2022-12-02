@@ -1273,7 +1273,7 @@ class MATERIAL:
             n_recomended += 1
         
         self.final_report += f'\n\n\tThe program solved {self.max_solved} bands.'
-        self.final_report += f'\n\t\nBands from 0 up to {n_recomended-1} can be used.'
+        self.final_report += f'\n\n\tBands from 0 up to {n_recomended-1} can be used.'
 
         if self.max_solved > n_recomended:
             self.final_report += f'\n\n\tNote that there may be more bands usable but a human verification is required.'
