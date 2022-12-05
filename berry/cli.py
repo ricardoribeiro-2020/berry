@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Any
+from typing import Callable, Dict, Tuple
 
 import os
 import re
@@ -9,7 +9,7 @@ import argparse, argcomplete
 
 from _version import __version__
 
-#TODO: Talk about np.savez
+#TODO: Talk to professor about np.savez
 #NOTE: np.savez could help with backwards compatibility 
 
 
@@ -42,9 +42,6 @@ def restricted_float(x):
     return x
 
 
-##################################################################################################
-# MAIN PROGRAMS
-##################################################################################################
 WFCGEN = DOT = CLUSTER = BASIS = R2K = GEOMETRY = CONDUCTIVITY = SHG = 0
 try:
     import berry._subroutines.loaddata as d
@@ -70,13 +67,14 @@ try:
 except:
     pass
 
-def master_cli():
+##################################################################################################
+# MAIN PROGRAMS
+##################################################################################################
+def berry_cli():
     ###########################################################################
-    # 1. DEFINING MASTER CLI ARGS
+    # 1. DEFINING BERRY CLI ARGS
     ###########################################################################
-    try:
-        parser = CustomParser(formatter_class=argparse.RawTextHelpFormatter,
-        description="""This is the Master Command Line Interface (CLI) for the berry suite.
+    parser = CustomParser(description="""This is the Master Command Line Interface (CLI) for the berry suite.
 The berry suite extracts the Bloch wavefunctions from DFT calculations in an ordered way. 
 This CLI is an interface to run the different scripts of the berry suite.
 The scripts have to be run in order because each script uses results from the previous ones.
@@ -84,34 +82,30 @@ Command line is of the form:
 
 berry [package options] script parameter [script options]
 """)
-        parser.add_argument("--version", action="store_true", help="Displays current Berry version.")
-        parser.add_argument("--enable-autocomplete", action="store_true", help="Enables autocomplete for the berry CLI.")
-        parser.add_argument("--disable-autocomplete", action="store_true", help="Disables autocomplete for the berry CLI.")
+    parser.add_argument("--version", action="store_true", help="Displays current Berry version.")
+    parser.add_argument("--enable-autocomplete", action="store_true", help="Enables autocomplete for the berry CLI.")
+    parser.add_argument("--disable-autocomplete", action="store_true", help="Disables autocomplete for the berry CLI.")
 
-        sub_parser = parser.add_subparsers(dest="program", help="Choose the program to run.")
+    main_sub_parser = parser.add_subparsers(metavar="MAIN_PROGRAMS" ,dest="main_programs", help="Choose the program to run.")
+    preprocess_parser = main_sub_parser.add_parser("preprocess", help="Run and extract data from DFT calculations. This should be the first script to run.", description="Run and extract data from DFT calculations. This should be the first script to run.")
 
-        preprocess_parser = sub_parser.add_parser("preprocess", help="Run and extract data from DFT calculations. This should be the first script to run.", description="Run and extract data from DFT calculations. This should be the first script to run.")
-        preprocess_parser.add_argument("input_file", type=str, help="Path to input file with the run parameters.")
-        preprocess_parser.add_argument("-flush", type=str, help="Flushes output into stdout.")
-        preprocess_parser.add_argument("-o", default="preprocess", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-        preprocess_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
-
+    try:
         if WFCGEN:
-            wfc_parser = sub_parser.add_parser("wfcgen", help="Extracts wavefunctions from DFT calculations.", description="Extracts wavefunctions from DFT calculations.")
+            wfc_parser = main_sub_parser.add_parser("wfcgen", help="Extracts wavefunctions from DFT calculations.", description="Extracts wavefunctions from DFT calculations.")
         if DOT:
-            dot_parser = sub_parser.add_parser("dot", help="Calculates the dot product of Bloch factors of nearby wavefunctions.", description="Calculates the dot product of Bloch factors of nearby wavefunctions.")
+            dot_parser = main_sub_parser.add_parser("dot", help="Calculates the dot product of Bloch factors of nearby wavefunctions.", description="Calculates the dot product of Bloch factors of nearby wavefunctions.")
         if CLUSTER:
-            cluster_parser = sub_parser.add_parser("cluster", help="Classifies the eigenstates in bands.", description="Classifies the eigenstates in bands.")
+            cluster_parser = main_sub_parser.add_parser("cluster", help="Classifies the eigenstates in bands.", description="Classifies the eigenstates in bands.")
         if BASIS:
-            basis_parser = sub_parser.add_parser("basis", help="Finds problematic cases and make a local basis rotation of the wavefunctions.", description="Finds problematic cases and make a local basis rotation of the wavefunctions.")
+            basis_parser = main_sub_parser.add_parser("basis", help="Finds problematic cases and make a local basis rotation of the wavefunctions.", description="Finds problematic cases and make a local basis rotation of the wavefunctions.")
         if R2K:
-            r2k_parser = sub_parser.add_parser("r2k", help="Converts wavefunctions from r-space to k-space.", description="Converts wavefunctions from r-space to k-space.")
+            r2k_parser = main_sub_parser.add_parser("r2k", help="Converts wavefunctions from r-space to k-space.", description="Converts wavefunctions from r-space to k-space.")
         if GEOMETRY:
-            geometry_parser = sub_parser.add_parser("geometry", help="Calculates the Berry connections and curvatures.", description="Calculates the Berry connections and curvatures.")
+            geometry_parser = main_sub_parser.add_parser("geometry", help="Calculates the Berry connections and curvatures.", description="Calculates the Berry connections and curvatures.")
         if CONDUCTIVITY:
-            conductivity_parser = sub_parser.add_parser("conductivity", help="Calculates the optical linear conductivity of the system.", description="Calculates the optical linear conductivity of the system.")
+            conductivity_parser = main_sub_parser.add_parser("conductivity", help="Calculates the optical linear conductivity of the system..", description="Calculates the optical linear conductivity of the system.")
         if SHG:
-            shg_parser = sub_parser.add_parser("shg", help="Calculates the second harmonic generation conductivity of the system.", description="Calculate the second harmonic generation conductivity of the system.")
+            shg_parser = main_sub_parser.add_parser("shg", help="Calculates the second harmonic generation conductivity of the system.", description="Calculate the second harmonic generation conductivity of the system.")
         argcomplete.autocomplete(parser)
 
         if WFCGEN:
@@ -122,7 +116,7 @@ berry [package options] script parameter [script options]
             wfc_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if DOT:
             dot_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
-            dot_parser.add_argument("-flush", type=str, help="Flushes output into stdout.")
+            dot_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             dot_parser.add_argument("-o", default="dot", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             dot_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if CLUSTER:
@@ -150,40 +144,37 @@ berry [package options] script parameter [script options]
             geometry_parser.add_argument("Mb"   , type=int                , metavar=f"Mb (0-{d.nbnd-1})"   , choices=range(d.nbnd)                      , help="Maximum band to consider.")
             geometry_parser.add_argument("-np"  , type=int, default=1     , metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1)         , help="Number of processes to use (default: 1).")
             geometry_parser.add_argument("-mb"  , type=int, default=0     , metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)                      , help="Minimum band to consider (default: 0).")
-            geometry_parser.add_argument("-prop", type=str, default="both"                                 , choices=["both", "connection", "curvature"], help="Specify which proprety to calculate. (default: both)")
+            geometry_parser.add_argument("-prop", type=str, default="both", metavar="",choices=["both", "conn", "curv"], help="Specify which proprety to calculate. Possible choices are 'both', 'conn' and 'curv' (default: both)")
             geometry_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             geometry_parser.add_argument("-o", default="geometry", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             geometry_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if CONDUCTIVITY:
             conductivity_parser.add_argument("cb" , type=int                        ,metavar=f"cb ({d.vb+1}-{d.nbnd-1})", choices=range(d.vb+1, d.nbnd)     , help="Index of the highest conduction band to consider.")
             conductivity_parser.add_argument("-np"       , type=int  , default=1    , metavar=f"[1-{os.cpu_count()}]"   , choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
-            conductivity_parser.add_argument("-eM"  , type=float, default=2.5                                                                          , help="Maximum energy in Ry units (default: 2.5).")
-            conductivity_parser.add_argument("-eS" , type=float, default=0.001                                                                        , help="Energy step in Ry units (default: 0.001).")
-            conductivity_parser.add_argument("-brd", type=float, default=0.01j                                                                        , help="Energy broading in Ry units (default: 0.01).")
+            conductivity_parser.add_argument("-eM", metavar="", type=float, default=2.5, help="Maximum energy in Ry units (default: 2.5).")
+            conductivity_parser.add_argument("-eS", metavar="", type=float, default=0.001, help="Energy step in Ry units (default: 0.001).")
+            conductivity_parser.add_argument("-brd", metavar="", type=float, default=0.01j, help="Energy broading in Ry units (default: 0.01).")
             conductivity_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             conductivity_parser.add_argument("-o", default="conductivity", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             conductivity_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if SHG:
-            shg_parser.add_argument("cb" , type=int                        ,metavar=f"cb ({d.vb+1}-{d.nbnd-1})", choices=range(d.vb+1, d.nbnd)     , help="Index of the highest conduction band to consider.")
-            shg_parser.add_argument("-np"       , type=int  , default=1    , metavar=f"[1-{os.cpu_count()}]"   , choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
-            shg_parser.add_argument("-eM"  , type=float, default=2.5                                                                          , help="Maximum energy in Ry units (default: 2.5).")
-            shg_parser.add_argument("-eS" , type=float, default=0.001                                                                        , help="Energy step in Ry units (default: 0.001).")
-            shg_parser.add_argument("-brd", type=float, default=0.01j                                                                        , help="Energy broading in Ry units (default: 0.01).")
+            shg_parser.add_argument("cb" , type=int,metavar=f"cb ({d.vb+1}-{d.nbnd-1})", choices=range(d.vb+1, d.nbnd), help="Index of the highest conduction band to consider.")
+            shg_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
+            shg_parser.add_argument("-eM", metavar="", type=float, default=2.5, help="Maximum energy in Ry units (default: 2.5).")
+            shg_parser.add_argument("-eS", metavar="", type=float, default=0.001, help="Energy step in Ry units (default: 0.001).")
+            shg_parser.add_argument("-brd", metavar="", type=float, default=0.01j, help="Energy broading in Ry units (default: 0.01).")
             shg_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             shg_parser.add_argument("-o", default="shg", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             shg_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
     except NameError as err:
-        parser = CustomParser(formatter_class=argparse.RawTextHelpFormatter, description=
-        """Master CLI for the berry suite. Other programs will become available after running the 'preprocess' command.
-For more information add the '-h' flag to the 'preprocess' subcommand.""")
-        sub_parser = parser.add_subparsers(dest="program", help="Run the 'preprocess' program.")
-
-        preprocess_parser = sub_parser.add_parser("preprocess", help="Extract DFT calculations from specific program.", description="Extract DFT calculations from specific program.")
-        preprocess_parser.add_argument("input_file", type=str, help="Path to input file from where to extract the run parameters.")
+        #TODO: Should we display a helpfull message indicating that the user should run the missing berry programs?
+        pass
+    finally:
+        preprocess_parser.add_argument("input_file", type=str, help="Path to input file with the run parameters.")
         preprocess_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
         preprocess_parser.add_argument("-o", default="preprocess", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-        preprocess_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
-    finally:
+        preprocess_parser.add_argument("-v", action="store_true", help="Increases output verbosity")
+
         args = parser.parse_args()
 
     ###########################################################################
@@ -194,14 +185,14 @@ For more information add the '-h' flag to the 'preprocess' subcommand.""")
         sys.exit(0)
     
     if args.enable_autocomplete:
-        autocomplete()
+        autocomplete("berry")
         sys.exit(0)
     
     if args.disable_autocomplete:
-        autocomplete(disable=True)
+        autocomplete("berry", disable=True)
         sys.exit(0)
 
-    if args.program is None:
+    if args.main_programs is None:
         parser.print_help()
         sys.exit(0)
 
@@ -221,80 +212,7 @@ For more information add the '-h' flag to the 'preprocess' subcommand.""")
         "shg": shg_cli
     }
 
-    program_dict[args.program](args)
-
-
-
-
-##################################################################################################
-# MAIN PROGRAMS
-##################################################################################################
-def autocomplete(disable: bool = False):
-    """Enable or disable autocomplete for the CLI.
-
-    This program checks if the bashrc file exists and then based on the disable flag it either adds or
-    removes the autocomplete function from the bashrc file.
-
-    Args:
-        disable (bool, optional): if True, disable autocomplete. Defaults to False.
-    """
-    # Get bashrc file path
-    bashrc_path = os.path.join(os.path.expanduser("~"), ".bashrc")
-
-    # If disbale is True, remove the autocomplete function from the bashrc file if it exists
-    if disable:
-        if os.path.exists(bashrc_path):
-            with open(bashrc_path, "r") as f:
-                content = f.read()
-            if re.search(r'eval "\$\(register-python-argcomplete berry\)\n?"', content):
-                # Ask for confirmation
-                while True:
-                    ans = input("Are you sure you want to disable autocomplete? [y/n]: ")
-                    if ans.lower() == "y":
-                        break
-                    elif ans.lower() == "n":
-                        return
-                    else:
-                        print("Please answer with 'y' or 'n'")
-                with open(bashrc_path, "w") as f:
-                    f.write(re.sub(r'eval "\$\(register-python-argcomplete berry\)\n?"', "", content))
-                    print("Autocomplete disabled!")
-                    print("Please restart your terminal for the changes to take effect.")
-            else:
-                print("Autocomplete already disabled!")
-        else:
-            print("No bashrc file found. Autocomplete is already disabled.")
-    else:
-        # If bashrc file does not exist, create it
-        if not os.path.exists(bashrc_path):
-            with open(bashrc_path, "w") as f:
-                pass
-        # If autocomplete function is not in the bashrc file, add it
-        with open(bashrc_path, "r") as f:
-            lines = f.readlines()
-        if not any(re.search(r'eval "\$\(register-python-argcomplete berry\)\n?"', line) for line in lines):
-            # Ask for confirmation
-            print("Autocomplete will be enabled. This will add the following line to your bashrc file:")
-            print('eval "$(register-python-argcomplete berry)"')
-            while True:
-                print("Do you want to continue? [y/n]", end=" ")
-                ans = input()
-                if ans.lower() == "y":
-                    break
-                elif ans.lower() == "n":
-                    print("Autocomplete not enabled.")
-                    return
-                else:
-                    print("Please answer with 'y' or 'n'")
-            with open(bashrc_path, "a") as f:
-                f.write('eval "$(register-python-argcomplete berry)"\n')
-                print("Autocomplete enabled.")
-                print("Please restart your terminal for the changes to take effect.")
-        else:
-            print("Autocomplete already enabled.")
-
-    return
-
+    program_dict[args.main_programs](args)
 
 def preprocessing_cli(args: argparse.Namespace):
     from berry import Preprocess
@@ -415,7 +333,6 @@ def basisrotation_cli(args: argparse.Namespace):
 
     run_basis_rotation(**args_dict)
 
-
 def r2k_cli(args: argparse.Namespace):
     from berry import run_r2k
     ###########################################################################
@@ -476,7 +393,6 @@ def conductivity_cli(args: argparse.Namespace):
 
     run_conductivity(**args_dict)
 
-
 def shg_cli(args: argparse.Namespace):
     from berry import run_shg
     ###########################################################################
@@ -498,85 +414,207 @@ def shg_cli(args: argparse.Namespace):
 
     run_shg(**args_dict)
 
+#TODO: Make the entire process of adding new commands more automatic
+#IDEA: Maybe using a global dict of commands with a tree structure will be a good idea to easily implement the same cli structure
 ##################################################################################################
-# VIZUALIZATION PROGRAMS
+# VISUALIZATION PROGRAMS
 ##################################################################################################
+def berry_vis_cli():
+    sub_programs = {
+        "debug": "debug_vis",
+        "geometry": "geometry_vis",
+        "wave": "wave_vis",
+    }
+    ###########################################################################
+    # 1. DEFINING BERRY VIS CLI ARGS
+    ###########################################################################
+    parser = CustomParser(description="Berry Visualization Program")
+    parser.add_argument("--enable-autocomplete", action="store_true", help="Enables autocomplete for the berry-vis CLI.")
+    parser.add_argument("--disable-autocomplete", action="store_true", help="Disables autocomplete for the berry-vis CLI.")
 
-def viz_berry_cli() -> argparse.Namespace:
+    vis_sub_parser = parser.add_subparsers(metavar="VIS_PROGRAMS", dest="vis_programs", help="Choose a visualization program.")
+    debug_parser = vis_sub_parser.add_parser("debug", help="Helpfull visualization program for debugging.")
+    geometry_parser = vis_sub_parser.add_parser("geometry", help="Visualizes the Berry connection and curvature vectors.")
+    wave_parser = vis_sub_parser.add_parser("wave", help="Visualizes the wavefunctions before and after cluster program.")
+    
+    debug_dot2_parser, debug_eigen_parser = handle_debug_parser(debug_parser)
+    bcc_parser, bcr_parser = handle_geometry_parser(geometry_parser)
+    wave_corrected_parser, wave_machine_parser = handle_wave_parser(wave_parser)
+
+    argcomplete.autocomplete(parser)
+
+    try:
+        debug_dot2_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to consider.")
+
+        debug_eigen_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to consider.")
+        debug_eigen_parser.add_argument("-acc", type=int, default=0, help="Precision of the eigenvalues.")
+
+        bcc_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to visualize.")
+        bcc_parser.add_argument("grad", type=int, metavar=f"grad (0-{d.nbnd-1})", choices=range(d.nbnd), help="Gradient to visualize.")
+        bcc_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
+    
+        bcr_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to visualize.")
+        bcr_parser.add_argument("grad", type=int, metavar=f"grad (0-{d.nbnd-1})", choices=range(d.nbnd), help="Gradient to visualize.")
+        bcr_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
+
+        wave_corrected_parser.add_argument("Mb", type=int, metavar=f"Mb (0-{d.nbnd-1})", choices=range(d.nbnd), help="Maximum band to consider")
+        wave_corrected_parser.add_argument("-mb", type=int, default=0, metavar=f"(0-{d.nbnd-1})", choices=range(d.nbnd), help="Minimum band to consider (default: 0)")
+        
+        wave_machine_parser.add_argument("Mb", type=int, metavar=f"Mb (0-{d.nbnd-1})", choices=range(d.nbnd), help="Maximum band to consider")
+        wave_machine_parser.add_argument("-mb", type=int, default=0, metavar=f"(0-{d.nbnd-1})", choices=range(d.nbnd), help="Minimum band to consider (default: 0)")
+
+    except NameError:
+        print(f"berry-vis cannot display any output because no berry calculations can be found in the directory: {os.getcwd()}")
+        print("For more information, please run: 'berry preprocess -h'")
+        sys.exit(1)
+
+    args = parser.parse_args()
     ###########################################################################
-    # 1. DEFINING CLI ARGS
+    # HANDLE BERRY VIS SUITE OPTIONAL ARGUMENTS
     ###########################################################################
-    parser = CustomParser(description="Visualizes the Berry connection and curvature vectors.")
-    sub_parser = parser.add_subparsers(help="Available visualizations.", dest="viz_prog")
+    if args.enable_autocomplete:
+        autocomplete("berry-vis")
+        sys.exit(0)
+    
+    if args.disable_autocomplete:
+        autocomplete("berry-vis", disable=True)
+        sys.exit(0)
+    
+    if args.vis_programs is None:
+        parser.print_help()
+        sys.exit(0)
+
+    for sub_program in sub_programs:
+        if args.vis_programs == sub_program:
+            if getattr(args, sub_programs[sub_program]) is None:
+                eval(f"{sub_program}_parser.print_help()")
+                sys.exit(0)
+
+    ###########################################################################
+    # HANDLE BERRY VIS SUITE SUB PROGRAMS
+    ###########################################################################
+    from berry.vis import _debug, _geometry, _wave
+
+    program_dict: Dict[str, Callable] = {
+        "debug": _debug.debug,
+        "geometry": _geometry.geometry,
+        "wave": _wave.wave,
+    }
+
+    program_dict[args.vis_programs](args)
+
+def handle_wave_parser(debug_parser: CustomParser) -> Tuple[argparse.Namespace]:
+    wave_programs_parser = debug_parser.add_subparsers(metavar="WAVE_PROGRAMS", dest="wave_vis", help="Choose how to visualize the wavefunction.")
+
+    # VIEW CORRECTED
+    wave_corrected_parser = wave_programs_parser.add_parser("corrected", help="Visualizes the corrected wavefunction.")
+
+    # VIEW MACHINE
+    wave_machine_parser = wave_programs_parser.add_parser("machine", help="Visualizes the machine wavefunction.")
+
+    return wave_corrected_parser, wave_machine_parser
+
+def handle_debug_parser(debug_parser: CustomParser) -> Tuple[argparse.Namespace]:
+    debug_programs_parser = debug_parser.add_subparsers(metavar="DEBUG_PROGRAMS", dest="debug_vis", help="Choose a debug program.")
+
+    # VIEW DATA
+    debug_data_parser = debug_programs_parser.add_parser("data", help="Visualizes the data of the system.")
+    
+    # VIEW DOT 1
+    debug_dot1_parser = debug_programs_parser.add_parser("dot1", help="Dot product visualization. (Option 1)")
+    
+    # VIEW DOT 2
+    debug_dot2_parser = debug_programs_parser.add_parser("dot2", help="Dot product visualization. (Option 2)")
+
+    # VIEW EIGENVALUES
+    debug_eigen_parser = debug_programs_parser.add_parser("eigen", help="Visualizes the eigenvalues of the system.")
+
+    # VIEW NEIGHBORS
+    debug_neighors_parser = debug_programs_parser.add_parser("neig", help="Visualizes the neighbors in system.")
+
+    # VIEW OCCUPATIONS
+    debug_occ_parser = debug_programs_parser.add_parser("occ", help="Visualizes the occupations of each k point.")
+
+    # VIEW REAL SPACE
+    debug_real_parser = debug_programs_parser.add_parser("r-space", help="Visualizes the real space of the system.")
+
+    return debug_dot2_parser, debug_eigen_parser
+
+def handle_geometry_parser(geometry_parser: CustomParser) -> Tuple[argparse.Namespace]:
+    geometry_vis_parser= geometry_parser.add_subparsers(metavar="GEOMETRY_PROGRAMS", dest="geometry_vis", help="Choose which berry property to visualize.")
 
     # 1.1. BERRY CONNECTION
-    bcc_parser = sub_parser.add_parser("bcc", help="Visualizes the Berry connection vectors.")
-    bcc_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to visualize.")
-    bcc_parser.add_argument("grad", type=int, metavar=f"grad (0-{d.nbnd-1})", choices=range(d.nbnd), help="Gradient to visualize.")
-    bcc_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
+    bcc_parser = geometry_vis_parser.add_parser("bcc", help="Visualizes the Berry connection vectors.")
 
     # 1.2. BERRY CURVATURE
-    bcr_parser = sub_parser.add_parser("bcr", help="Visualizes the Berry curvature vectors.")
-    bcr_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to visualize.")
-    bcr_parser.add_argument("grad", type=int, metavar=f"grad (0-{d.nbnd-1})", choices=range(d.nbnd), help="Gradient to visualize.")
-    bcr_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
+    bcr_parser = geometry_vis_parser.add_parser("bcr", help="Visualizes the Berry curvature vectors.")
 
-    args = parser.parse_args()
-    ###########################################################################
-    # 2. ASSERTIONS
-    ###########################################################################
-    assert args.viz_prog is not None, parser.error("No visualization program was selected.")
+    return bcc_parser, bcr_parser
 
-    ###########################################################################
-    # 3. PROCESSING ARGS
-    ###########################################################################
+###########################################################################
+# SUB PROCEDURES
+###########################################################################
 
-    return args
+def autocomplete(cli_tool_name: str, disable: bool = False):
+    """Enable or disable autocomplete for the CLI.
 
+    This program checks if the bashrc file exists and then based on the disable flag it either adds or
+    removes the autocomplete function from the bashrc file.
 
-def viz_debug_cli() -> argparse.Namespace:
-    ###########################################################################
-    # 1. DEFINING CLI ARGS
-    ###########################################################################
-    parser = CustomParser(description="Visualizes the information of the calculation. It is useful for debugging.")
-    sub_parser = parser.add_subparsers(help="Available visualizations.", dest="viz_prog")
+    Args:
+        disable (bool, optional): if True, disable autocomplete. Defaults to False.
+    """
+    # Get bashrc file path
+    bashrc_path = os.path.join(os.path.expanduser("~"), ".bashrc")
 
-    # 1.1 view data
-    data_parser = sub_parser.add_parser("data", help="Visualizes the data of the system.")
-    
-    # 1.2 view data
-    dot1_parser = sub_parser.add_parser("dot1", help="Dot product visualization. (Option 1)")
-    
-    # 1.2 view data
-    dot2_parser = sub_parser.add_parser("dot2", help="Dot product visualization. (Option 2)")
-    dot2_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to consider.")
-
-    # 1.3 view eigenvalues
-    eigen_parser = sub_parser.add_parser("eigen", help="Visualizes the eigenvalues of the system.")
-    eigen_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to consider.")
-    eigen_parser.add_argument("-acc", type=int, default=0, help="Precision of the eigenvalues.")
-
-    # 1.4 view neighbors
-    neighors_parser = sub_parser.add_parser("neig", help="Visualizes the neighbors in system.")
-
-    # 1.5 view occupations
-    occ_parser = sub_parser.add_parser("occ", help="Visualizes the occupations of each k point.")
-
-    # 1.5 view real space
-    real_parser = sub_parser.add_parser("r-space", help="Visualizes the real space of the system.")
-
-    args = parser.parse_args()
-    
-    ###########################################################################
-    # 2. ASSERTIONS
-    ###########################################################################
-    assert args.viz_prog is not None, parser.error("No visualization program was selected.")
-
-    ###########################################################################
-    # 3. PROCESSING ARGS
-    ###########################################################################
-
-    return args
-
-if __name__ == "__main__":
-    master_cli()
+    # If disbale is True, remove the autocomplete function from the bashrc file if it exists
+    if disable:
+        if os.path.exists(bashrc_path):
+            with open(bashrc_path, "r") as f:
+                content = f.read()
+            if re.search(r'eval "\$\(register-python-argcomplete '+cli_tool_name+r'\)\n?"', content):
+                # Ask for confirmation
+                while True:
+                    ans = input("Are you sure you want to disable autocomplete? [y/n]: ")
+                    if ans.lower() == "y":
+                        break
+                    elif ans.lower() == "n":
+                        return
+                    else:
+                        print("Please answer with 'y' or 'n'")
+                with open(bashrc_path, "w") as f:
+                    f.write(re.sub(r'eval "\$\(register-python-argcomplete '+cli_tool_name+r'\)\n?"', "", content))
+                    print("Autocomplete disabled!")
+                    print("Please restart your terminal for the changes to take effect.")
+            else:
+                print("Autocomplete already disabled!")
+        else:
+            print("No bashrc file found. Autocomplete is already disabled.")
+    else:
+        # If bashrc file does not exist, create it
+        if not os.path.exists(bashrc_path):
+            with open(bashrc_path, "w") as f:
+                pass
+        # If autocomplete function is not in the bashrc file, add it
+        with open(bashrc_path, "r") as f:
+            lines = f.readlines()
+        if not any(re.search(r'eval "\$\(register-python-argcomplete '+cli_tool_name+r'\)\n?"', line) for line in lines):
+            # Ask for confirmation
+            print("Autocomplete will be enabled. This will add the following line to your bashrc file:")
+            print(f'eval "$(register-python-argcomplete {cli_tool_name})"')
+            while True:
+                print("Do you want to continue? [y/n]", end=" ")
+                ans = input()
+                if ans.lower() == "y":
+                    break
+                elif ans.lower() == "n":
+                    print("Autocomplete not enabled.")
+                    return
+                else:
+                    print("Please answer with 'y' or 'n'")
+            with open(bashrc_path, "a") as f:
+                f.write(f'eval "$(register-python-argcomplete {cli_tool_name})"\n')
+                print("Autocomplete enabled.")
+                print("Please restart your terminal for the changes to take effect.")
+        else:
+            print("Autocomplete already enabled.")
