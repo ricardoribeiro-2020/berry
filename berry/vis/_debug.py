@@ -2,9 +2,7 @@ from colorama import Fore, Back, Style
 
 import numpy as np
 
-from berry.cli import viz_debug_cli
 from berry._subroutines.write_k_points import _float_numbers
-
 import berry._subroutines.loaddata as d
 
 
@@ -14,7 +12,7 @@ def log_data():
     print("#"*100)
     print("# DATA OF THE SYSTEM")
     print("#"*100)
-    print(f"\n\tInitial k-point                                    {d.k0}")
+    print(f"\n\tInitial k-point                                  {d.k0}")
     print(f"\tNumber of k-points in the x direction              {d.nkx}")
     print(f"\tNumber of k-points in the y direction              {d.nky}")
     print(f"\tNumber of k-points in the z direction              {d.nkz}")
@@ -219,7 +217,7 @@ def log_eigen(band: int, acc: int):
     print("#"*100)
     print("# EIGENVALUES")
     print("#"*100)
-    _float_numbers(d.nkx, d.nky, d.eigenvalues[:, band], acc)
+    print(_float_numbers(d.nkx, d.nky, d.eigenvalues[:, band], acc))
 
 
 def log_neighbors():
@@ -247,22 +245,20 @@ def log_r_space():
         print(i, d.r[i, 0], d.r[i, 1], d.r[i, 2])
 
 
-def debug():
-    args = viz_debug_cli()
-
-    if args.viz_prog == "data":
+def debug(args):
+    if args.debug_vis == "data":
         log_data()
-    elif args.viz_prog == "dot1":
+    elif args.debug_vis == "dot1":
         log_dot1()
-    elif args.viz_prog == "dot2":
+    elif args.debug_vis == "dot2":
         log_dot2(args.band)
-    elif args.viz_prog == "eigen":
+    elif args.debug_vis == "eigen":
         log_eigen(args.band, args.acc)
-    elif args.viz_prog == "occ":
+    elif args.debug_vis == "occ":
         log_occupation()
-    elif args.viz_prog == "neig":
+    elif args.debug_vis == "neig":
         log_neighbors()
-    elif args.viz_prog == "r-space":
+    elif args.debug_vis == "r-space":
         log_r_space()
 
 if __name__ == "__main__":
