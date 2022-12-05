@@ -7,8 +7,8 @@ import re
 import sys
 import time
 import logging
-import xml.etree.ElementTree as ET
 import platform
+import xml.etree.ElementTree as ET
 
 import numpy as np
 
