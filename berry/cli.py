@@ -74,7 +74,8 @@ def berry_cli():
     ###########################################################################
     # 1. DEFINING BERRY CLI ARGS
     ###########################################################################
-    parser = CustomParser(description="""This is the Master Command Line Interface (CLI) for the berry suite.
+    parser = CustomParser(formatter_class=argparse.RawTextHelpFormatter,
+        description="""This is the Master Command Line Interface (CLI) for the berry suite.
 The berry suite extracts the Bloch wavefunctions from DFT calculations in an ordered way. 
 This CLI is an interface to run the different scripts of the berry suite.
 The scripts have to be run in order because each script uses results from the previous ones.
