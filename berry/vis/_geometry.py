@@ -1,12 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from berry.cli import viz_berry_cli
 import berry._subroutines.loaddata as d
 
 
 def bcc(band:int, grad:int, type: str):
-    berry_conn = np.load(d.DIR + f"berryConn{band}_{grad}.npy")
+    berry_conn = np.load(f"berryConn{band}_{grad}.npy")
 
     M = np.hypot(np.real(berry_conn[0]), np.real(berry_conn[1]))  # Colors for real part
     Q = np.hypot(np.imag(berry_conn[0]), np.imag(berry_conn[1]))  # Colors for imag part
@@ -40,7 +39,7 @@ def bcc(band:int, grad:int, type: str):
 
 
 def bcr(band:int, grad:int, type: str):
-    berry_curv = np.load(d.DIR + f"berryCur{band}_{grad}.npy")
+    berry_curv = np.load(f"berryCur{band}_{grad}.npy")
 
     M = np.hypot(np.real(berry_curv[0]), np.real(berry_curv[1]))  # Colors for real part
     Q = np.hypot(np.imag(berry_curv[0]), np.imag(berry_curv[1]))  # Colors for imag part
@@ -73,10 +72,8 @@ def bcr(band:int, grad:int, type: str):
     plt.show()
 
 
-def viz_geometry():
-    args = viz_berry_cli()
-
-    if args.viz_prog == "bcc":
+def geometry(args):
+    if args.geometry_vis == "bcc":
         bcc(args.band, args.grad, args.space)
-    elif args.viz_prog == "bcr":
+    elif args.geometry_vis == "bcr":
         bcr(args.band, args.grad, args.space)

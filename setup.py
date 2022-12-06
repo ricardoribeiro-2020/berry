@@ -28,6 +28,7 @@ setup(
         "matplotlib",
         "scipy",
         "argcomplete",
+        "colorama",
     ],
     classifiers=[
         'Programming Language :: Python :: 3.8',
@@ -40,7 +41,8 @@ setup(
     ],#TODO: Add classifiers
     entry_points={
         'console_scripts': [
-            'berry = berry.cli:master_cli',
+            'berry = berry.cli:berry_cli',
+            'berry-vis = berry.cli:berry_vis_cli',
         ],
     },
 )
