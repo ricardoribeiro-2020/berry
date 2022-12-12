@@ -44,7 +44,7 @@ class log:
         self.logger.addHandler(ch)
     
     def header(self):
-        H = header(self.title, self.version, self.refname)
+        H = header(self.title, self.version, time.asctime(), self.refname)
         self.info(H)
 
     @prepare_message
