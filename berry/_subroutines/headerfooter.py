@@ -20,7 +20,7 @@ BERRY_LOGO = '''
 
 '''
 
-def header(title, version, time, refname):
+def header(title, version, time):
     """Header that appears in the output of the programas."""
 
     H = BERRY_LOGO \
@@ -30,7 +30,6 @@ def header(title, version, time, refname):
          This program is part of the open-source BERRY suite.
              https://ricardoribeiro-2020.github.io/berry/
 
-            Reference of run: {refname}
     '''
 
     return H

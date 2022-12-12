@@ -32,7 +32,7 @@ class WfcGenerator:
             self.nk_points = nk_points
             self.bands = bands
         self.ref_name = d.refname
-        self.logger = log(logger_name, "GENERATE WAVE FUNCTIONS", logger_level, flush)
+        self.logger = log(logger_name, "GENERATE WAVE FUNCTIONS", level=logger_level, flush=flush)
 
     def run(self):
         self.logger.header()

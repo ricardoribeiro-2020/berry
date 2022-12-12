@@ -16,7 +16,7 @@ except:
     pass
 
 def run_anomalous_velocity(logger_name: str = "anomalousVelocity", logger_level: int = logging.INFO, flush: bool = True):
-    looger = log(logger_name, "ANOMALOUS VELOCITY", d.refname, level=logger_level, flush=flush)
+    looger = log(logger_name, "ANOMALOUS VELOCITY", level=logger_level, flush=flush)
     return
 
 if __name__ == "__main__":

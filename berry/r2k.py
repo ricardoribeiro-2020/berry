@@ -74,7 +74,7 @@ def r_to_k(banda: int, npr: int) -> None:
 
 def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "r2k", logger_level: int = logging.INFO, flush: bool = True):
     global grad, signalfinal, bandsfinal, wfct_k, wfcpos, wfcgra, logger
-    logger = log(logger_name, "R2K", d.refname, level=logger_level, flush=flush)
+    logger = log(logger_name, "R2K", level=logger_level, flush=flush)
 
     logger.header()
 

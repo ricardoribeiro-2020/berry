@@ -66,7 +66,7 @@ def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
 
 def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", logger_level: int = logging.INFO, flush: bool = False):
     global signalfinal
-    logger = log(logger_name, "BASIS ROTATION", d.refname, level=logger_level, flush=flush)
+    logger = log(logger_name, "BASIS ROTATION", level=logger_level, flush=flush)
 
     logger.header()
 

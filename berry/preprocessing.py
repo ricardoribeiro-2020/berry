@@ -37,7 +37,7 @@ class Preprocess:
         self.point = point
         self.program = program
         self.ref_name = ref_name
-        self.logger = log(logger_name, "PREPROCESS", logger_level, flush)
+        self.logger = log(logger_name, "PREPROCESS", level=logger_level, flush=flush)
 
         self.nscf_kpoints = ""
         self.__mpi = "" if self.npr == 1 else f"mpirun -np {self.npr}"

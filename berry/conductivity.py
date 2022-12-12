@@ -80,7 +80,7 @@ def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.nd
 #IDEA: Maybe create a type checking decorator (USE pydantic)
 def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, broadning: complex = 0.01j, logger_name: str = "condutivity", logger_level: int = logging.INFO, flush: bool = True):
     global band_list, berry_connections, OMEGA_SHAPE, CONST, VK
-    logger = log(logger_name, "CONDUCTIVITY", d.refname, level=logger_level, flush=flush)
+    logger = log(logger_name, "CONDUCTIVITY", level=logger_level, flush=flush)
 
     logger.header()
 
