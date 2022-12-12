@@ -13,8 +13,8 @@ except:
     pass
 
 
-def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = True):
-    logger = log(logger_name, "CLUSTER", logger_level, flush)
+def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False):
+    logger = log(logger_name, "CLUSTER", level=logger_level, flush=flush)
 
     logger.header()
 
@@ -35,11 +35,11 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
     logger.info(f'\tTolerance: {tol}')
     logger.info(f'\tNumber of CPUs: {npr}\n')
 
-    logger.info(f"\tUnique reference of run:{d.refname}")
-    logger.info(f"\tDirectory where the wfc are:{d.wfcdirectory}")
-    logger.info(f"\tNumber of k-points in each direction:{d.nkx}, {d.nky}, {d.nkz}")
-    logger.info(f"\tTotal number of k-points:{d.nks}")
-    logger.info(f"\tNumber of bands:{d.nbnd}\n")
+    logger.info(f"\tUnique reference of run: {d.refname}")
+    logger.info(f"\tDirectory where the wfc are: {d.wfcdirectory}")
+    logger.info(f"\tNumber of k-points in each direction: {d.nkx}, {d.nky}, {d.nkz}")
+    logger.info(f"\tTotal number of k-points: {d.nks}")
+    logger.info(f"\tNumber of bands: {d.nbnd}\n")
     logger.info("\tNeighbors loaded")
     logger.info("\tEigenvalues loaded")
 

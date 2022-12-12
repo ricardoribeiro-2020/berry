@@ -42,9 +42,9 @@ def get_point_neighbors(nk: int, j: int) -> None:
         return (nk, j, neighbor, jNeighbor)
     return None
 
-def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logging.INFO, flush: bool = True):
+def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logging.INFO, flush: bool = False):
     global dpc, logger
-    logger = log(logger_name, "DOT PRODUCT", logger_level, flush)
+    logger = log(logger_name, "DOT PRODUCT", level=logger_level, flush=flush)
 
     if not 0 < npr <= os.cpu_count():
         raise ValueError(f"npr must be between 1 and {os.cpu_count()}")

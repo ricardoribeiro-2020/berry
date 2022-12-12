@@ -79,7 +79,7 @@ def berry_curvature(idx: int, idx_: int) -> None:
 
 def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curvature", "connection", "both"] = "both", logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
     global wfcgra, logger
-    logger = log(logger_name, "BERRY GEOMETRY", logger_level, flush)
+    logger = log(logger_name, "BERRY GEOMETRY", level=logger_level, flush=flush)
     
     logger.header()
     

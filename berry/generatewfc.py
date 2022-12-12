@@ -17,7 +17,7 @@ except:
 
 
 class WfcGenerator:
-    def __init__(self, nk_points: Optional[int] = None , bands: Optional[int] = None, logger_name: str = "genwfc", logger_level: int = logging.INFO, flush: bool = True):
+    def __init__(self, nk_points: Optional[int] = None , bands: Optional[int] = None, logger_name: str = "genwfc", logger_level: int = logging.INFO, flush: bool = False):
         if bands is not None and nk_points is None:
             raise ValueError("To generate a wavefunction for a single band, you must specify the k-point.")
 
@@ -31,8 +31,8 @@ class WfcGenerator:
         else:
             self.nk_points = nk_points
             self.bands = bands
-        self.ref_name = time.strftime("%d-%m-%Y_%H:%M:%S", time.gmtime())
-        self.logger = log(logger_name, "GENERATE WAVE FUNCTIONS", logger_level, flush)
+        self.ref_name = d.refname
+        self.logger = log(logger_name, "GENERATE WAVE FUNCTIONS", level=logger_level, flush=flush)
 
     def run(self):
         self.logger.header()
