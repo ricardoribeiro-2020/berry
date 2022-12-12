@@ -207,7 +207,6 @@ class Preprocess:
 
     def compute_scf(self):
         scf_out = self.scf[:-3] + ".out"
-        print(scf_out)
         if os.path.isfile(scf_out):
             self.logger.info(f"\t{os.path.basename(scf_out)} already exists. Skipping scf calculation.")
             return
