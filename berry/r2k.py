@@ -72,7 +72,7 @@ def r_to_k(banda: int, npr: int) -> None:
     logger.debug(f"\twfcpos{banda} and wfcgra{banda} saved in {time() - start:.2f} seconds\n")
 
 
-def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "r2k", logger_level: int = logging.INFO, flush: bool = True):
+def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "r2k", logger_level: int = logging.INFO, flush: bool = False):
     global grad, signalfinal, bandsfinal, wfct_k, wfcpos, wfcgra, logger
     logger = log(logger_name, "R2K", level=logger_level, flush=flush)
 

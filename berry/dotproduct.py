@@ -42,7 +42,7 @@ def get_point_neighbors(nk: int, j: int) -> None:
         return (nk, j, neighbor, jNeighbor)
     return None
 
-def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logging.INFO, flush: bool = True):
+def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logging.INFO, flush: bool = False):
     global dpc, logger
     logger = log(logger_name, "DOT PRODUCT", level=logger_level, flush=flush)
 
