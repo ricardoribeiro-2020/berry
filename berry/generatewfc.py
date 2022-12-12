@@ -31,7 +31,7 @@ class WfcGenerator:
         else:
             self.nk_points = nk_points
             self.bands = bands
-        self.ref_name = time.strftime("%d-%m-%Y_%H:%M:%S", time.gmtime())
+        self.ref_name = d.refname
         self.logger = log(logger_name, "GENERATE WAVE FUNCTIONS", logger_level, flush)
 
     def run(self):

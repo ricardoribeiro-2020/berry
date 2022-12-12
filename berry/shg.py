@@ -110,7 +110,7 @@ def calculate_shg(omega: float, broadning: float):
 
 def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, broadning: complex = 0.01j, logger_name: str = "shg", logger_level: int = logging.INFO, flush: bool = True):
     global gamma1, gamma2, gamma3, gamma12, gamma13, fermi, delta_ea, grad_dea, band_list, berry_connections, OMEGA_SHAPE, CONST, VK
-    logger = log(logger_name, "SECOND HARMONIC GENERATOR", logger_level, flush)
+    logger = log(logger_name, "SECOND HARMONIC GENERATOR", d.refname, level=logger_level, flush=flush)
 
     logger.header()
 
