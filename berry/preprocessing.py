@@ -60,14 +60,12 @@ class Preprocess:
         if self.program == "QE":
             # Get outdir from scf
             try:
-                self.out_dir = parser("outdir", self.scf)
-                self.out_dir = os.path.abspath(self.out_dir)
+                self.out_dir = os.path.join(self.dft_dir, parser("outdir", self.scf))
             except IndexError:
-                raise ValueError(f"outdir not found in {self.scf}. Make sure your dft_dir path is correct.")
+                raise ValueError(f"outdir not found in {self.scf}. Make sure your input file has the 'outdir' keyword set to './'")
             # Get pseudo_dir from scf
             try:
-                self.pseudo_dir = parser("pseudo_dir", self.scf)
-                self.pseudo_dir = os.path.abspath(self.pseudo_dir)
+                self.pseudo_dir = os.path.join(self.dft_dir, parser("pseudo_dir", self.scf))
             except IndexError:
                 raise ValueError(f"pseudo_dir not found in {self.scf}. Make sure your dft_dir path is correct.")
             # Get prefix from scf
@@ -209,6 +207,7 @@ class Preprocess:
 
     def compute_scf(self):
         scf_out = self.scf[:-3] + ".out"
+        print(scf_out)
         if os.path.isfile(scf_out):
             self.logger.info(f"\t{os.path.basename(scf_out)} already exists. Skipping scf calculation.")
             return
@@ -217,7 +216,7 @@ class Preprocess:
 
             command = f"{self.__mpi} pw.x -i {self.scf} > {scf_out}"
             os.system(command)
-            self.logger.debug(f"Running command: {command}")
+            self.logger.debug(f"\tRunning command: {command}")
 
     def compute_nscf(self):
         self._nscf_template()
