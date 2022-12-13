@@ -1333,7 +1333,7 @@ class MATERIAL:
         while bands_final_flag and ALPHA >= min_alpha:
             COUNT += 1
             self.logger.info()
-            self.logger.info(f'\n\n\t* Iteration: {COUNT} - Clustering samples for TOL: {ALPHA}')
+            self.logger.info(f'\n\n\t* Iteration: {COUNT} - Clustering samples for Alpha: {ALPHA} ')
             self.get_components(alpha=ALPHA)                    # Obtain components from a Graph
 
             self.logger.info('\n\t\tCalculating output')        
