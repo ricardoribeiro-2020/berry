@@ -39,8 +39,8 @@ NOT_SOLVED = 0
 N_NEIGS = 4
 
 EVALUATE_RESULT_HELP = '''
-    ---------------Report considering dot-product information--------------
-            C -> Mean dot-product <i|j> of each k-point
+    -------------- Report considering dot-product information -------------
+            C -> Mean dot-product |<i|j>| of each k-point
             ---------------------------------------------------------
             Value |                              Description
             ------------------------------------------------------
@@ -54,7 +54,7 @@ EVALUATE_RESULT_HELP = '''
 '''
 
 VALIDATE_RESULT_HELP = '''
-    --------------Report considering energy continuity criteria------------
+    ------------- Report considering energy continuity criteria -----------
             N -> Number of directions that preserves energy continuity.
             ---------------------------------------------------------
             Value |                              Description
@@ -628,7 +628,7 @@ class MATERIAL:
         self.solved_problems_info[0] = '\n\tThe number of points with forbidden paths between them is: ' + str(len(problems))
         if len(problems) > 0:
             self.solved_problems_info[0] += '\n\t    Problems in points:'
-            self.logger.info('\t*** It was found and solved points with forbidden paths ***')
+            self.logger.info('\t*** Points with forbidden paths found and solved ***')
             self.logger.info('\t    The problems and their solutions are:')
         
         calc_k_bn = lambda p: (p % self.nks, p // self.nks + self.min_band )
@@ -656,7 +656,7 @@ class MATERIAL:
                 self.logger.info(f'\t\t    k: {k} bn: {bn}')
 
         if len(problems) > 0:
-            self.logger.info('\n\t    Note that these solutions may fail but the next iterations will try to correct them.\n')
+            self.logger.info('\n\t    Note that this solution may be wrong \n\t    but next iterations will correct it.\n')
 
             
 
@@ -1201,15 +1201,15 @@ class MATERIAL:
         self.final_report += '|                                       SOLUTION REPORT                                         |\n'
         self.final_report += '*************************************************************************************************\n\n'
 
-        self.final_report += f'\n\tLegend for the report:\n'
+        self.final_report += f'\n\tLegend of report:\n'
         self.final_report += EVALUATE_RESULT_HELP
         self.final_report += '\n'
         self.final_report += VALIDATE_RESULT_HELP
         self.final_report += '\n'
-        report_s1, report_a1 = self.print_report(self.signal_final, 'Final Report considering dot-product information', show=False)
+        report_s1, report_a1 = self.print_report(self.signal_final, 'Final Report for dot-product information', show=False)
         self.final_report += report_s1
         self.final_report += '\n'
-        retport_s2, report_a2 = self.print_report(self.correct_signalfinal, 'Validation Report considering energy continuity criteria', show=False)
+        retport_s2, report_a2 = self.print_report(self.correct_signalfinal, 'Validation Report for energy continuity criteria', show=False)
         self.final_report += retport_s2
         self.final_report += '\n'
 
@@ -1231,7 +1231,7 @@ class MATERIAL:
             self.final_report += f'\n\t\t K-point: {k1} bands: {bn1}, {bn2}' # Report
         
         if len(problems) > 0:
-            self.final_report += f'\n\t    These points was corrected.'
+            self.final_report += f'\n\t\tThese points were corrected.'
         
         filter_deg = lambda k1, bn1, bn2: np.any(np.all(np.array([k1, bn1, bn2]) == self.degenerate_final, axis=1))
         degenerates = []
@@ -1248,20 +1248,21 @@ class MATERIAL:
 
         if len(degenerates) > 0:
             n = len(degenerates)
-            self.final_report += f'\n\n\tThe number of degenerate points is: {n}\n'
+            self.final_report += f'\n\n\tNumber of degenerate points: {n}\n'
             for k1, bn1, bn2 in degenerates:
                 self.final_report += f'\n\t\t * K-point: {k1} Bands: {bn1}, {bn2}'
-            self.final_report += f'\n\n\t   These points requires run the basis correction program to make their bands usable.'
+            self.final_report += f'\n\n\t   Run the basis correction program on these bands.'
 
         if len(self.degenerate_final) > 0:
             n = len(self.degenerate_final)
-            self.final_report += f'\n\n\tIt identified {n} points where at least one neighbor with a dot-product between 0.5 and 0.8.'
-            self.final_report += f'\n\t    Note that they may not be degenerate points under energy criteria. Then, they are not signaled and no corrections will be applied.'
-            self.final_report += f'\n\t    However, they are saved in the degeneratefinal.npy file too if you decided to analyze their problems.'
-            self.final_report += '\n\t    Points:'
+            self.final_report += f'\n\n\tFound {n} points with one or more neighbor with a dot-product between 0.5 and 0.8.'
+            self.final_report += f'\n\t\tMay not be degenerate points under energy criteria.'
+            self.final_report += f'\n\t\tSo they were not signaled and no corrections were applied.'
+            self.final_report += f'\n\t\tHowever, they are saved in the degeneratefinal.npy file, in case they need analysis.'
+            self.final_report += '\n\t\tPoints:'
             i_sort = np.argsort([k for k, _, _ in self.degenerate_final])
             for k, bn1, bn2 in self.degenerate_final[i_sort]:
-                self.final_report += f'\n\t\t * K-point: {k} Bands: {bn1}, {bn2}'
+                self.final_report += f'\n\t\t * K-point: {k} \tBands: {bn1}, {bn2}'
 
         TOL_USABLE = 0.95           # Minimum score to consider a band as usable.
         n_recomended = 0
@@ -1271,15 +1272,15 @@ class MATERIAL:
                 break
             n_recomended += 1
         
-        self.final_report += f'\n\n\tThe band clustering program solved {self.max_solved} bands.'
-        self.final_report += f'\n\tIt is recommended use until band number {n_recomended-1}.'
+        self.final_report += f'\n\n\tThe program solved {self.max_solved} bands.'
+        self.final_report += f'\n\n\tBands from 0 up to {n_recomended-1} can be used.'
 
         if self.max_solved > n_recomended:
-            self.final_report += f'\n\tNote that the other bands must be correct but a human verification is required.'
+            self.final_report += f'\n\n\tNote that there may be more bands usable but a human verification is required.'
             n_max = n_recomended
 
         if len(degenerates) > 0:
-            self.final_report += f'\n\tBefore use the result run the program basis rotation in the following manner:'
+            self.final_report += f'\n\n\tRun program basis rotation in the following manner:'
             self.final_report += f'\n\n\t\t $ berry basis {n_max - 1}'
 
         self.final_report += '\n\n*************************************************************************************************\n'

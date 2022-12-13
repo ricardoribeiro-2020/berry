@@ -19,7 +19,7 @@ def prepare_message(method):
     return wrapper
 
 class log:
-    def __init__(self, program, title, level=logging.INFO, flush: bool = True):
+    def __init__(self, program, title, level=logging.INFO, flush: bool = False):
         Path(program).parent.mkdir(parents=True, exist_ok=True)
 
         self.program = program

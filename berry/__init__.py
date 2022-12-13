@@ -1,4 +1,4 @@
-from berry.cli import master_cli
+from berry.cli import berry_cli
 from berry._version import __version__
 
 

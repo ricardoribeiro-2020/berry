@@ -7,8 +7,8 @@ import re
 import sys
 import time
 import logging
-import xml.etree.ElementTree as ET
 import platform
+import xml.etree.ElementTree as ET
 
 import numpy as np
 
@@ -37,7 +37,7 @@ class Preprocess:
         self.point = point
         self.program = program
         self.ref_name = ref_name
-        self.logger = log(logger_name, "PREPROCESS", logger_level, flush)
+        self.logger = log(logger_name, "PREPROCESS", level=logger_level, flush=flush)
 
         self.nscf_kpoints = ""
         self.__mpi = "" if self.npr == 1 else f"mpirun -np {self.npr}"
@@ -60,14 +60,12 @@ class Preprocess:
         if self.program == "QE":
             # Get outdir from scf
             try:
-                self.out_dir = parser("outdir", self.scf)
-                self.out_dir = os.path.abspath(self.out_dir)
+                self.out_dir = os.path.abspath(parser("outdir", self.scf))
             except IndexError:
-                raise ValueError(f"outdir not found in {self.scf}. Make sure your dft_dir path is correct.")
+                raise ValueError(f"outdir not found in {self.scf}. Make sure your input file has the 'outdir' keyword set to './'")
             # Get pseudo_dir from scf
             try:
-                self.pseudo_dir = parser("pseudo_dir", self.scf)
-                self.pseudo_dir = os.path.abspath(self.pseudo_dir)
+                self.pseudo_dir = os.path.abspath(parser("pseudo_dir", self.scf))
             except IndexError:
                 raise ValueError(f"pseudo_dir not found in {self.scf}. Make sure your dft_dir path is correct.")
             # Get prefix from scf
@@ -217,7 +215,7 @@ class Preprocess:
 
             command = f"{self.__mpi} pw.x -i {self.scf} > {scf_out}"
             os.system(command)
-            self.logger.debug(f"Running command: {command}")
+            self.logger.debug(f"\tRunning command: {command}")
 
     def compute_nscf(self):
         self._nscf_template()

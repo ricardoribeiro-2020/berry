@@ -15,8 +15,8 @@ try:
 except:
     pass
 
-def run_anomalous_velocity(logger_name: str = "anomalousVelocity", logger_level: int = logging.INFO):
-    looger = log(logger_name, "ANOMALOUS VELOCITY", logger_level)
+def run_anomalous_velocity(logger_name: str = "anomalousVelocity", logger_level: int = logging.INFO, flush: bool = False):
+    looger = log(logger_name, "ANOMALOUS VELOCITY", level=logger_level, flush=flush)
     return
 
 if __name__ == "__main__":
