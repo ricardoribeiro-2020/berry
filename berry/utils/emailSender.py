@@ -6,7 +6,7 @@
 
 import smtplib
 from socket import gaierror
-import berry._subroutines.loaddata as d
+import berry._subroutines.loadmeta as m
 
 # pylint: disable=C0103
 ###################################################################################
@@ -21,9 +21,9 @@ password = ""
 message = """\
 From: ricardo.ribeiro@physics.org
 To: ricardo.ribeiro@physics.org
-Subject: Calculation  """ + d.refname + """
+Subject: Calculation  """ + m.refname + """
 
-The calculation is finished in directory\n""" + d.workdir + """
+The calculation is finished in directory\n""" + m.workdir + """
 
 """
 

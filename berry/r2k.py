@@ -13,6 +13,7 @@ from berry import log
 
 try:
     import berry._subroutines.loaddata as d
+    import berry._subroutines.loadmeta as m
 except:
     pass
 
@@ -22,14 +23,14 @@ def read_wfc_files(banda: int, npr: int) -> None:
 
     def read_wfc_kp(kp):
         if signalfinal[kp, banda] == -1:                                        # if its a signaled wfc, choose interpolated
-            infile = f"{d.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}.wfc1"
+            infile = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}.wfc1"
         else:                                                                   # else choose original
-            infile = f"{d.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}.wfc"
+            infile = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}.wfc"
 
         wfct_k[:, kp] = np.load(infile)
 
     with Pool(min(10, npr)) as pool: #TODO: try to abstract this operation 
-        pool.map(read_wfc_kp, range(d.nks))
+        pool.map(read_wfc_kp, range(m.nks))
 
 
 def calculate_wfcpos(npr: int) -> np.ndarray:
@@ -39,7 +40,7 @@ def calculate_wfcpos(npr: int) -> np.ndarray:
         wfcpos[kp] = d.phase[kp, d.ijltonk[:, :, 0]] * wfct_k[kp, d.ijltonk[:, :, 0]]
 
     with Pool(npr) as pool:
-        pool.map(calculate_wfcpos_kp, range(d.nr))
+        pool.map(calculate_wfcpos_kp, range(m.nr))
 
 
 def calculate_wfcgra(npr: int) -> np.ndarray:
@@ -49,7 +50,7 @@ def calculate_wfcgra(npr: int) -> np.ndarray:
         wfcgra[kp] = grad(wfcpos[kp])
 
     with Pool(npr) as pool:
-        pool.map(calculate_wfcgra_kp, range(d.nr))
+        pool.map(calculate_wfcgra_kp, range(m.nr))
 
 
 def r_to_k(banda: int, npr: int) -> None:
@@ -67,8 +68,8 @@ def r_to_k(banda: int, npr: int) -> None:
 
     start = time()
     #IDEA: Try saving this files into a folder in different chunks
-    np.save(os.path.join(d.workdir, f"wfcpos{banda}.npy"), wfcpos)
-    np.save(os.path.join(d.workdir, f"wfcgra{banda}.npy"), wfcgra)
+    np.save(os.path.join(m.workdir, f"wfcpos{banda}.npy"), wfcpos)
+    np.save(os.path.join(m.workdir, f"wfcgra{banda}.npy"), wfcgra)
     logger.debug(f"\twfcpos{banda} and wfcgra{banda} saved in {time() - start:.2f} seconds\n")
 
 
@@ -82,33 +83,33 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     # 1. DEFINING THE CONSTANTS
     ########################################################################### 
 
-    WFCT_K_SHAPE = (d.nr, d.nks)
-    WFCPOS_SHAPE = (d.nr, d.nkx, d.nky)
-    WFCGRA_SHAPE = (d.nr, 2, d.nkx, d.nky)
+    WFCT_K_SHAPE = (m.nr, m.nks)
+    WFCPOS_SHAPE = (m.nr, m.nkx, m.nky)
+    WFCGRA_SHAPE = (m.nr, 2, m.nkx, m.nky)
 
-    WFCT_K_SIZE = d.nr * d.nks
-    WFCPOS_SIZE = d.nr * d.nkx * d.nky
-    WFCGRA_SIZE = d.nr * 2 * d.nkx * d.nky
+    WFCT_K_SIZE = m.nr * m.nks
+    WFCPOS_SIZE = m.nr * m.nkx * m.nky
+    WFCGRA_SIZE = m.nr * 2 * m.nkx * m.nky
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ########################################################################### 
-    logger.info(f"\tUnique reference of run: {d.refname}")
+    logger.info(f"\tUnique reference of run: {m.refname}")
     logger.info(f"\tNumber of processors to use: {npr}")
     logger.info(f"\tMinimum band: {min_band}")
     logger.info(f"\tMaximum band: {max_band}")
-    logger.info(f"\tk-points step, dk: {d.step}")
-    logger.info(f"\tTotal number of k-points: {d.nks}")
-    logger.info(f"\tTotal number of points in real space: {d.nr}")
-    logger.info(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
-    logger.info(f"\tDirectory where the wfc are: {d.wfcdirectory}\n")
+    logger.info(f"\tk-points step, dk: {m.step}")
+    logger.info(f"\tTotal number of k-points: {m.nks}")
+    logger.info(f"\tTotal number of points in real space: {m.nr}")
+    logger.info(f"\tNumber of k-points in each direction: {m.nkx} {m.nky} {m.nkz}")
+    logger.info(f"\tDirectory where the wfc are: {m.wfcdirectory}\n")
 
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS AND GRADIENT
     ###########################################################################
-    grad = Gradient(h=[d.step, d.step], acc=2)                                  # Defines gradient function in 2D
-    signalfinal = np.load(os.path.join(d.workdir, "signalfinal.npy"))
-    bandsfinal = np.load(os.path.join(d.workdir, "bandsfinal.npy"))
+    grad = Gradient(h=[m.step, m.step], acc=2)                                  # Defines gradient function in 2D
+    signalfinal = np.load(os.path.join(m.workdir, "signalfinal.npy"))
+    bandsfinal = np.load(os.path.join(m.workdir, "bandsfinal.npy"))
     logger.info(f"\tSignal and bands files loaded")
 
     buffer = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)

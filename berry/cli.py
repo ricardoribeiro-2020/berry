@@ -19,7 +19,7 @@ class CustomParser(argparse.ArgumentParser):
             if 'preprocess' in action.choices.keys() and value not in action.choices.keys():
                 msg = f"""invalid program choice: {value}.
 This error probably means you are trying to run a program in the incorrect order and therefore do not have the required files.
-Try the program in the following order: 'preprocess', 'wfcgen', 'dot', 'cluster', 'r2k', 'geometry', 'condutivity', 'shg'."""
+Try the program in the following order: 'preprocess', 'wfcgen', 'dot', 'cluster', 'r2k', 'geometry', 'conductivity', 'shg'."""
                 raise argparse.ArgumentTypeError(msg)
             elif 'both' in action.choices.keys() and value not in action.choices.keys():
                 msg = f"""invalid program choice in geometry program: {value}. Please choose from the following: {action.choices.keys()}"""
@@ -44,24 +44,24 @@ def restricted_float(x):
 
 WFCGEN = DOT = CLUSTER = BASIS = R2K = GEOMETRY = CONDUCTIVITY = SHG = 0
 try:
-    import berry._subroutines.loaddata as d
+    import berry._subroutines.loadmeta as m
 
-    # NOTE: Changed 'd.workdir' to 'os.getcwd()' because one might not want to run from the start
-    d.workdir = os.getcwd()
+    # NOTE: Changed 'm.workdir' to 'os.getcwd()' because one might not want to run from the start
+    m.workdir = os.getcwd()
 
-    if os.path.exists(os.path.join(d.workdir, "datafile.npy")):
+    if os.path.exists(os.path.join(m.workdir, "datafile.npy")):
         WFCGEN = 1
-    if os.path.exists(os.path.join(d.workdir, "wfc")):
+    if os.path.exists(os.path.join(m.workdir, "wfc")):
         DOT = 1
-    if os.path.exists(os.path.join(d.workdir, "dpc.npy")):
+    if os.path.exists(os.path.join(m.workdir, "dpc.npy")):
         CLUSTER = 1
-    if os.path.exists(os.path.join(d.workdir, "signalfinal.npy")):
+    if os.path.exists(os.path.join(m.workdir, "signalfinal.npy")):
         BASIS = 1
-    if os.path.exists(os.path.join(d.workdir, "final.report")):
+    if os.path.exists(os.path.join(m.workdir, "final.report")):
         R2K = 1
-    if os.path.exists(os.path.join(d.workdir, "wfcgra0.npy")):
+    if os.path.exists(os.path.join(m.workdir, "wfcgra0.npy")):
         GEOMETRY = 1
-    if os.path.exists(os.path.join(d.workdir, "berryConn0_0.npy")):
+    if os.path.exists(os.path.join(m.workdir, "berryConn0_0.npy")):
         CONDUCTIVITY = 1
         SHG = 1
 except:
@@ -110,8 +110,8 @@ berry [package options] script parameter [script options]
         argcomplete.autocomplete(parser)
 
         if WFCGEN:
-            wfc_parser.add_argument("-nk"  , type=int, metavar=f"[0-{d.nks-1}]"  , default=None, choices=range(d.nks)  , help="k-point where wavefunctions will be generated (all bands) (default: All).")
-            wfc_parser.add_argument("-band", type=int, metavar=f"[0-{d.nbnd-1}]", default=None, choices=range(d.nbnd), help="Band where wavefunction will be generated (on k-point -nk) (default: All).")
+            wfc_parser.add_argument("-nk"  , type=int, metavar=f"[0-{m.nks-1}]"  , default=None, choices=range(m.nks)  , help="k-point where wavefunctions will be generated (all bands) (default: All).")
+            wfc_parser.add_argument("-band", type=int, metavar=f"[0-{m.nbnd-1}]", default=None, choices=range(m.nbnd), help="Band where wavefunction will be generated (on k-point -nk) (default: All).")
             wfc_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             wfc_parser.add_argument("-o", default="wfc", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             wfc_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
@@ -121,36 +121,36 @@ berry [package options] script parameter [script options]
             dot_parser.add_argument("-o", default="dot", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             dot_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if CLUSTER:
-            cluster_parser.add_argument("Mb" , type=int, nargs='?',   default=-1,   metavar=f"Mb (0-{d.nbnd-1})",    choices=range(d.nbnd) ,             help="Maximum band to consider.")
-            cluster_parser.add_argument("-mb", type=int,              default=0,    metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)             , help="Minimum band to consider (default: 0).")
+            cluster_parser.add_argument("Mb" , type=int, nargs='?',   default=-1,   metavar=f"Mb (0-{m.nbnd-1})",    choices=range(m.nbnd) ,             help="Maximum band to consider.")
+            cluster_parser.add_argument("-mb", type=int,              default=0,    metavar=f"[0-{m.nbnd-1}]"      , choices=range(m.nbnd)             , help="Minimum band to consider (default: 0).")
             cluster_parser.add_argument("-np", type=int,              default=1,    metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
             cluster_parser.add_argument("-t",  type=restricted_float, default=0.95, metavar="[0.0-1.0]",  help="Tolerance used for graph construction (default: 0.95).")
             cluster_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             cluster_parser.add_argument("-o", default="cluster", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             cluster_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if BASIS:
-            basis_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{d.nbnd-1})"   , choices=range(d.nbnd)             , help="Maximum band to consider.")
+            basis_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)             , help="Maximum band to consider.")
             basis_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
             basis_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             basis_parser.add_argument("-o", default="basis", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             basis_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if R2K:
-            r2k_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{d.nbnd-1})"   , choices=range(d.nbnd)             , help="Maximum band to consider.")
+            r2k_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)             , help="Maximum band to consider.")
             r2k_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
-            r2k_parser.add_argument("-mb", type=int, default=0, metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)             , help="Minimum band to consider (default: 0).")
+            r2k_parser.add_argument("-mb", type=int, default=0, metavar=f"[0-{m.nbnd-1}]"      , choices=range(m.nbnd)             , help="Minimum band to consider (default: 0).")
             r2k_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             r2k_parser.add_argument("-o", default="r2k", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             r2k_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if GEOMETRY:
-            geometry_parser.add_argument("Mb"   , type=int                , metavar=f"Mb (0-{d.nbnd-1})"   , choices=range(d.nbnd)                      , help="Maximum band to consider.")
+            geometry_parser.add_argument("Mb"   , type=int                , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)                      , help="Maximum band to consider.")
             geometry_parser.add_argument("-np"  , type=int, default=1     , metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1)         , help="Number of processes to use (default: 1).")
-            geometry_parser.add_argument("-mb"  , type=int, default=0     , metavar=f"[0-{d.nbnd-1}]"      , choices=range(d.nbnd)                      , help="Minimum band to consider (default: 0).")
+            geometry_parser.add_argument("-mb"  , type=int, default=0     , metavar=f"[0-{m.nbnd-1}]"      , choices=range(m.nbnd)                      , help="Minimum band to consider (default: 0).")
             geometry_parser.add_argument("-prop", type=str, default="both", metavar="",choices=["both", "conn", "curv"], help="Specify which proprety to calculate. Possible choices are 'both', 'conn' and 'curv' (default: both)")
             geometry_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             geometry_parser.add_argument("-o", default="geometry", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             geometry_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if CONDUCTIVITY:
-            conductivity_parser.add_argument("cb" , type=int                        ,metavar=f"cb ({d.vb+1}-{d.nbnd-1})", choices=range(d.vb+1, d.nbnd)     , help="Index of the highest conduction band to consider.")
+            conductivity_parser.add_argument("cb" , type=int                        ,metavar=f"cb ({m.vb+1}-{m.nbnd-1})", choices=range(m.vb+1, m.nbnd)     , help="Index of the highest conduction band to consider.")
             conductivity_parser.add_argument("-np"       , type=int  , default=1    , metavar=f"[1-{os.cpu_count()}]"   , choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
             conductivity_parser.add_argument("-eM", metavar="", type=float, default=2.5, help="Maximum energy in Ry units (default: 2.5).")
             conductivity_parser.add_argument("-eS", metavar="", type=float, default=0.001, help="Energy step in Ry units (default: 0.001).")
@@ -159,7 +159,7 @@ berry [package options] script parameter [script options]
             conductivity_parser.add_argument("-o", default="conductivity", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             conductivity_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if SHG:
-            shg_parser.add_argument("cb" , type=int,metavar=f"cb ({d.vb+1}-{d.nbnd-1})", choices=range(d.vb+1, d.nbnd), help="Index of the highest conduction band to consider.")
+            shg_parser.add_argument("cb" , type=int,metavar=f"cb ({m.vb+1}-{m.nbnd-1})", choices=range(m.vb+1, m.nbnd), help="Index of the highest conduction band to consider.")
             shg_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
             shg_parser.add_argument("-eM", metavar="", type=float, default=2.5, help="Maximum energy in Ry units (default: 2.5).")
             shg_parser.add_argument("-eS", metavar="", type=float, default=0.001, help="Energy step in Ry units (default: 0.001).")
@@ -445,24 +445,24 @@ def berry_vis_cli():
     argcomplete.autocomplete(parser)
 
     try:
-        debug_dot2_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to consider.")
+        debug_dot2_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to consider.")
 
-        debug_eigen_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to consider.")
+        debug_eigen_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to consider.")
         debug_eigen_parser.add_argument("-acc", type=int, default=0, help="Precision of the eigenvalues.")
 
-        bcc_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to visualize.")
-        bcc_parser.add_argument("grad", type=int, metavar=f"grad (0-{d.nbnd-1})", choices=range(d.nbnd), help="Gradient to visualize.")
+        bcc_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to visualize.")
+        bcc_parser.add_argument("grad", type=int, metavar=f"grad (0-{m.nbnd-1})", choices=range(m.nbnd), help="Gradient to visualize.")
         bcc_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
     
-        bcr_parser.add_argument("band", type=int, metavar=f"band (0-{d.nbnd-1})", choices=range(d.nbnd), help="Band to visualize.")
-        bcr_parser.add_argument("grad", type=int, metavar=f"grad (0-{d.nbnd-1})", choices=range(d.nbnd), help="Gradient to visualize.")
+        bcr_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to visualize.")
+        bcr_parser.add_argument("grad", type=int, metavar=f"grad (0-{m.nbnd-1})", choices=range(m.nbnd), help="Gradient to visualize.")
         bcr_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
 
-        wave_corrected_parser.add_argument("Mb", type=int, metavar=f"Mb (0-{d.nbnd-1})", choices=range(d.nbnd), help="Maximum band to consider")
-        wave_corrected_parser.add_argument("-mb", type=int, default=0, metavar=f"(0-{d.nbnd-1})", choices=range(d.nbnd), help="Minimum band to consider (default: 0)")
+        wave_corrected_parser.add_argument("Mb", type=int, metavar=f"Mb (0-{m.nbnd-1})", choices=range(m.nbnd), help="Maximum band to consider")
+        wave_corrected_parser.add_argument("-mb", type=int, default=0, metavar=f"(0-{m.nbnd-1})", choices=range(m.nbnd), help="Minimum band to consider (default: 0)")
         
-        wave_machine_parser.add_argument("Mb", type=int, metavar=f"Mb (0-{d.nbnd-1})", choices=range(d.nbnd), help="Maximum band to consider")
-        wave_machine_parser.add_argument("-mb", type=int, default=0, metavar=f"(0-{d.nbnd-1})", choices=range(d.nbnd), help="Minimum band to consider (default: 0)")
+        wave_machine_parser.add_argument("Mb", type=int, metavar=f"Mb (0-{m.nbnd-1})", choices=range(m.nbnd), help="Maximum band to consider")
+        wave_machine_parser.add_argument("-mb", type=int, default=0, metavar=f"(0-{m.nbnd-1})", choices=range(m.nbnd), help="Minimum band to consider (default: 0)")
 
     except NameError:
         print(f"berry-vis cannot display any output because no berry calculations can be found in the directory: {os.getcwd()}")

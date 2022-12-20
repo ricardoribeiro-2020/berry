@@ -12,6 +12,7 @@ from berry import log
 
 try:
     import berry._subroutines.loaddata as d
+    import berry._subroutines.loadmeta as m
 except:
     pass
 
@@ -22,34 +23,34 @@ def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_con
 
     for i in range(conduction_band + 1):
         for j in range(conduction_band + 1):
-            berry_connections[i, j] = np.load(os.path.join(d.workdir, f"berryConn{i}_{j}.npy"))
+            berry_connections[i, j] = np.load(os.path.join(m.workdir, f"berryConn{i}_{j}.npy"))
 
     return berry_connections
 
 
 def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
     kp = 0
-    eigen_array = np.zeros((d.nkx, d.nky, d.nbnd))
+    eigen_array = np.zeros((m.nkx, m.nky, m.nbnd))
 
-    for j in range(d.nky):
-        for i in range(d.nkx):
-            for banda in range(d.nbnd):
+    for j in range(m.nky):
+        for i in range(m.nkx):
+            for banda in range(m.nbnd):
                 eigen_array[i, j, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
             kp += 1
 
     return eigen_array
 
 def get_delta_eigen_array_and_fermi(eigen_array: np.ndarray, conduction_band: int) -> Tuple[np.ndarray, np.ndarray]:
-    delta_eigen_array = np.zeros((d.nkx, d.nky, conduction_band + 1, conduction_band + 1))
-    fermi = np.zeros((d.nkx, d.nky, conduction_band + 1, conduction_band + 1))
+    delta_eigen_array = np.zeros((m.nkx, m.nky, conduction_band + 1, conduction_band + 1))
+    fermi = np.zeros((m.nkx, m.nky, conduction_band + 1, conduction_band + 1))
 
     for s in band_list:
         for sprime in band_list:
             delta_eigen_array[:, :, s, sprime] = eigen_array[:, :, s] - eigen_array[:, :, sprime]
 
-            if s <= d.vb < sprime:
+            if s <= m.vb < sprime:
                 fermi[:, :, s, sprime] = 1
-            elif sprime <= d.vb < s:
+            elif sprime <= m.vb < s:
                 fermi[:, :, s, sprime] = -1
 
     return delta_eigen_array, fermi
@@ -88,7 +89,7 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
     # 1. DEFINING THE CONSTANTS
     ########################################################################### 
     RY    = 13.6056923                                                          # Conversion factor from Ry to eV
-    VK    = d.step * d.step / (2 * np.pi) ** 2                                  # element of volume in k-space in units of bohr^-1
+    VK    = m.step * m.step / (2 * np.pi) ** 2                                  # element of volume in k-space in units of bohr^-1
     # the '4' comes from spin degeneracy, that is summed in s and s'
     CONST = 4 * 2j / (2 * np.pi) ** 2                                           # = i2e^2/hslash 1/(2pi)^2     in Rydberg units
 
@@ -99,18 +100,18 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
     # Energy step (Ry)
     # energy broading (Ry)
 
-    OMEGA_SHAPE             = (d.nkx, d.nky, conduction_band + 1, conduction_band + 1)
-    berry_conn_size  = 2 * d.nkx * d.nky * (conduction_band + 1) ** 2
-    berry_conn_shape = (conduction_band + 1, conduction_band + 1, 2, d.nkx, d.nky)
+    OMEGA_SHAPE             = (m.nkx, m.nky, conduction_band + 1, conduction_band + 1)
+    berry_conn_size  = 2 * m.nkx * m.nky * (conduction_band + 1) ** 2
+    berry_conn_shape = (conduction_band + 1, conduction_band + 1, 2, m.nkx, m.nky)
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
     ########################################################################### 
     logger.info(f"\tUsing {npr} processes")
 
     logger.info(f"\n\tList of bands: {band_list}")
-    logger.info(f"\tNumber of k-points in each direction: {d.nkx} {d.nky} {d.nkz}")
-    logger.info(f"\tNumber of bands: {d.nbnd}")
-    logger.info(f"\tk-points step, dk {d.step}")                                    # Defines the step for gradient calculation dk
+    logger.info(f"\tNumber of k-points in each direction: {m.nkx} {m.nky} {m.nkz}")
+    logger.info(f"\tNumber of bands: {m.nbnd}")
+    logger.info(f"\tk-points step, dk {m.step}")                                    # Defines the step for gradient calculation dk
 
     logger.info(f"\n\tMaximum energy (Ry): {energy_max}")
     logger.info(f"\tEnergy step (Ry): {energy_step}")
@@ -121,8 +122,8 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS
     ###########################################################################
-    bandsfinal               = np.load(os.path.join(d.workdir, "bandsfinal.npy"))
-    signalfinal              = np.load(os.path.join(d.workdir, "signalfinal.npy"))                       #NOTE: Not used
+    bandsfinal               = np.load(os.path.join(m.workdir, "bandsfinal.npy"))
+    signalfinal              = np.load(os.path.join(m.workdir, "signalfinal.npy"))                       #NOTE: Not used
     eigen_array              = correct_eigenvalues(bandsfinal)
     berry_connections        = load_berry_connections(conduction_band, berry_conn_size, berry_conn_shape)
     delta_eigen_array, fermi = get_delta_eigen_array_and_fermi(eigen_array, conduction_band)
@@ -137,7 +138,7 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
     ###########################################################################
     # 5. SAVE OUTPUT
     ###########################################################################
-    with open(os.path.join(d.workdir, "sigmar.dat"), "w") as sigm:
+    with open(os.path.join(m.workdir, "sigmar.dat"), "w") as sigm:
         sigm.write("# Energy (eV), sigma_xx,  sigma_yy,  sigma_yx,  sigma_xy\n")
         for omega in np.arange(0, energy_max + energy_step, energy_step):
             outp = "{0:.4f}  {1:.6f}  {2:.6f}  {3:.6f}  {4:.6f}\n"
@@ -152,7 +153,7 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
             )
     logger.info("\tReal part of conductivity saved to file sigmar.dat")
 
-    with open(os.path.join(d.workdir, "sigmai.dat"), "w") as sigm:
+    with open(os.path.join(m.workdir, "sigmai.dat"), "w") as sigm:
         sigm.write("# Energy (eV), sigma_xx,  sigma_yy,  sigma_yx,  sigma_xy\n")
         for omega in np.arange(0, energy_max + energy_step, energy_step):
             outp = "{0:.4f}  {1:.6f}  {2:.6f}  {3:.6f}  {4:.6f}\n"
