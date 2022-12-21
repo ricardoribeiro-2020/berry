@@ -216,7 +216,7 @@ berry [package options] script parameter [script options]
     program_dict[args.main_programs](args)
 
 def preprocessing_cli(args: argparse.Namespace):
-    from berry import Preprocess
+    from berry.preprocessing import Preprocess
     ###########################################################################
     # 2. ASSERTIONS
     ###########################################################################
@@ -266,7 +266,7 @@ def preprocessing_cli(args: argparse.Namespace):
     Preprocess(**args_dict).run() 
 
 def generatewfc_cli(args: argparse.Namespace):
-    from berry import WfcGenerator
+    from berry.generatewfc import WfcGenerator
     ###########################################################################
     # 2. ASSERTIONS
     ###########################################################################
@@ -288,7 +288,7 @@ def generatewfc_cli(args: argparse.Namespace):
     return 
 
 def dotproduct_cli(args: argparse.Namespace):
-    from berry import run_dot
+    from berry.dotproduct import run_dot
     ###########################################################################
     # 2. ASSERTIONS
     ###########################################################################
@@ -305,7 +305,7 @@ def dotproduct_cli(args: argparse.Namespace):
     run_dot(**args_dict)
 
 def clustering_cli(args: argparse.Namespace):
-    from berry import run_clustering
+    from berry.clustering_bands import run_clustering
     ###########################################################################
     # 3. PROCESSING ARGS
     ###########################################################################
@@ -321,7 +321,7 @@ def clustering_cli(args: argparse.Namespace):
     run_clustering(**args_dict)
 
 def basisrotation_cli(args: argparse.Namespace):
-    from berry import run_basis_rotation
+    from berry.basisrotation import run_basis_rotation
     ###########################################################################
     # 3. PROCESSING ARGS
     ###########################################################################
@@ -335,7 +335,7 @@ def basisrotation_cli(args: argparse.Namespace):
     run_basis_rotation(**args_dict)
 
 def r2k_cli(args: argparse.Namespace):
-    from berry import run_r2k
+    from berry.r2k import run_r2k
     ###########################################################################
     # 2. ASSERTIONS
     ###########################################################################
@@ -354,7 +354,7 @@ def r2k_cli(args: argparse.Namespace):
     run_r2k(**args_dict)
 
 def berry_props_cli(args: argparse.Namespace):
-    from berry import run_berry_geometry
+    from berry.berry_geometry import run_berry_geometry
     ###########################################################################
     # 2. ASSERTIONS
     ###########################################################################
@@ -374,7 +374,7 @@ def berry_props_cli(args: argparse.Namespace):
     run_berry_geometry(**args_dict)
 
 def conductivity_cli(args: argparse.Namespace):
-    from berry import run_conductivity
+    from berry.conductivity import run_conductivity
     ###########################################################################
     # 2. ASSERTIONS
     ###########################################################################
@@ -395,7 +395,7 @@ def conductivity_cli(args: argparse.Namespace):
     run_conductivity(**args_dict)
 
 def shg_cli(args: argparse.Namespace):
-    from berry import run_shg
+    from berry.shg import run_shg
     ###########################################################################
     # 2. ASSERTIONS
     ###########################################################################
