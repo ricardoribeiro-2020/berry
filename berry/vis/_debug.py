@@ -3,6 +3,7 @@ from colorama import Fore, Back, Style
 import numpy as np
 
 from berry._subroutines.write_k_points import _float_numbers
+import berry._subroutines.loadmeta as m
 import berry._subroutines.loaddata as d
 
 
@@ -12,51 +13,51 @@ def log_data():
     print("#"*100)
     print("# DATA OF THE SYSTEM")
     print("#"*100)
-    print(f"\n\tInitial k-point                                  {d.k0}")
-    print(f"\tNumber of k-points in the x direction              {d.nkx}")
-    print(f"\tNumber of k-points in the y direction              {d.nky}")
-    print(f"\tNumber of k-points in the z direction              {d.nkz}")
-    print(f"\tTotal number of k-points                           {d.nks}")
-    print(f"\tStep between k-points                              {d.step}")
-    print(f"\tNumber of processors for the run                   {d.npr}")
-    print(f"\tDirectory of DFT files                             {d.dftdirectory}")
-    print(f"\tName of scf file (without suffix)                  {d.name_scf}")
-    print(f"\tName of nscf file (without suffix)                 {d.name_nscf}")
-    print(f"\tDirectory for the wfc files                        {d.wfcdirectory}")
-    print(f"\tPrefix of the DFT QE calculations                  {d.prefix}")
-    print(f"\tDirectory for DFT saved files                      {d.outdir}")
-    print(f"\tPath to DFT file with data of the run              {d.dftdatafile}")
-    print(f"\tFirst lattice vector in real space                 {d.a1}")
-    print(f"\tSecond lattice vector in real space                {d.a2}")
-    print(f"\tThird lattice vector in real space                 {d.a3}")
-    print(f"\tFirst lattice vector in reciprocal space           {d.b1}")
-    print(f"\tSecond lattice vector in reciprocal space          {d.b2}")
-    print(f"\tThird lattice vector in reciprocal space           {d.b3}")
-    print(f"\tNumber of points of wfc in real space x direction  {d.nr1}")
-    print(f"\tNumber of points of wfc in real space y direction  {d.nr2}")
-    print(f"\tNumber of points of wfc in real space z direction  {d.nr3}")
-    print(f"\tTotal number of points of wfc in real space        {d.nr}")
-    print(f"\tNumber of bands                                    {d.nbnd}")
-    print(f"\tPath of BERRY files                                {d.berrypath}")
-    print(f"\tPoint in real space where all phases match         {d.rpoint}")
-    print(f"\tWorking directory                                  {d.workdir}")
-    print(f"\tIf the calculation is noncolinear                  {d.noncolin}")
-    print(f"\tDFT software to be used                            {d.program}")
-    print(f"\tSpin polarized calculation                         {d.lsda}")
-    print(f"\tNumber of electrons                                {d.nelec}")
-    print(f"\tprefix of the DFT calculations                     {d.prefix}")
-    print(f"\tFile for extracting DFT wfc to real space          {d.wfck2r}")
-    print(f"\tVersion of berry where data was created            {d.version}\n")
+    print(f"\n\tInitial k-point                                  {m.k0}")
+    print(f"\tNumber of k-points in the x direction              {m.nkx}")
+    print(f"\tNumber of k-points in the y direction              {m.nky}")
+    print(f"\tNumber of k-points in the z direction              {m.nkz}")
+    print(f"\tTotal number of k-points                           {m.nks}")
+    print(f"\tStep between k-points                              {m.step}")
+    print(f"\tNumber of processors for the run                   {m.npr}")
+    print(f"\tDirectory of DFT files                             {m.dftdirectory}")
+    print(f"\tName of scf file (without suffix)                  {m.name_scf}")
+    print(f"\tName of nscf file (without suffix)                 {m.name_nscf}")
+    print(f"\tDirectory for the wfc files                        {m.wfcdirectory}")
+    print(f"\tPrefix of the DFT QE calculations                  {m.prefix}")
+    print(f"\tDirectory for DFT saved files                      {m.outdir}")
+    print(f"\tPath to DFT file with data of the run              {m.dftdatafile}")
+    print(f"\tFirst lattice vector in real space                 {m.a1}")
+    print(f"\tSecond lattice vector in real space                {m.a2}")
+    print(f"\tThird lattice vector in real space                 {m.a3}")
+    print(f"\tFirst lattice vector in reciprocal space           {m.b1}")
+    print(f"\tSecond lattice vector in reciprocal space          {m.b2}")
+    print(f"\tThird lattice vector in reciprocal space           {m.b3}")
+    print(f"\tNumber of points of wfc in real space x direction  {m.nr1}")
+    print(f"\tNumber of points of wfc in real space y direction  {m.nr2}")
+    print(f"\tNumber of points of wfc in real space z direction  {m.nr3}")
+    print(f"\tTotal number of points of wfc in real space        {m.nr}")
+    print(f"\tNumber of bands                                    {m.nbnd}")
+    print(f"\tPath of BERRY files                                {m.berrypath}")
+    print(f"\tPoint in real space where all phases match         {m.rpoint}")
+    print(f"\tWorking directory                                  {m.workdir}")
+    print(f"\tIf the calculation is noncolinear                  {m.noncolin}")
+    print(f"\tDFT software to be used                            {m.program}")
+    print(f"\tSpin polarized calculation                         {m.lsda}")
+    print(f"\tNumber of electrons                                {m.nelec}")
+    print(f"\tprefix of the DFT calculations                     {m.prefix}")
+    print(f"\tFile for extracting DFT wfc to real space          {m.wfck2r}")
+    print(f"\tVersion of berry where data was created            {m.version}\n")
 
 
 def log_dot1():
     print("#"*100)
     print("# DOT PRODUCT OF THE WAVEFUNCTIONS (option 1)")
     print("#"*100)
-    print(f"\n\tDirectory where the wfc are: {d.wfcdirectory}")
-    print(f"\tNumber of k-points in each direction: {d.nkx}, {d.nky}, {d.nkz}")
-    print(f"\tTotal number of k-points: {d.nks}")
-    print(f"\tNumber of bands: {d.nbnd}\n")
+    print(f"\n\tDirectory where the wfc are: {m.wfcdirectory}")
+    print(f"\tNumber of k-points in each direction: {m.nkx}, {m.nky}, {m.nkz}")
+    print(f"\tTotal number of k-points: {m.nks}")
+    print(f"\tNumber of bands: {m.nbnd}\n")
 
     try:
         connections = np.load("dp.npy")
@@ -65,13 +66,13 @@ def log_dot1():
 
     print(f"\n\tShape of connections array: {connections.shape}")
 
-    for nk in range(d.nks):
+    for nk in range(m.nks):
         for j in range(4):
             neighbor = d.neighbors[nk, j]
             print(f"\t{nk=}; {neighbor=}")
-            for band in range(d.nbnd):
+            for band in range(m.nbnd):
                 line = "  "
-                for band1 in range(d.nbnd):
+                for band1 in range(m.nbnd):
                     if connections[nk, j, band, band1] > 0.1:
                         line = (
                             line
@@ -88,15 +89,15 @@ def log_dot2(band1: int):
     print("# DOT PRODUCT OF THE WAVEFUNCTIONS (option 2)")
     print("#"*100)
 
-    print("     Directory where the wfc are:", d.wfcdirectory)
-    print("     Number of k-points in each direction:", d.nkx, d.nky, d.nkz)
-    print("     Total number of k-points:", d.nks)
-    print("     Number of bands:", d.nbnd)
+    print("     Directory where the wfc are:", m.wfcdirectory)
+    print("     Number of k-points in each direction:", m.nkx, m.nky, m.nkz)
+    print("     Total number of k-points:", m.nks)
+    print("     Number of bands:", m.nbnd)
     print("     Band calculated:", band1)
 
     connections = np.load("dp.npy")
-    valuesarray = np.zeros((d.nks, d.nbnd), dtype=float)
-    bandsarray = np.zeros((d.nks, d.nbnd), dtype=int)
+    valuesarray = np.zeros((m.nks, m.nbnd), dtype=float)
+    bandsarray = np.zeros((m.nks, m.nbnd), dtype=int)
     #    print(connections.shape)
 
     coresback = [
@@ -153,9 +154,9 @@ def log_dot2(band1: int):
     ]
 
     for j in range(4):
-        for i in range(d.nks):
+        for i in range(m.nks):
             nk = d.neighbors[i, j]
-            for band in range(d.nbnd):
+            for band in range(m.nbnd):
                 bandsarray[i, band] = np.argmax(connections[i, j, band, :])
                 valuesarray[i, band] = np.amax(connections[i, j, band, :])
 
@@ -190,10 +191,10 @@ def log_dot2(band1: int):
             + " 7 "
             + Style.RESET_ALL
         )
-        for _ in range(d.nky):
+        for _ in range(m.nky):
             lin = ""
             print()
-            for _ in range(d.nkx):
+            for _ in range(m.nkx):
                 nk = nk + 1
                 val = (
                     coresback[bandsarray[nk, band1]]
@@ -217,15 +218,15 @@ def log_eigen(band: int, acc: int):
     print("#"*100)
     print("# EIGENVALUES")
     print("#"*100)
-    print(_float_numbers(d.nkx, d.nky, d.eigenvalues[:, band], acc))
+    print(_float_numbers(m.nkx, m.nky, d.eigenvalues[:, band], acc))
 
 
 def log_neighbors():
     print("#"*100)
     print("# NEIGHBORS")
     print("#"*100)
-    m = np.max(d.neighbors)
-    for nk in range(d.nks):
+    m_ = np.max(d.neighbors)
+    for nk in range(m.nks):
         print(f"{nk:5}:\t{d.neighbors[nk, 0]:5} {d.neighbors[nk, 1]:5} {d.neighbors[nk, 1]:5} {d.neighbors[nk, 3]:5}")
 
 
@@ -233,7 +234,7 @@ def log_occupation():
     print("#"*100)
     print("# OCCUPATION")
     print("#"*100)
-    for nk in range(d.nks):
+    for nk in range(m.nks):
         print(nk, d.occupations[nk, :])
 
 
@@ -241,7 +242,7 @@ def log_r_space():
     print("#"*100)
     print("# R-SPACE")
     print("#"*100)
-    for i in range(d.nr):
+    for i in range(m.nr):
         print(i, d.r[i, 0], d.r[i, 1], d.r[i, 2])
 
 
