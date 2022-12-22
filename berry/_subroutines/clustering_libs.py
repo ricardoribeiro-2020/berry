@@ -1259,16 +1259,26 @@ class MATERIAL:
             self.final_report += f'\n\t\tMay not be degenerate points under energy criteria.'
             self.final_report += f'\n\t\tSo they were not signaled and no corrections were applied.'
             self.final_report += f'\n\t\tHowever, they are saved in the degeneratefinal.npy file, in case they need analysis.'
-            self.final_report += '\n\t\tPoints:'
-            i_sort = np.argsort([k for k, _, _ in self.degenerate_final])
-            for k, bn1, bn2 in self.degenerate_final[i_sort]:
-                self.final_report += f'\n\t\t * K-point: {k} \tBands: {bn1}, {bn2}'
+            if self.logger.level == logging.DEBUG:
+                self.final_report += '\n\t\tPoints:'
+                i_sort = np.argsort([k for k, _, _ in self.degenerate_final])
+                for k, bn1, bn2 in self.degenerate_final[i_sort]:
+                    self.final_report += f'\n\t\t * K-point: {k} \tBands: {bn1}, {bn2}'
 
         TOL_USABLE = 0.95           # Minimum score to consider a band as usable.
         n_recomended = 0
-        n_max = self.max_solved
+        max_solved = 0
+
+        for i, _ in enumerate(self.final_score):
+            if np.sum(report_a1[i, NOT_SOLVED]) > 0:
+                break
+            max_solved += 1
+        
+        self.max_solved = max_solved
+
+        n_max = max_solved
         for i, s in enumerate(self.final_score):
-            if s <= TOL_USABLE or i > self.max_solved or np.sum(report_a2[i, [0, 1]]) > 0:
+            if s <= TOL_USABLE or i > max_solved or np.sum(report_a2[i, [NOT_SOLVED, MISTAKE]]) > 0:
                 break
             n_recomended += 1
         
@@ -1323,7 +1333,7 @@ class MATERIAL:
         while bands_final_flag and ALPHA >= min_alpha:
             COUNT += 1
             self.logger.info()
-            self.logger.info(f'\n\n\t* Iteration: {COUNT} - Clustering samples for TOL: {ALPHA}')
+            self.logger.info(f'\n\n\t* Iteration: {COUNT} - Clustering samples for Alpha: {ALPHA} ')
             self.get_components(alpha=ALPHA)                    # Obtain components from a Graph
 
             self.logger.info('\n\t\tCalculating output')        
