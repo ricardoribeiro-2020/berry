@@ -111,7 +111,7 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     grad = Gradient(h=[m.step, m.step], acc=2)                                  # Defines gradient function in 2D
     signalfinal = np.load(os.path.join(m.workdir, "signalfinal.npy"))
     bandsfinal = np.load(os.path.join(m.workdir, "bandsfinal.npy"))
-    d_phase = np.load(os.path.join(m.workdir, "d_phase.npy"))
+    d_phase = np.load(os.path.join(m.workdir, "phase.npy"))
     logger.info(f"\tSignal and bands files loaded")
 
     buffer = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)
