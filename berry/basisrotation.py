@@ -43,7 +43,7 @@ def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
         bneig = bnfinal[kneig, bn]
         psineig = np.load(os.path.join(m.wfcdirectory, f"k0{kneig}b0{bneig}.wfc"))
 
-        dphase = d.phase[:, k] * np.conjugate(d.phase[:, kneig])
+        dphase = d_phase[:, k] * np.conjugate(d_phase[:, kneig])
         dot_product = np.sum(dphase * psinew * np.conjugate(psineig)) / m.nr
         dp = np.abs(dot_product)
         logger.info(f'\told_dp: {connections[k, i_neig, machbn, bneig]} new_dp: {dp}')
@@ -66,7 +66,7 @@ def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
 
 
 def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", logger_level: int = logging.INFO, flush: bool = False):
-    global signalfinal
+    global signalfinal, d_phase
     logger = log(logger_name, "BASIS ROTATION", level=logger_level, flush=flush)
 
     logger.header()
@@ -83,6 +83,9 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     logger.info()
     logger.info("\tNeighbors loaded")
     logger.info("\tEigenvalues loaded")
+
+    d_phase = np.load(os.path.join(m.workdir, "phase.npy"))
+    logger.info("\tPhases loaded")
 
     dotproduct = np.load(os.path.join(m.workdir, "dpc.npy"))
     connections = np.load(os.path.join(m.workdir, "dp.npy"))

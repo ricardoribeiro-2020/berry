@@ -15,13 +15,6 @@ try:
 except IOError:
     print("  WARNING: No occupations.npy file.")
 
-
-# Read phase from file         phase = np.zeros((nr,nks),dtype=complex)
-try:
-    phase = np.load("phase.npy")
-except IOError:
-    print("  WARNING: No phase.npy file.")
-
 # Read neighbors from file     neig = np.full((nks,4),-1,dtype=int)
 try:
     neighbors = np.load("neighbors.npy")

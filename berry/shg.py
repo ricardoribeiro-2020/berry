@@ -158,7 +158,6 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
     ###########################################################################
     grad                        = Gradient(h=[m.step, m.step], acc=2)           # Defines gradient function in 2D
     bandsfinal                  = np.load(os.path.join(m.workdir, "bandsfinal.npy"))
-    signalfinal                 = np.load(os.path.join(m.workdir, "signalfinal.npy"))                    # Not used
     eigen_array                 = correct_eigenvalues(bandsfinal)
     berry_connections           = load_berry_connections(conduction_band, berry_conn_size, berry_conn_shape)
     fermi, delta_ea, grad_dea   = get_fermi_delta_ea_grad_ea(grad, eigen_array, conduction_band)

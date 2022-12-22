@@ -21,7 +21,7 @@ except:
 def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
     start = time()
 
-    dphase = d.phase[:, nk] * d.phase[:, neighbor].conj()
+    dphase = d_phase[:, nk] * d_phase[:, neighbor].conj()
 
     for band0 in range(m.nbnd):
         wfc0 = np.load(os.path.join(m.wfcdirectory, f"k0{nk}b0{band0}.wfc"))
@@ -44,7 +44,7 @@ def get_point_neighbors(nk: int, j: int) -> None:
     return None
 
 def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logging.INFO, flush: bool = False):
-    global dpc, logger
+    global dpc, logger, d_phase
     logger = log(logger_name, "DOT PRODUCT", level=logger_level, flush=flush)
 
     if not 0 < npr <= os.cpu_count():
@@ -74,6 +74,7 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
     dpc_base = Array(ctypes.c_double, 2 * DPC_SIZE, lock=False)
     dpc = np.frombuffer(dpc_base, dtype=np.complex128).reshape(DPC_SHAPE)
     dp = np.zeros(DPC_SHAPE, dtype=np.float64)
+    d_phase = np.load(os.path.join(m.workdir, "phase.npy"))
 
     ###########################################################################
     # 4. CALCULATE THE CONDUCTIVITY
