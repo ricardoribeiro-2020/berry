@@ -365,7 +365,7 @@ def berry_props_cli(args: argparse.Namespace):
     args_dict = {}
     args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
     args_dict["logger_name"] = args.o
-    args_dict["npr"] = args.np
+    args_dict["npr"] = 1 #NOTE: UNTIL NOW, ONLY ONE PROCESS IS SUPPORTED
     args_dict["min_band"] = args.mb
     args_dict["max_band"] = args.Mb
     args_dict["prop"] = args.prop
