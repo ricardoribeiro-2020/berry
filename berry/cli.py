@@ -84,8 +84,8 @@ Command line is of the form:
 berry [package options] script parameter [script options]
 """)
     parser.add_argument("--version", action="store_true", help="Displays current Berry version.")
-    parser.add_argument("--enable-autocomplete", action="store_true", help="Enables autocomplete for the berry CLI.")
-    parser.add_argument("--disable-autocomplete", action="store_true", help="Disables autocomplete for the berry CLI.")
+    # parser.add_argument("--enable-autocomplete", action="store_true", help="Enables autocomplete for the berry CLI.")
+    # parser.add_argument("--disable-autocomplete", action="store_true", help="Disables autocomplete for the berry CLI.")
 
     main_sub_parser = parser.add_subparsers(metavar="MAIN_PROGRAMS" ,dest="main_programs", help="Choose the program to run.")
     preprocess_parser = main_sub_parser.add_parser("preprocess", help="Run and extract data from DFT calculations. This should be the first script to run.", description="Run and extract data from DFT calculations. This should be the first script to run.")
@@ -185,13 +185,13 @@ berry [package options] script parameter [script options]
         print(f"berry suite version: {__version__}")
         sys.exit(0)
     
-    if args.enable_autocomplete:
-        autocomplete("berry")
-        sys.exit(0)
+    # if args.enable_autocomplete:
+    #     autocomplete("berry")
+    #     sys.exit(0)
     
-    if args.disable_autocomplete:
-        autocomplete("berry", disable=True)
-        sys.exit(0)
+    # if args.disable_autocomplete:
+    #     autocomplete("berry", disable=True)
+    #     sys.exit(0)
 
     if args.main_programs is None:
         parser.print_help()
@@ -430,8 +430,8 @@ def berry_vis_cli():
     # 1. DEFINING BERRY VIS CLI ARGS
     ###########################################################################
     parser = CustomParser(description="Berry Visualization Program")
-    parser.add_argument("--enable-autocomplete", action="store_true", help="Enables autocomplete for the berry-vis CLI.")
-    parser.add_argument("--disable-autocomplete", action="store_true", help="Disables autocomplete for the berry-vis CLI.")
+    # parser.add_argument("--enable-autocomplete", action="store_true", help="Enables autocomplete for the berry-vis CLI.")
+    # parser.add_argument("--disable-autocomplete", action="store_true", help="Disables autocomplete for the berry-vis CLI.")
 
     vis_sub_parser = parser.add_subparsers(metavar="VIS_PROGRAMS", dest="vis_programs", help="Choose a visualization program.")
     debug_parser = vis_sub_parser.add_parser("debug", help="Helpfull visualization program for debugging.")
@@ -473,13 +473,13 @@ def berry_vis_cli():
     ###########################################################################
     # HANDLE BERRY VIS SUITE OPTIONAL ARGUMENTS
     ###########################################################################
-    if args.enable_autocomplete:
-        autocomplete("berry-vis")
-        sys.exit(0)
+    # if args.enable_autocomplete:
+    #     autocomplete("berry-vis")
+    #     sys.exit(0)
     
-    if args.disable_autocomplete:
-        autocomplete("berry-vis", disable=True)
-        sys.exit(0)
+    # if args.disable_autocomplete:
+    #     autocomplete("berry-vis", disable=True)
+    #     sys.exit(0)
     
     if args.vis_programs is None:
         parser.print_help()
