@@ -15,6 +15,7 @@ from berry._subroutines.clustering_libs import evaluate_result
 
 try:
     import berry._subroutines.loaddata as d
+    import berry._subroutines.loadmeta as m
 except:
     pass
 
@@ -40,10 +41,10 @@ def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
             continue
 
         bneig = bnfinal[kneig, bn]
-        psineig = np.load(os.path.join(d.wfcdirectory, f"k0{kneig}b0{bneig}.wfc"))
+        psineig = np.load(os.path.join(m.wfcdirectory, f"k0{kneig}b0{bneig}.wfc"))
 
-        dphase = d.phase[:, k] * np.conjugate(d.phase[:, kneig])
-        dot_product = np.sum(dphase * psinew * np.conjugate(psineig)) / d.nr
+        dphase = d_phase[:, k] * np.conjugate(d_phase[:, kneig])
+        dot_product = np.sum(dphase * psinew * np.conjugate(psineig)) / m.nr
         dp = np.abs(dot_product)
         logger.info(f'\told_dp: {connections[k, i_neig, machbn, bneig]} new_dp: {dp}')
         dot_products.append(dp)
@@ -65,32 +66,35 @@ def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
 
 
 def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", logger_level: int = logging.INFO, flush: bool = False):
-    global signalfinal
+    global signalfinal, d_phase
     logger = log(logger_name, "BASIS ROTATION", level=logger_level, flush=flush)
 
     logger.header()
 
     # Reading data needed for the run
-    berrypath = d.berrypath
-    logger.info("\tUnique reference of run:", d.refname)
+    berrypath = m.berrypath
+    logger.info("\tUnique reference of run:", m.refname)
     logger.info("\tPath to BERRY files:", berrypath)
-    logger.info("\tDirectory where the wfc are:", d.wfcdirectory)
-    logger.info("\tNumber of k-points in each direction:", d.nkx, d.nky, d.nkz)
-    logger.info("\tTotal number of k-points:", d.nks)
-    logger.info("\tTotal number of points in real space:", d.nr)
-    logger.info("\tNumber of bands:", d.nbnd)
+    logger.info("\tDirectory where the wfc are:", m.wfcdirectory)
+    logger.info("\tNumber of k-points in each direction:", m.nkx, m.nky, m.nkz)
+    logger.info("\tTotal number of k-points:", m.nks)
+    logger.info("\tTotal number of points in real space:", m.nr)
+    logger.info("\tNumber of bands:", m.nbnd)
     logger.info()
     logger.info("\tNeighbors loaded")
     logger.info("\tEigenvalues loaded")
 
-    dotproduct = np.load(os.path.join(d.workdir, "dpc.npy"))
-    connections = np.load(os.path.join(d.workdir, "dp.npy"))
+    d_phase = np.load(os.path.join(m.workdir, "phase.npy"))
+    logger.info("\tPhases loaded")
+
+    dotproduct = np.load(os.path.join(m.workdir, "dpc.npy"))
+    connections = np.load(os.path.join(m.workdir, "dp.npy"))
     logger.info("\tDot product loaded")
 
     logger.info("\tReading files bandsfinal.npy and signalfinal.npy")
-    bandsfinal = np.load(os.path.join(d.workdir, "bandsfinal.npy"))
-    signalfinal = np.load(os.path.join(d.workdir, "signalfinal.npy"))
-    degeneratefinal = np.load(os.path.join(d.workdir, "degeneratefinal.npy"))
+    bandsfinal = np.load(os.path.join(m.workdir, "bandsfinal.npy"))
+    signalfinal = np.load(os.path.join(m.workdir, "signalfinal.npy"))
+    degeneratefinal = np.load(os.path.join(m.workdir, "degeneratefinal.npy"))
 
     ###################################################################################
     logger.info()

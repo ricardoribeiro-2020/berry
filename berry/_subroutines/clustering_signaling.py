@@ -2,8 +2,14 @@ import logging
 
 import numpy as np
 
-from berry import log, d, __version__
+from berry import log, __version__
 from clustering_libs import evaluate_point
+
+try:
+    import berry._subroutines.loaddata as d
+    import berry._subroutines.loadmeta as m
+except:
+    pass
 
 OLD_CORRECT = 5
 POTENTIAL_CORRECT = 4
@@ -21,13 +27,13 @@ if __name__ == "__main__":
     LOG.header()
 
     # Reading data needed for the run
-    berrypath = d.berrypath
+    berrypath = m.berrypath
 
-    LOG.info(f"\tUnique reference of run:{d.refname}")
-    LOG.info(f"\tDirectory where the wfc are:{d.wfcdirectory}")
-    LOG.info(f"\tNumber of k-points in each direction:{d.nkx}, {d.nky}, {d.nkz}")
-    LOG.info(f"\tTotal number of k-points:{d.nks}")
-    LOG.info(f"\tNumber of bands:{d.nbnd}")
+    LOG.info(f"\tUnique reference of run:{m.refname}")
+    LOG.info(f"\tDirectory where the wfc are:{m.wfcdirectory}")
+    LOG.info(f"\tNumber of k-points in each direction:{m.nkx}, {m.nky}, {m.nkz}")
+    LOG.info(f"\tTotal number of k-points:{m.nks}")
+    LOG.info(f"\tNumber of bands:{m.nbnd}")
     print()
     LOG.info("\tNeighbors loaded")
     LOG.info("\tEigenvalues loaded")
@@ -47,10 +53,10 @@ if __name__ == "__main__":
     LOG.info("\tFinished reading data")
     print()
 
-    My, Mx = np.meshgrid(np.arange(d.nky), np.arange(d.nkx))
-    k_matrix = My*d.nkx+Mx
-    counts = np.arange(d.nks)
-    k_index = np.stack([counts % d.nkx, counts//d.nkx], axis=1)
+    My, Mx = np.meshgrid(np.arange(m.nky), np.arange(m.nkx))
+    k_matrix = My*m.nkx+Mx
+    counts = np.arange(m.nks)
+    k_index = np.stack([counts % m.nkx, counts//m.nkx], axis=1)
 
 
     correct_signalfinal = np.copy(signalfinal)
@@ -78,7 +84,7 @@ if __name__ == "__main__":
     error_directions = np.array(error_directions)
     directions = np.array(directions)
 
-    bands_signaling = np.zeros((d.nbnd, 4, *k_matrix.shape), int)
+    bands_signaling = np.zeros((m.nbnd, 4, *k_matrix.shape), int)
     k_index = k_index[error_directions[:, 0]]
     ik, jk = k_index[:, 0], k_index[:, 1]
     bnds = error_directions[:, 1]

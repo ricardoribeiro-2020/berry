@@ -5,10 +5,11 @@ import matplotlib.pyplot as plt
 
 from berry._subroutines.contatempo import tempo
 from berry._subroutines.headerfooter import header, footer
+import berry._subroutines.loadmeta as m
 import berry._subroutines.loaddata as d
 
 def corrected(args):
-    header("DRAWBANDS", d.version, time.asctime())
+    header("DRAWBANDS", m.version, time.asctime())
 
     starttime = time.time()  # Starts counting time
 
@@ -41,18 +42,18 @@ def corrected(args):
     ]
 
     # Reading data needed for the run
-    berrypath = str(d.berrypath)
+    berrypath = str(m.berrypath)
     print(" Path to BERRY files:", berrypath)
 
-    wfcdirectory = str(d.wfcdirectory)
+    wfcdirectory = str(m.wfcdirectory)
     print(" Directory where the wfc are:", wfcdirectory)
-    nkx = d.nkx
-    nky = d.nky
-    nkz = d.nkz
+    nkx = m.nkx
+    nky = m.nky
+    nkz = m.nkz
     print(" Number of k-points in each direction:", nkx, nky, nkz)
-    nks = d.nks
+    nks = m.nks
     print(" Total number of k-points:", nks)
-    nbnd = d.nbnd
+    nbnd = m.nbnd
     print(" Number of bands:", nbnd)
     print()
     eigenvalues = d.eigenvalues
@@ -118,7 +119,7 @@ def corrected(args):
     footer(tempo(starttime, endtime))
 
 def machine(args):
-    header("DRAWBANDS", d.version, time.asctime())
+    header("DRAWBANDS", m.version, time.asctime())
 
     starttime = time.time()  # Starts counting time
 
@@ -151,18 +152,18 @@ def machine(args):
     ]
 
     # Reading data needed for the run
-    berrypath = str(d.berrypath)
+    berrypath = str(m.berrypath)
     print(" Path to BERRY files:", berrypath)
 
-    wfcdirectory = str(d.wfcdirectory)
+    wfcdirectory = str(m.wfcdirectory)
     print(" Directory where the wfc are:", wfcdirectory)
-    nkx = d.nkx
-    nky = d.nky
-    nkz = d.nkz
+    nkx = m.nkx
+    nky = m.nky
+    nkz = m.nkz
     print(" Number of k-points in each direction:", nkx, nky, nkz)
-    nks = d.nks
+    nks = m.nks
     print(" Total number of k-points:", nks)
-    nbnd = d.nbnd
+    nbnd = m.nbnd
     print(" Number of bands:", nbnd)
     print()
     eigenvalues = d.eigenvalues

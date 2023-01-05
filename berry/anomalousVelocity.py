@@ -12,6 +12,7 @@ from berry import log
 
 try:
     import berry._subroutines.loaddata as d
+    import berry._subroutines.loadmeta as m
 except:
     pass
 
