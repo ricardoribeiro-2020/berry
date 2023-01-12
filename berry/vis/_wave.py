@@ -57,7 +57,7 @@ def corrected(args):
     print(" Number of bands:", nbnd)
     print()
     eigenvalues = d.eigenvalues
-    print(" Eigenvlaues loaded")
+    print(" Eigenvalues loaded")
     kpoints = d.kpoints
     print(" K-points loaded")
 
