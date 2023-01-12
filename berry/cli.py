@@ -9,7 +9,7 @@ import argparse, argcomplete
 
 from _version import __version__
 
-#TODO: Talk to professor about np.savez
+#TODO: Talk about np.savez
 #NOTE: np.savez could help with backwards compatibility 
 
 
