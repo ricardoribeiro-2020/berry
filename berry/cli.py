@@ -434,9 +434,9 @@ def berry_vis_cli():
     # parser.add_argument("--disable-autocomplete", action="store_true", help="Disables autocomplete for the berry-vis CLI.")
 
     vis_sub_parser = parser.add_subparsers(metavar="VIS_PROGRAMS", dest="vis_programs", help="Choose a visualization program.")
-    debug_parser = vis_sub_parser.add_parser("debug", help="Helpfull visualization program for debugging.")
-    geometry_parser = vis_sub_parser.add_parser("geometry", help="Visualizes the Berry connection and curvature vectors.")
-    wave_parser = vis_sub_parser.add_parser("wave", help="Visualizes the wavefunctions before and after cluster program.")
+    debug_parser = vis_sub_parser.add_parser("debug", help="Prints data for debugging.")
+    geometry_parser = vis_sub_parser.add_parser("geometry", help="Draws Berry connection and curvature vectors.")
+    wave_parser = vis_sub_parser.add_parser("wave", help="Shows the electronic band structure.")
     
     debug_dot2_parser, debug_eigen_parser = handle_debug_parser(debug_parser)
     bcc_parser, bcr_parser = handle_geometry_parser(geometry_parser)
@@ -505,13 +505,13 @@ def berry_vis_cli():
     program_dict[args.vis_programs](args)
 
 def handle_wave_parser(debug_parser: CustomParser) -> Tuple[argparse.Namespace]:
-    wave_programs_parser = debug_parser.add_subparsers(metavar="WAVE_PROGRAMS", dest="wave_vis", help="Choose how to visualize the wavefunction.")
+    wave_programs_parser = debug_parser.add_subparsers(metavar="WAVE_PROGRAMS", dest="wave_vis", help="Choose how to visualize the bands.")
 
     # VIEW CORRECTED
-    wave_corrected_parser = wave_programs_parser.add_parser("corrected", help="Visualizes the corrected wavefunction.")
+    wave_corrected_parser = wave_programs_parser.add_parser("corrected", help="Shows the corrected bands.")
 
     # VIEW MACHINE
-    wave_machine_parser = wave_programs_parser.add_parser("machine", help="Visualizes the machine wavefunction.")
+    wave_machine_parser = wave_programs_parser.add_parser("machine", help="Shows the original bands.")
 
     return wave_corrected_parser, wave_machine_parser
 
@@ -542,13 +542,13 @@ def handle_debug_parser(debug_parser: CustomParser) -> Tuple[argparse.Namespace]
     return debug_dot2_parser, debug_eigen_parser
 
 def handle_geometry_parser(geometry_parser: CustomParser) -> Tuple[argparse.Namespace]:
-    geometry_vis_parser= geometry_parser.add_subparsers(metavar="GEOMETRY_PROGRAMS", dest="geometry_vis", help="Choose which berry property to visualize.")
+    geometry_vis_parser= geometry_parser.add_subparsers(metavar="GEOMETRY_PROGRAMS", dest="geometry_vis", help="Choose which berry property to show.")
 
     # 1.1. BERRY CONNECTION
-    bcc_parser = geometry_vis_parser.add_parser("bcc", help="Visualizes the Berry connection vectors.")
+    bcc_parser = geometry_vis_parser.add_parser("bcc", help="Graph of the Berry connection vectors.")
 
     # 1.2. BERRY CURVATURE
-    bcr_parser = geometry_vis_parser.add_parser("bcr", help="Visualizes the Berry curvature vectors.")
+    bcr_parser = geometry_vis_parser.add_parser("bcr", help="Graph of the Berry curvature vectors.")
 
     return bcc_parser, bcr_parser
 
