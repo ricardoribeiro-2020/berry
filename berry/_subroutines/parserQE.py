@@ -11,6 +11,8 @@ def parser(keyword, qefile):
     This function receives as input a QE file and a keyword,
     and extracts the corresponding value
     """
+    with open(qefile, "r") as f:
+        content = f.read()
 
     strings = [
         "title",
@@ -24,9 +26,11 @@ def parser(keyword, qefile):
     ]
     numbers = ["ibrav", "nat", "ntyp", "nbnd"]
     fnumbers = ["ecutwfc", "degauss"]
+    #IDEA: Make a parser with ply.
+    #TODO: Future versions should raise appropriate warnings when the search fails.
     if keyword in strings:
-        string = os.popen("grep " + keyword + " " + qefile).read().split()[2]
-        return string.strip("'")
+        print(re.search(keyword + r"\s*=\s*'(.+)'", content).group(1))
+        return re.search(keyword + r"\s*=\s*'(.+)'", content).group(1)
     if keyword in numbers:
         number = int(
             re.findall(r"\d+", os.popen("grep " + keyword + " " + qefile).read())[0]

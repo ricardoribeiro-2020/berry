@@ -112,7 +112,7 @@ https://ricardoribeiro-2020.github.io/berry/\medskip
 All files for instalation can be found there.
 
 There is no mailling list yet for reporting bugs or other questions, but an email can be sent to
-ricardo.ribeiro@physics.org
+ricardo.ribeiro@physics.org or you can create an issue in the github page.
 
 \section{Aknowledgement}
 
@@ -203,8 +203,6 @@ The package options are shown in table \ref{tab:package_options}.
 \hline
   \texttt{-h}, \texttt{--help}     &    Shows this help message and exit \\
   \texttt{--version}               &    Displays current Berry version \\
-  \texttt{--enable-autocomplete}   &    Enables autocomplete for the berry CLI\\
-  \texttt{--disable-autocomplete}  &    Disables autocomplete for the berry CLI\\
 \hline
 \end{tabular}
 \bigskip
@@ -541,6 +539,7 @@ The options for \texttt{preprocess} are shown in table \ref{tab:options_preproce
   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
   \texttt{-o file\_path}        & Name of output log file\\
                                 & Extension will be ignored \\
+  \texttt{-flush}               & Flush the ouput to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
 \end{tabular}
@@ -592,6 +591,7 @@ to generate just for a singke k-point or a single wavefunction, for which we hav
   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
   \texttt{-o file\_path}        & Name of output log file\\
                                 & Extension will be ignored \\
+  \texttt{-flush}               & Flush the ouput to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
 \end{tabular}
@@ -623,10 +623,11 @@ The options for \texttt{dot} are shown in table \ref{tab:options_dot}
  \caption{Options for script \texttt{dot}}\label{tab:options_dot}
 \begin{tabular}[]{lr}
 \hline
-  \texttt{-np}                  & Number of processes to use (default: 1) \\
   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
+  \texttt{-np}                  & Number of processes to use (default: 1) \\
   \texttt{-o file\_path}        & Name of output log file.\\
                                 & Extension will be ignored. \\
+  \texttt{-flush}               & Flush the ouput to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
 \end{tabular}
@@ -658,18 +659,19 @@ between wavefunctions of neighboring k-points.
  The options for \texttt{cluster} are shown in table \ref{tab:options_cluster}.
 
 \begin{table}[h]
- \centering
- \caption{ Options for script \texttt{cluster}}\label{tab:options_cluster}
- \begin{tabular}[]{lr}
- \hline
-   \texttt{-mb}                  & Minimum band to consider (default: 0) \\
-   \texttt{-np}                  & Number of processes to use (default: 1) \\
-   \texttt{-t [0.0-1.0]}         & Tolerance used for graph construction (default: 0.95) \\
-   \texttt{-h}, \texttt{--help}  & Show a help message and exit \\
-   \texttt{-o file\_path}        & Name of output log file\\
-                                 & Extension will be ignored \\
-   \texttt{-v}                   & Increase output verbosity \\
-   \hline
+  \centering
+  \caption{ Options for script \texttt{cluster}}\label{tab:options_cluster}
+  \begin{tabular}[]{lr}
+  \hline
+  \texttt{-h}, \texttt{--help}  & Show a help message and exit \\
+  \texttt{-mb}                  & Minimum band to consider (default: 0) \\
+  \texttt{-np}                  & Number of processes to use (default: 1) \\
+  \texttt{-t [0.0-1.0]}         & Tolerance used for graph construction (default: 0.95) \\
+  \texttt{-o file\_path}        & Name of output log file\\
+                                & Extension will be ignored \\
+  \texttt{-flush}               & Flush the ouput to stdout \\
+  \texttt{-v}                   & Increase output verbosity \\
+  \hline
  \end{tabular}
  \end{table}
 
@@ -720,12 +722,13 @@ The options for \texttt{basis} are shown in table \ref{tab:options_basis}
  \caption{Options for script \texttt{basis}}\label{tab:options_basis}
  \begin{tabular}[]{lr}
  \hline
-   \texttt{-np}                  & Number of processes to use (default: 1) \\
-   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
-   \texttt{-o file\_path}        & Name of output log file\\
-                                 & Extension will be ignored \\
-   \texttt{-v}                   & Increase output verbosity \\
-   \hline
+  \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
+  \texttt{-np}                  & Number of processes to use (default: 1) \\
+  \texttt{-o file\_path}        & Name of output log file\\
+                                & Extension will be ignored \\
+  \texttt{-flush}               & Flush the ouput to stdout \\
+  \texttt{-v}                   & Increase output verbosity \\
+  \hline
  \end{tabular}
 \end{table}
 
@@ -761,11 +764,12 @@ The options for \texttt{r2k} are shown in table \ref{tab:options_r2k}.
  \caption{Options for script \texttt{r2k}}\label{tab:options_r2k}
 \begin{tabular}[]{lr}
 \hline
+  \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
   \texttt{-np}                  & Number of processes to use (default: 1) \\
   \texttt{-mb}                  & Minimum band to consider (default: 0) \\
-  \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
   \texttt{-o file\_path}        & Name of output log file\\
                                 & Extension will be ignored\\
+  \texttt{-flush}               & Flush the ouput to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
 \end{tabular}
@@ -789,13 +793,14 @@ The options for \texttt{geometry} are shown in table \ref{tab:options_geometry}.
  \centering
  \caption{Options for script \texttt{geometry}}\label{tab:options_geometry}
 \begin{tabular}[]{lr}
-\hline
+  \hline
+  \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
   \texttt{-np}                  & Number of processes to use (default: 1) \\
   \texttt{-mb}                  & Minimum band to consider (default: 0) \\
   \texttt{-prop} [both,connection,curvature] &  Specify which property to calculate. (default: both)\\
-  \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
   \texttt{-o file\_path}        & Name of output log file\\
                                 & Extension will be ignored\\
+  \texttt{-flush}               & Flush the ouput to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
 \end{tabular}
@@ -826,13 +831,14 @@ table \ref{tab:options_conductivity}.
  \caption{Options for scripts \texttt{conductivity} and \texttt{shg}.}\label{tab:options_conductivity}
 \begin{tabular}[]{lr}
 \hline
+  \texttt{-h}, \texttt{--help}  & Show a help message and exit \\
   \texttt{-np}                  & Number of processes to use (default: 1) \\
   \texttt{-eM}                  & Maximum energy in Ry units (default: 2.5) \\
   \texttt{-eS}                  & Energy step in Ry units (default: 0.001) \\
   \texttt{-brd}                 & Energy broading in Ry units (default: 0.01) \\
-  \texttt{-h}, \texttt{--help}  & Show a help message and exit \\
   \texttt{-o file\_path}        & Name of output log file\\
                                 & Extension will be ignored\\
+  \texttt{-flush}               & Flush the ouput to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
 \end{tabular}
@@ -937,12 +943,11 @@ and the auxiliary files:
 \end{itemize}\medskip
 
 
-Visualization scripts are in directory 'viz':
+Visualization scripts are in directory 'vis':
 \begin{itemize}
- \item draw2D\_machine.py
- \item draw2D\_corrected.py
- \item viz\_geometry.py
- \item viz\_wfc.py
+ \item \_debug.py
+ \item \_geometry.py
+ \item \_wave.py
 \end{itemize}\medskip
 
 Also the subroutines (depend on the other scripts) are in directory '\_subroutines':
@@ -951,7 +956,7 @@ Also the subroutines (depend on the other scripts) are in directory '\_subroutin
  \item contatempo.py
  \item parserQE.py
  \item loaddata.py
- \item dft.py
+ \item loadmeta.py
  \item comutator.py
  \item write\_k\_points.py
  \item clustering\_libs.py
@@ -963,7 +968,6 @@ Some utilities are in directory 'utils':
   \item emailSender.py
   \item jit.py
   \item \_logger.py
-  \item NestablePool.py
 \end{itemize}
 
 It is likely that some of these scripts will be merged with others
