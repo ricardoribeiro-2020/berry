@@ -30,6 +30,11 @@ setup(
         "argcomplete",
         "colorama",
     ],
+    extras_require={
+        'dev': [
+            "twine",
+        ],
+    },
     classifiers=[
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
