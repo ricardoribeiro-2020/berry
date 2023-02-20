@@ -1,12 +1,6 @@
-include *.txt
-recursive-include berry *.py
-recursive-include berry *.txt
-recursive-include docs *.odg
-recursive-include docs *.pdf
-recursive-include docs *.png
-recursive-include docs *.svg
-recursive-include docs *.tex
-recursive-include viewers *.py
-include docs/TODO
-include docs/INSTALL
-include docs/RELEASENOTES
+include LICENSE.txt
+include README.md
+include setup.py
+include setup.cfg
+include _version.py
+recursive-include berry *.*
