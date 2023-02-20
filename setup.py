@@ -40,10 +40,10 @@ setup(
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3 :: Only',
+        'Topic :: Scientific/Engineering :: Physics',
         'License :: OSI Approved :: MIT License',
         'Operating System :: linux',
-        'Topic :: Scientific/Engineering :: Physics',
-    ],#TODO: Add classifiers
+    ],
     entry_points={
         'console_scripts': [
             'berry = berry.cli:berry_cli',
