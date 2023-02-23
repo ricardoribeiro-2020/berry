@@ -1,8 +1,5 @@
 from setuptools import find_packages, setup
 
-from _version import __version__
-
-
 def get_long_description():
     with open('README.md') as f:
         return f.read()
@@ -18,7 +15,7 @@ def normalize(name):
 
 setup(
     name=normalize('berry-suite'),
-    version=__version__,
+    version="1.0.2",
     author='Berry Developers',
     author_email='ricardo.ribeiro@physics.org',
     license="MIT",
@@ -26,7 +23,7 @@ setup(
     description='The berry suite of programs extracts the Bloch wavefunctions from DFT calculations in an ordered way so they can be directly used to make calculations.',
     long_description=get_long_description(),
     long_description_content_type='text/markdown',
-    packages=find_packages(),
+    packages=['berry', 'berry/_subroutines', 'berry/utils', 'berry/vis'],
     install_requires=[
         "numpy",
         "networkx",
