@@ -29,7 +29,6 @@ def parser(keyword, qefile):
     #IDEA: Make a parser with ply.
     #TODO: Future versions should raise appropriate warnings when the search fails.
     if keyword in strings:
-        print(re.search(keyword + r"\s*=\s*'(.+)'", content).group(1))
         return re.search(keyword + r"\s*=\s*'(.+)'", content).group(1)
     if keyword in numbers:
         number = int(

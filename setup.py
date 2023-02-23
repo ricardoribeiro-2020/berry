@@ -48,7 +48,7 @@ setup(
         'Programming Language :: Python :: 3 :: Only',
         'Topic :: Scientific/Engineering :: Physics',
         'License :: OSI Approved :: MIT License',
-        'Operating System :: linux',
+        'Operating System :: POSIX :: Linux',
     ],
     entry_points={
         'console_scripts': [
