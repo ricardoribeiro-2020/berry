@@ -18,11 +18,10 @@ def normalize(name):
 
 setup(
     name=normalize('berry-suite'),
-    metadata_version='1.0',
     version=__version__,
     author='Berry Developers',
     author_email='ricardo.ribeiro@physics.org',
-    license="GNU General Public License v3.0",
+    license="MIT",
     url='https://ricardoribeiro-2020.github.io/berry/',
     description='The berry suite of programs extracts the Bloch wavefunctions from DFT calculations in an ordered way so they can be directly used to make calculations.',
     long_description=get_long_description(),
