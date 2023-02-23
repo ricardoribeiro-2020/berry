@@ -1,7 +1,6 @@
 argcomplete==2.0.0
 asttokens==2.2.1
 backcall==0.2.0
--e git+https://github.com/fabiocfabini/berry.git@9b7db5606145e4256f5f9a0bf9e44074c2ddc816#egg=berry_suite
 colorama==0.4.6
 contourpy==1.0.6
 cycler==0.11.0
