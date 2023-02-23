@@ -15,7 +15,7 @@
 \usepackage{hyperref}
 
 \input{spp}
-
+\pgfplotsset{compat=1.16}
 
 
 \titleformat{\chapter}[display]
@@ -29,22 +29,22 @@ v1.0}
 \date{\today}
 \makeindex
 
-
 \begin{document}
 \begin{titlepage}
  \begin{center}
  \includegraphics[scale=0.3,keepaspectratio=true]{figures/BerryLogo.png}
-% BerryLogo.png: 2310x2310 px, 300dpi, 19.56x19.56 cm, bb=0 0 554 554
+ \end{center}
 \vspace*{2cm}
 
-  \begin{Huge}{\bf berry} suite of programs  \end{Huge}
+ \begin{center}
+  \begin{Huge}{\bf berry} suite of programs\end{Huge}
   \vspace*{1cm}
 
- \begin{LARGE}Documentation              \end{LARGE}
+ \begin{LARGE}Documentation\end{LARGE}
   \vspace*{1cm}
 
 \begin{Huge}v.1.0\end{Huge}
-  \vspace*{0.5cm}
+  \vspace*{12cm}
 
 \today
  \end{center}
@@ -132,6 +132,24 @@ PTDC/FIS-MAC/2045/2021 and in the framework of the Strategic Funding UIDB/04650/
 To install the \textbf{berry} suite a pip install command is enough:
 \begin{verbatim}
   pip install berry-suite
+\end{verbatim}
+
+Alternatively, it can be downloaded from the github
+
+(https://ricardoribeiro-2020.github.io/berry/)
+
+extracted to a directory and from that directory run the command:
+\begin{verbatim}
+  pip install -e .
+\end{verbatim}
+
+For developers, the developer dependencies can be installed using:
+\begin{verbatim}
+  pip install berry-suite[dev]
+\end{verbatim}
+or
+\begin{verbatim}
+  pip install -e .[dev]
 \end{verbatim}
 
 
