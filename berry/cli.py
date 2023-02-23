@@ -7,7 +7,7 @@ import logging
 import subprocess
 import argparse, argcomplete
 
-from _version import __version__
+from berry import __version__
 
 #TODO: Talk about np.savez
 #NOTE: np.savez could help with backwards compatibility 
