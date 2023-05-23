@@ -18,7 +18,7 @@ jupyter_core==5.1.0
 kiwisolver==1.4.4
 matplotlib==3.6.2
 matplotlib-inline==0.1.6
-mpmath==1.2.1
+mpmath>=1.3.0
 nest-asyncio==1.5.6
 networkx==2.8.8
 numpy==1.23.5
