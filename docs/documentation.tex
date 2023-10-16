@@ -24,7 +24,7 @@
 % Title Page
 \title{{\bf berry} suite of programs\\
 \large Documentation \\
-v1.0}
+v2.0}
 \author{Ricardo Mendes Ribeiro}
 \date{\today}
 \makeindex
@@ -43,7 +43,7 @@ v1.0}
  \begin{LARGE}Documentation\end{LARGE}
   \vspace*{1cm}
 
-\begin{Huge}v.1.0\end{Huge}
+\begin{Huge}v.2.0\end{Huge}
   \vspace*{12cm}
 
 \today
@@ -96,6 +96,7 @@ Other contributors include
  \item Nuno Castro (LIP-Minho, Braga, Portugal) for coordinating AI work;
  \item Gonçalo Ventura (Porto, Portugal) for the equations for non-linear optical properties
  calculated from the Berry connections;
+ \item Daniel Sousa (Braga, Portugal) for implementing the noncolinear code;
  \item Ícaro Jael Moura (Fortaleza, Brasil) for the exploratory work and testing;
  \item Afonso Duarte Ribeiro, author of the logo.
 \end{itemize}
@@ -151,6 +152,19 @@ or
 \begin{verbatim}
   pip install -e .[dev]
 \end{verbatim}
+
+\subsection{Patch for noncolinear calculations}
+
+As for the time of this version, the {\sc Quantum ESPRESSO} suite of programs 
+does not include a script to correctly extracts the spinors of the noncolinear calculation
+in real space.
+
+The script that should do it is \verb*{wfck2r.x}, but it only writes the first function of the spinor.
+In order to use the \textbf{berry} correctly in noncolinear calculations, 
+a modified version of \verb*{wfck2r.x} has to be used.
+
+In appendix \ref{ch:noncolinear}, we explain how to do it.
+
 
 
 \section{Requirements}
@@ -874,6 +888,11 @@ The details of these calculations can be found in
 
 
 \begin{appendices}
+
+\chapter{Installing for noncolinear calculations}
+\label{ch:noncolinear}
+
+
 
 
 
