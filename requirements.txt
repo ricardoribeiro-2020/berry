@@ -26,7 +26,7 @@ packaging==21.3
 parso==0.8.3
 pexpect==4.8.0
 pickleshare==0.7.5
-Pillow==9.3.0
+Pillow>=10.0.1
 platformdirs==2.5.4
 prompt-toolkit==3.0.33
 psutil==5.9.4
