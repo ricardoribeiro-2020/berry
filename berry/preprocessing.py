@@ -20,9 +20,9 @@ Data = Dict[str, Union[int, str, float]]
 
 class Preprocess:
     def __init__(self, k0: List[float], nkx: int, nky: int, nkz: int, step: float, nbnd: int, logger_name: str = "preprocess", logger_level: int = logging.INFO, 
-                npr: int = 1, dft_dir: str = "dft", scf: str = "scf.in", nscf: str = "", wfc_dir: str = "wfc", 
+                npr: int = 1, dft_dir: str = "dft", scf: str = "scf.in", nscf: str = "", wfc_dir: str = "data/wfc", 
                 point: float = 1.178097, program: str = "QE", ref_name: str = now, flush: bool = False):
-        self.work_dir = os.getcwd() + "/"
+        self.work_dir = os.getcwd() + "/"    # Define working directory
         self.k0 = k0
         self.nkx = nkx
         self.nky = nky
@@ -37,7 +37,13 @@ class Preprocess:
         self.point = point
         self.program = program
         self.ref_name = ref_name
+
+        os.mkdir("log")
         self.logger = log(logger_name, "PREPROCESS", level=logger_level, flush=flush)
+
+
+        self.log_dir = os.path.join(self.work_dir, "log")
+        self.data_dir = os.path.join(self.work_dir, "data")
 
         self.nscf_kpoints = ""
         self.__mpi = "" if self.npr == 1 else f"mpirun -np {self.npr}"
@@ -47,17 +53,19 @@ class Preprocess:
         # Set all directory paths to absolute paths if they are default values
         if self.dft_dir == "dft":
             self.dft_dir = os.path.join(self.work_dir, self.dft_dir)
-        if self.wfc_dir == "wfc":
+        if self.wfc_dir == "data/wfc":
             self.wfc_dir = os.path.join(self.work_dir, self.wfc_dir)
 
-        # Correct scf if necessary
+        # Correct scf's file names if necessary
         if not self.scf.endswith(".in"):
             self.scf += ".in"
+        # Create variable for the name of the nscf file
         self.nscf = "n" + os.path.basename(self.scf)
+        # Create variable with full path for the DFT's files
         self.scf = os.path.join(self.dft_dir, self.scf)
         self.nscf = os.path.join(self.dft_dir, self.nscf)
 
-        if self.program == "QE":
+        if self.program == "QE":    # If the DFT program is QE (only option for now)
             # Get outdir from scf
             try:
                 self.out_dir = os.path.abspath(parser("outdir", self.scf))
@@ -79,37 +87,43 @@ class Preprocess:
         self._log_inputs()
 
     def run(self):
+        self.create_directories()
         self.compute_scf()
         self.compute_nscf()
         self.compute_phase()
         self.save_data()
 
+    def create_directories(self):
+        os.mkdir("data")
+        os.mkdir("data/wfc")
+        os.mkdir("data/geometry")
+
     def save_data(self):
-        np.save(os.path.join(self.work_dir, "phase.npy"), self.phase)
-        self.logger.debug(f"Saved phase.npy in {self.work_dir}")
+        np.save(os.path.join(self.data_dir, "phase.npy"), self.phase)
+        self.logger.debug(f"Saved phase.npy in {self.data_dir}")
 
-        np.save(os.path.join(self.work_dir, "neighbors.npy"), self.neigh)
-        self.logger.debug(f"Saved neighbors.npy in {self.work_dir}")
+        np.save(os.path.join(self.data_dir, "neighbors.npy"), self.neigh)
+        self.logger.debug(f"Saved neighbors.npy in {self.data_dir}")
 
-        np.save(os.path.join(self.work_dir, "eigenvalues.npy"), self.eigenvalues)
-        self.logger.debug(f"Saved eigenvalues.npy in {self.work_dir}")
+        np.save(os.path.join(self.data_dir, "eigenvalues.npy"), self.eigenvalues)
+        self.logger.debug(f"Saved eigenvalues.npy in {self.data_dir}")
 
-        np.save(os.path.join(self.work_dir, "occupations.npy"), self.occupations)
-        self.logger.debug(f"Saved occupations.npy in {self.work_dir}")
+        np.save(os.path.join(self.data_dir, "occupations.npy"), self.occupations)
+        self.logger.debug(f"Saved occupations.npy in {self.data_dir}")
 
-        np.save(os.path.join(self.work_dir, "positions.npy"), self.rpoint)
-        self.logger.debug(f"Saved positions.npy in {self.work_dir}")
+        np.save(os.path.join(self.data_dir, "positions.npy"), self.rpoint)
+        self.logger.debug(f"Saved positions.npy in {self.data_dir}")
 
-        np.save(os.path.join(self.work_dir, "kpoints.npy"), self.kpoints)
-        self.logger.debug(f"Saved kpoints.npy in {self.work_dir}")
+        np.save(os.path.join(self.data_dir, "kpoints.npy"), self.kpoints)
+        self.logger.debug(f"Saved kpoints.npy in {self.data_dir}")
 
-        np.save(os.path.join(self.work_dir, "nktoijl.npy"), self.nktijl)
-        self.logger.debug(f"Saved nktoijl.npy in {self.work_dir}")
+        np.save(os.path.join(self.data_dir, "nktoijl.npy"), self.nktijl)
+        self.logger.debug(f"Saved nktoijl.npy in {self.data_dir}")
 
-        np.save(os.path.join(self.work_dir, "ijltonk.npy"), self.ijltonk)
-        self.logger.debug(f"Saved ijltonk.npy in {self.work_dir}")
+        np.save(os.path.join(self.data_dir, "ijltonk.npy"), self.ijltonk)
+        self.logger.debug(f"Saved ijltonk.npy in {self.data_dir}")
 
-        with open("datafile.npy", "wb") as fich: #TODO: Try saving with np.savez
+        with open("data/datafile.npy", "wb") as fich: #TODO: Try saving with np.savez
             np.save(fich, self.k0)  # Initial k-point
             np.save(fich, self.nkx)  # Number of k-points in the x direction
             np.save(fich, self.nky)  # Number of k-points in the y direction
@@ -353,6 +367,8 @@ class Preprocess:
 
         self.logger.info(f"\tWill use {self.npr} processors\n")
         self.logger.info(f"\tWorking directory: {self.work_dir}")
+        self.logger.info(f"\tData directory: {self.data_dir}")
+        self.logger.info(f"\tLog directory: {self.log_dir}")
         self.logger.info(f"\tWfc directory: {self.wfc_dir}")
         self.logger.info(f"\n\tDFT directory: {self.dft_dir}")
         self.logger.info(f"\tDFT output directory: {self.out_dir}")
