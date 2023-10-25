@@ -1,8 +1,6 @@
 from typing import Optional
 
 import os
-import sys
-import time
 import logging
 import subprocess
 
@@ -18,7 +16,14 @@ except:
 
 
 class WfcGenerator:
-    def __init__(self, nk_points: Optional[int] = None , bands: Optional[int] = None, logger_name: str = "genwfc", logger_level: int = logging.INFO, flush: bool = False):
+    def __init__(self, 
+                 nk_points: Optional[int] = None , 
+                 bands: Optional[int] = None, 
+                 logger_name: str = "genwfc", 
+                 logger_level: int = logging.INFO, 
+                 flush: bool = False
+                ):
+        
         if bands is not None and nk_points is None:
             raise ValueError("To generate a wavefunction for a single band, you must specify the k-point.")
 
@@ -35,9 +40,21 @@ class WfcGenerator:
         self.ref_name = m.refname
         self.logger = log(logger_name, "GENERATE WAVE FUNCTIONS", level=logger_level, flush=flush)
 
+
     def run(self):
+        # prints header on the log file
         self.logger.header()
+        # Sets the program used for converting wavefunctions to the real space
+        if m.noncolin:
+            self.k2r_program = "wfck2rFR.x"
+            self.logger.info("\n\tNoncolinear calculation, will use wfck2rFR.x")
+            self.logger.info("\t"+str(m.noncolin))
+        else:
+            self.k2r_program = "wfck2r.x"
+            self.logger.info("\n\tNonrelativistic calculation, will use wfck2r.x")
+        # Logs the parameters for the run
         self._log_run_params()
+
         if isinstance(self.nk_points, range):
             self.logger.info("\tWill run for all k-points and bands")
             self.logger.info(f"\tThere are {m.nks} k-points and {m.nbnd} bands.\n")

@@ -4,7 +4,6 @@ from itertools import product
 
 import os
 import re
-#import sys
 import time
 import logging
 import platform
@@ -21,9 +20,25 @@ Data = Dict[str, Union[int, str, float]]
 
 # This class initializes a berry run
 class Preprocess:
-    def __init__(self, k0: List[float], nkx: int, nky: int, nkz: int, step: float, nbnd: int, logger_name: str = "preprocess", logger_level: int = logging.INFO, 
-                npr: int = 1, dft_dir: str = "dft", scf: str = "scf.in", nscf: str = "", wfc_dir: str = "wfc", 
-                point: float = 1.178097, program: str = "QE", ref_name: str = now, flush: bool = False):
+    def __init__(self, 
+                 k0: List[float], 
+                 nkx: int, 
+                 nky: int, 
+                 nkz: int, 
+                 step: float, 
+                 nbnd: int, 
+                 logger_name: str = "preprocess", 
+                 logger_level: int = logging.INFO, 
+                 npr: int = 1, 
+                 dft_dir: str = "dft", 
+                 scf: str = "scf.in", 
+                 nscf: str = "", 
+                 wfc_dir: str = "wfc", 
+                 point: float = 1.178097, 
+                 program: str = "QE", 
+                 ref_name: str = now, 
+                 flush: bool = False
+                ):
         
         self.work_dir = os.getcwd() + "/"    # Define working directory
         self.k0 = k0                         # Coordinates of first k-point in reciprocal space

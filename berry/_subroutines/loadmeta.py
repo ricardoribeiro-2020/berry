@@ -4,7 +4,7 @@
 
 import numpy as np
 
-with open("datafile.npy", "rb") as fich:
+with open("data/datafile.npy", "rb") as fich:
     version = str(np.load(fich))
     refname = str(np.load(fich))
 

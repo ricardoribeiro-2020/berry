@@ -4,7 +4,6 @@ import os
 import re
 import sys
 import logging
-import subprocess
 import argparse, argcomplete
 
 from berry import __version__
@@ -43,25 +42,26 @@ def restricted_float(x):
 
 
 WFCGEN = DOT = CLUSTER = BASIS = R2K = GEOMETRY = CONDUCTIVITY = SHG = 0
+
 try:
     import berry._subroutines.loadmeta as m
 
     # NOTE: Changed 'm.workdir' to 'os.getcwd()' because one might not want to run from the start
     m.workdir = os.getcwd()
 
-    if os.path.exists(os.path.join(m.workdir, "datafile.npy")):
+    if os.path.exists(os.path.join(m.workdir, "data/datafile.npy")):
         WFCGEN = 1
-    if os.path.exists(os.path.join(m.workdir, "wfc")):
+    if os.path.exists(os.path.join(m.workdir, "data/wfc")):
         DOT = 1
-    if os.path.exists(os.path.join(m.workdir, "dpc.npy")):
+    if os.path.exists(os.path.join(m.workdir, "data/dpc.npy")):
         CLUSTER = 1
-    if os.path.exists(os.path.join(m.workdir, "signalfinal.npy")):
+    if os.path.exists(os.path.join(m.workdir, "data/signalfinal.npy")):
         BASIS = 1
-    if os.path.exists(os.path.join(m.workdir, "final.report")):
+    if os.path.exists(os.path.join(m.workdir, "data/final.report")):
         R2K = 1
-    if os.path.exists(os.path.join(m.workdir, "wfcgra0.npy")):
+    if os.path.exists(os.path.join(m.workdir, "data/wfcgra0.npy")):
         GEOMETRY = 1
-    if os.path.exists(os.path.join(m.workdir, "berryConn0_0.npy")):
+    if os.path.exists(os.path.join(m.workdir, "data/geometry/berryConn0_0.npy")):
         CONDUCTIVITY = 1
         SHG = 1
 except:
@@ -83,51 +83,125 @@ Command line is of the form:
 
 berry [package options] script parameter [script options]
 """)
-    parser.add_argument("--version", action="store_true", help="Displays current Berry version.")
+    parser.add_argument("--version", 
+                        action="store_true", 
+                        help="Displays current Berry version.")
     # parser.add_argument("--enable-autocomplete", action="store_true", help="Enables autocomplete for the berry CLI.")
     # parser.add_argument("--disable-autocomplete", action="store_true", help="Disables autocomplete for the berry CLI.")
 
-    main_sub_parser = parser.add_subparsers(metavar="MAIN_PROGRAMS" ,dest="main_programs", help="Choose the program to run.")
-    preprocess_parser = main_sub_parser.add_parser("preprocess", help="Run and extract data from DFT calculations. This should be the first script to run.", description="Run and extract data from DFT calculations. This should be the first script to run.")
+    main_sub_parser = parser.add_subparsers(metavar="MAIN_PROGRAMS",
+                                            dest="main_programs", 
+                                            help="Choose the program to run.")
+    preprocess_parser = main_sub_parser.add_parser("preprocess", 
+                                                   help="Run and extract data from DFT calculations. This should be the first script to run.", 
+                                                   description="Run and extract data from DFT calculations. This should be the first script to run.")
 
     try:
         if WFCGEN:
-            wfc_parser = main_sub_parser.add_parser("wfcgen", help="Extracts wavefunctions from DFT calculations.", description="Extracts wavefunctions from DFT calculations.")
+            wfc_parser = main_sub_parser.add_parser("wfcgen", 
+                                                    help="Extracts wavefunctions from DFT calculations.", 
+                                                    description="Extracts wavefunctions from DFT calculations.")
         if DOT:
-            dot_parser = main_sub_parser.add_parser("dot", help="Calculates the dot product of Bloch factors of nearby wavefunctions.", description="Calculates the dot product of Bloch factors of nearby wavefunctions.")
+            dot_parser = main_sub_parser.add_parser("dot", 
+                                                    help="Calculates the dot product of Bloch factors of nearby wavefunctions.", 
+                                                    description="Calculates the dot product of Bloch factors of nearby wavefunctions.")
         if CLUSTER:
-            cluster_parser = main_sub_parser.add_parser("cluster", help="Classifies the eigenstates in bands.", description="Classifies the eigenstates in bands.")
+            cluster_parser = main_sub_parser.add_parser("cluster", 
+                                                        help="Classifies the eigenstates in bands.", 
+                                                        description="Classifies the eigenstates in bands.")
         if BASIS:
-            basis_parser = main_sub_parser.add_parser("basis", help="Finds problematic cases and make a local basis rotation of the wavefunctions.", description="Finds problematic cases and make a local basis rotation of the wavefunctions.")
+            basis_parser = main_sub_parser.add_parser("basis", 
+                                                      help="Finds problematic cases and make a local basis rotation of the wavefunctions.", 
+                                                      description="Finds problematic cases and make a local basis rotation of the wavefunctions.")
         if R2K:
-            r2k_parser = main_sub_parser.add_parser("r2k", help="Converts wavefunctions from r-space to k-space.", description="Converts wavefunctions from r-space to k-space.")
+            r2k_parser = main_sub_parser.add_parser("r2k", 
+                                                    help="Converts wavefunctions from r-space to k-space.", 
+                                                    description="Converts wavefunctions from r-space to k-space.")
         if GEOMETRY:
-            geometry_parser = main_sub_parser.add_parser("geometry", help="Calculates the Berry connections and curvatures.", description="Calculates the Berry connections and curvatures.")
+            geometry_parser = main_sub_parser.add_parser("geometry", 
+                                                         help="Calculates the Berry connections and curvatures.", 
+                                                         description="Calculates the Berry connections and curvatures.")
         if CONDUCTIVITY:
-            conductivity_parser = main_sub_parser.add_parser("conductivity", help="Calculates the optical linear conductivity of the system..", description="Calculates the optical linear conductivity of the system.")
+            conductivity_parser = main_sub_parser.add_parser("conductivity", 
+                                                             help="Calculates the optical linear conductivity of the system..", 
+                                                             description="Calculates the optical linear conductivity of the system.")
         if SHG:
-            shg_parser = main_sub_parser.add_parser("shg", help="Calculates the second harmonic generation conductivity of the system.", description="Calculate the second harmonic generation conductivity of the system.")
+            shg_parser = main_sub_parser.add_parser("shg", 
+                                                    help="Calculates the second harmonic generation conductivity of the system.", 
+                                                    description="Calculate the second harmonic generation conductivity of the system.")
         argcomplete.autocomplete(parser)
 
         if WFCGEN:
-            wfc_parser.add_argument("-nk"  , type=int, metavar=f"[0-{m.nks-1}]"  , default=None, choices=range(m.nks)  , help="k-point where wavefunctions will be generated (all bands) (default: All).")
-            wfc_parser.add_argument("-band", type=int, metavar=f"[0-{m.nbnd-1}]", default=None, choices=range(m.nbnd), help="Band where wavefunction will be generated (on k-point -nk) (default: All).")
-            wfc_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
-            wfc_parser.add_argument("-o", default="wfc", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-            wfc_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
+            wfc_parser.add_argument("-nk"  , 
+                                    type=int, 
+                                    metavar=f"[0-{m.nks-1}]", 
+                                    default=None, choices=range(m.nks)  , 
+                                    help="k-point where wavefunctions will be generated (all bands) (default: All).")
+            wfc_parser.add_argument("-band", 
+                                    type=int, 
+                                    metavar=f"[0-{m.nbnd-1}]", 
+                                    default=None, choices=range(m.nbnd), 
+                                    help="Band where wavefunction will be generated (on k-point -nk) (default: All).")
+            wfc_parser.add_argument("-flush", 
+                                    action="store_true", 
+                                    help="Flushes output into stdout.")
+            wfc_parser.add_argument("-o", 
+                                    default="wfc", 
+                                    type=str, metavar="file_path", 
+                                    help="Name of output log file. Extension will be .log regardless of user input.")
+            wfc_parser.add_argument("-v", 
+                                    action="store_true", 
+                                    help="Increases output verbosity.")
         if DOT:
-            dot_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
-            dot_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
-            dot_parser.add_argument("-o", default="dot", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-            dot_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
+            dot_parser.add_argument("-np", 
+                                    type=int, 
+                                    default=1, 
+                                    metavar=f"[1-{os.cpu_count()}]", 
+                                    choices=range(1, os.cpu_count()+1), 
+                                    help="Number of processes to use (default: 1)")
+            dot_parser.add_argument("-flush", 
+                                    action="store_true", 
+                                    help="Flushes output into stdout.")
+            dot_parser.add_argument("-o", 
+                                    default="dot", 
+                                    type=str, metavar="file_path", 
+                                    help="Name of output log file. Extension will be .log regardless of user input.")
+            dot_parser.add_argument("-v", 
+                                    action="store_true", 
+                                    help="Increases output verbosity.")
         if CLUSTER:
-            cluster_parser.add_argument("Mb" , type=int, nargs='?',   default=-1,   metavar=f"Mb (0-{m.nbnd-1})",    choices=range(m.nbnd) ,             help="Maximum band to consider.")
-            cluster_parser.add_argument("-mb", type=int,              default=0,    metavar=f"[0-{m.nbnd-1}]"      , choices=range(m.nbnd)             , help="Minimum band to consider (default: 0).")
-            cluster_parser.add_argument("-np", type=int,              default=1,    metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
-            cluster_parser.add_argument("-t",  type=restricted_float, default=0.95, metavar="[0.0-1.0]",  help="Tolerance used for graph construction (default: 0.95).")
-            cluster_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
-            cluster_parser.add_argument("-o", default="cluster", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-            cluster_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
+            cluster_parser.add_argument("Mb" , 
+                                        type=int, nargs='?',   
+                                        default=-1,   
+                                        metavar=f"Mb (0-{m.nbnd-1})",    
+                                        choices=range(m.nbnd) ,             
+                                        help="Maximum band to consider.")
+            cluster_parser.add_argument("-mb", 
+                                        type=int,              
+                                        default=0,    
+                                        metavar=f"[0-{m.nbnd-1}]"      , 
+                                        choices=range(m.nbnd)             , 
+                                        help="Minimum band to consider (default: 0).")
+            cluster_parser.add_argument("-np", 
+                                        type=int,              
+                                        default=1,    
+                                        metavar=f"[1-{os.cpu_count()}]", 
+                                        choices=range(1, os.cpu_count()+1), 
+                                        help="Number of processes to use (default: 1).")
+            cluster_parser.add_argument("-t",  
+                                        type=restricted_float, 
+                                        default=0.95, metavar="[0.0-1.0]",  
+                                        help="Tolerance used for graph construction (default: 0.95).")
+            cluster_parser.add_argument("-flush", 
+                                        action="store_true", 
+                                        help="Flushes output into stdout.")
+            cluster_parser.add_argument("-o", 
+                                        default="cluster", 
+                                        type=str, metavar="file_path", 
+                                        help="Name of output log file. Extension will be .log regardless of user input.")
+            cluster_parser.add_argument("-v", 
+                                        action="store_true", 
+                                        help="Increases output verbosity.")
         if BASIS:
             basis_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)             , help="Maximum band to consider.")
             basis_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
@@ -171,10 +245,19 @@ berry [package options] script parameter [script options]
         #TODO: Should we display a helpfull message indicating that the user should run the missing berry programs?
         pass
     finally:
-        preprocess_parser.add_argument("input_file", type=str, help="Path to input file with the run parameters.")
-        preprocess_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
-        preprocess_parser.add_argument("-o", default="preprocess", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-        preprocess_parser.add_argument("-v", action="store_true", help="Increases output verbosity")
+        preprocess_parser.add_argument("input_file", 
+                                       type=str, 
+                                       help="Path to input file with the run parameters.")
+        preprocess_parser.add_argument("-flush", 
+                                       action="store_true", 
+                                       help="Flushes output into stdout.")
+        preprocess_parser.add_argument("-o", 
+                                       default="preprocess", 
+                                       type=str, metavar="file_path", 
+                                       help="Name of output log file. Extension will be .log regardless of user input.")
+        preprocess_parser.add_argument("-v", 
+                                       action="store_true", 
+                                       help="Increases output verbosity")
 
         args = parser.parse_args()
 
@@ -265,6 +348,7 @@ def preprocessing_cli(args: argparse.Namespace):
 
     Preprocess(**args_dict).run() 
 
+# generate wfc
 def generatewfc_cli(args: argparse.Namespace):
     from berry.generatewfc import WfcGenerator
     ###########################################################################
@@ -287,6 +371,7 @@ def generatewfc_cli(args: argparse.Namespace):
 
     return 
 
+# dotproduct
 def dotproduct_cli(args: argparse.Namespace):
     from berry.dotproduct import run_dot
     ###########################################################################
@@ -304,6 +389,7 @@ def dotproduct_cli(args: argparse.Namespace):
 
     run_dot(**args_dict)
 
+# clustering
 def clustering_cli(args: argparse.Namespace):
     from berry.clustering_bands import run_clustering
     ###########################################################################
@@ -320,6 +406,7 @@ def clustering_cli(args: argparse.Namespace):
 
     run_clustering(**args_dict)
 
+# basis rotation
 def basisrotation_cli(args: argparse.Namespace):
     from berry.basisrotation import run_basis_rotation
     ###########################################################################
@@ -334,6 +421,7 @@ def basisrotation_cli(args: argparse.Namespace):
 
     run_basis_rotation(**args_dict)
 
+# r2k
 def r2k_cli(args: argparse.Namespace):
     from berry.r2k import run_r2k
     ###########################################################################
@@ -353,6 +441,7 @@ def r2k_cli(args: argparse.Namespace):
 
     run_r2k(**args_dict)
 
+# berry geometry
 def berry_props_cli(args: argparse.Namespace):
     from berry.berry_geometry import run_berry_geometry
     ###########################################################################
@@ -373,6 +462,7 @@ def berry_props_cli(args: argparse.Namespace):
 
     run_berry_geometry(**args_dict)
 
+# linear conductivity
 def conductivity_cli(args: argparse.Namespace):
     from berry.conductivity import run_conductivity
     ###########################################################################
@@ -394,6 +484,7 @@ def conductivity_cli(args: argparse.Namespace):
 
     run_conductivity(**args_dict)
 
+# shg
 def shg_cli(args: argparse.Namespace):
     from berry.shg import run_shg
     ###########################################################################

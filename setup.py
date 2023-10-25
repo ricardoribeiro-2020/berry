@@ -15,7 +15,7 @@ def normalize(name):
 
 setup(
     name=normalize('berry-suite'),
-    version="1.0.2",
+    version="2.0.0",
     author='Berry Developers',
     author_email='ricardo.ribeiro@physics.org',
     license="MIT",
