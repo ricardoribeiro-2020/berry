@@ -52,7 +52,6 @@ class WfcGenerator:
         if m.noncolin:
             self.k2r_program = "wfck2rFR.x"
             self.logger.info("\tNoncolinear calculation, will use wfck2rFR.x")
-            self.logger.info("\t"+str(m.noncolin))
         else:
             self.k2r_program = "wfck2r.x"
             self.logger.info("\tNonrelativistic calculation, will use wfck2r.x")

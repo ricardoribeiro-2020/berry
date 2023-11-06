@@ -355,7 +355,7 @@ class Preprocess:
         self.lsda = False if output.find("band_structure").find("lsda").text == "false" else True
         self.logger.info(f"\tSpin polarized calculation: {self.lsda}")
 
-        self.vb = self.nelec - 2 if self.non_colinear or self.lsda else (self.nelec / 2) - 1
+        self.vb = self.nelec - 1 if self.non_colinear or self.lsda else (self.nelec / 2) - 1
         if self.vb - int(self.vb) != 0:
             self.logger.warning(f"The system is a metal!")  # TODO: add supoort for metals
         self.vb = int(self.vb)
@@ -378,9 +378,15 @@ class Preprocess:
         if re.search("nbnd", nscf_content):
             nscf_content = re.sub("nbnd.*", f"nbnd = {str(self.nbnd)},", nscf_content)
         elif re.search(r"SYSTEM\s*/", nscf_content):
-            nscf_content = re.sub(r"SYSTEM\s*/", f"SYSTEM\nnbnd = {str(self.nbnd)},\n/", nscf_content)
+            nscf_content = re.sub(r"SYSTEM\s*/", f"SYSTEM\n                        nbnd = {str(self.nbnd)},\n/", nscf_content)
         else:
-            nscf_content = re.sub("SYSTEM", f"SYSTEM\nnbnd = {str(self.nbnd)},", nscf_content)
+            nscf_content = re.sub("SYSTEM", f"SYSTEM\n                        nbnd = {str(self.nbnd)},", nscf_content)
+
+        # Guarantee no sym calculation for nscf
+        if re.search("nosym", nscf_content):
+            nscf_content = re.sub("nosym.*", f"nosym = .true.", nscf_content)
+        else:
+            nscf_content = re.sub("SYSTEM", f"SYSTEM\n                       nosym = .true.", nscf_content) 
 
         # Replace kpoints with self.nscf_kpoints
         nscf_content += f"\n{self.__nks}\n{self.nscf_kpoints}"
