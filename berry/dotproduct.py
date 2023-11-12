@@ -23,13 +23,25 @@ def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
 
     dphase = d_phase[:, nk] * d_phase[:, neighbor].conj()
 
-    for band0 in range(m.nbnd):
-        wfc0 = np.load(os.path.join(m.wfcdirectory, f"k0{nk}b0{band0}.wfc"))
-        for band1 in range(m.nbnd):
-            wfc1 = np.load(os.path.join(m.wfcdirectory, f"k0{neighbor}b0{band1}.wfc")).conj()
+    if m.noncolin:
+        for band0 in range(m.nbnd):
+            wfc00 = np.load(os.path.join(m.wfcdirectory, f"k0{nk}b0{band0}-0.wfc"))
+            wfc01 = np.load(os.path.join(m.wfcdirectory, f"k0{nk}b0{band0}-1.wfc"))
+            for band1 in range(m.nbnd):
+                wfc10 = np.load(os.path.join(m.wfcdirectory, f"k0{neighbor}b0{band1}-0.wfc")).conj()
+                wfc11 = np.load(os.path.join(m.wfcdirectory, f"k0{neighbor}b0{band1}-1.wfc")).conj()
 
-            dpc[nk, j, band0, band1] = np.einsum("k,k,k->", dphase, wfc0, wfc1)
-            dpc[neighbor, jNeighbor, band1, band0] = dpc[nk, j, band0, band1].conj()
+                dpc[nk, j, band0, band1] = np.einsum("k,k,k->", dphase, wfc00, wfc10) + np.einsum("k,k,k->", dphase, wfc01, wfc11)
+                dpc[neighbor, jNeighbor, band1, band0] = dpc[nk, j, band0, band1].conj()
+
+    else:
+        for band0 in range(m.nbnd):
+            wfc0 = np.load(os.path.join(m.wfcdirectory, f"k0{nk}b0{band0}.wfc"))
+            for band1 in range(m.nbnd):
+                wfc1 = np.load(os.path.join(m.wfcdirectory, f"k0{neighbor}b0{band1}.wfc")).conj()
+
+                dpc[nk, j, band0, band1] = np.einsum("k,k,k->", dphase, wfc0, wfc1)
+                dpc[neighbor, jNeighbor, band1, band0] = dpc[nk, j, band0, band1].conj()
 
     logger.debug(f"\tFinished of nk: {nk:>4}\tneighbor: {neighbor:>4}\tin: {(time() - start):>4.2f} seconds")
 
@@ -74,7 +86,7 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
     dpc_base = Array(ctypes.c_double, 2 * DPC_SIZE, lock=False)
     dpc = np.frombuffer(dpc_base, dtype=np.complex128).reshape(DPC_SHAPE)
     dp = np.zeros(DPC_SHAPE, dtype=np.float64)
-    d_phase = np.load(os.path.join(m.workdir, "phase.npy"))
+    d_phase = np.load(os.path.join(m.workdir, "data/phase.npy"))
 
     ###########################################################################
     # 4. CALCULATE THE CONDUCTIVITY
@@ -93,8 +105,8 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
     ###########################################################################
     # 5. SAVE OUTPUT
     ###########################################################################
-    np.save(os.path.join(m.workdir, "dpc.npy"), dpc)
-    np.save(os.path.join(m.workdir, "dp.npy"), dp)
+    np.save(os.path.join(m.workdir, "data/dpc.npy"), dpc)
+    np.save(os.path.join(m.workdir, "data/dp.npy"), dp)
     logger.info(f"\n\tDot products saved to file dpc.npy")
     logger.info(f"\tDot products modulus saved to file dp.npy")
 
