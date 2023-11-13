@@ -44,7 +44,7 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
     logger.info("\tNeighbors loaded")
     logger.info("\tEigenvalues loaded")
 
-    connections = np.load(os.path.join(m.workdir, "dp.npy"))
+    connections = np.load(os.path.join(m.data_dir, "dp.npy"))
     logger.info("\tModulus of direct product loaded\n")
 
     logger.info("\tFinished reading data\n")
@@ -70,19 +70,19 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
     with open(os.path.join(m.workdir, 'final.report'), 'w') as f:
         f.write(material.final_report)
 
-    with open(os.path.join(m.workdir, 'bandsfinal.npy'), 'wb') as f:
+    with open(os.path.join(m.data_dir, 'bandsfinal.npy'), 'wb') as f:
         np.save(f, material.bands_final)
 
-    with open(os.path.join(m.workdir, 'signalfinal.npy'), 'wb') as f:
+    with open(os.path.join(m.data_dir, 'signalfinal.npy'), 'wb') as f:
         np.save(f, material.signal_final)
 
-    with open(os.path.join(m.workdir, 'correct_signalfinal.npy'), 'wb') as f:
+    with open(os.path.join(m.data_dir, 'correct_signalfinal.npy'), 'wb') as f:
         np.save(f, material.correct_signalfinal)
 
-    with open(os.path.join(m.workdir, 'degeneratefinal.npy'), 'wb') as f:
+    with open(os.path.join(m.data_dir, 'degeneratefinal.npy'), 'wb') as f:
         np.save(f, material.degenerate_final)
 
-    with open(os.path.join(m.workdir, 'final_score.npy'), 'wb') as f:
+    with open(os.path.join(m.data_dir, 'final_score.npy'), 'wb') as f:
         np.save(f, material.final_score)
 
     sys.stdout.write('\n')
