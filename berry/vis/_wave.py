@@ -42,8 +42,6 @@ def corrected(args):
     ]
 
     # Reading data needed for the run
-    berrypath = str(m.berrypath)
-    print(" Path to BERRY files:", berrypath)
 
     wfcdirectory = str(m.wfcdirectory)
     print(" Directory where the wfc are:", wfcdirectory)
@@ -61,7 +59,7 @@ def corrected(args):
     kpoints = d.kpoints
     print(" K-points loaded")
 
-    with open("bandsfinal.npy", "rb") as f:
+    with open(m.data_dir+"/bandsfinal.npy", "rb") as f:
         bandsfinal = np.load(f)
     f.close()
     print(" bandsfinal loaded")
@@ -152,8 +150,6 @@ def machine(args):
     ]
 
     # Reading data needed for the run
-    berrypath = str(m.berrypath)
-    print(" Path to BERRY files:", berrypath)
 
     wfcdirectory = str(m.wfcdirectory)
     print(" Directory where the wfc are:", wfcdirectory)

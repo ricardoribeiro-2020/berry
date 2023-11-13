@@ -13,41 +13,56 @@ def log_data():
     print("#"*100)
     print("# DATA OF THE SYSTEM")
     print("#"*100)
+    print(f"\tVersion of berry where data was created            {m.version}\n")
+          
     print(f"\n\tInitial k-point                                  {m.k0}")
     print(f"\tNumber of k-points in the x direction              {m.nkx}")
     print(f"\tNumber of k-points in the y direction              {m.nky}")
     print(f"\tNumber of k-points in the z direction              {m.nkz}")
     print(f"\tTotal number of k-points                           {m.nks}")
-    print(f"\tStep between k-points                              {m.step}")
+    print(f"\tStep between k-points                              {m.step}\n")
+
     print(f"\tNumber of processors for the run                   {m.npr}")
+
+    print(f"\tWorking directory                                  {m.workdir}")
+    print(f"\tDirectory for the logs                             {m.log_dir}")
+    print(f"\tDirectory for saving data                          {m.data_dir}")
+    print(f"\tDirectory for the wfc files                        {m.wfcdirectory}")
+    print(f"\tDirectory for the Berry geometries                 {m.geometry_dir}")
+
+    print(f"\tDFT software to be used                            {m.program}")
+    print(f"\tPrefix of the DFT QE calculations                  {m.prefix}")
     print(f"\tDirectory of DFT files                             {m.dftdirectory}")
     print(f"\tName of scf file (without suffix)                  {m.name_scf}")
     print(f"\tName of nscf file (without suffix)                 {m.name_nscf}")
-    print(f"\tDirectory for the wfc files                        {m.wfcdirectory}")
-    print(f"\tPrefix of the DFT QE calculations                  {m.prefix}")
+
     print(f"\tDirectory for DFT saved files                      {m.outdir}")
     print(f"\tPath to DFT file with data of the run              {m.dftdatafile}")
+    
+    print(f"\tFile for extracting DFT wfc to real space          {m.wfck2r}\n")
+
     print(f"\tFirst lattice vector in real space                 {m.a1}")
     print(f"\tSecond lattice vector in real space                {m.a2}")
     print(f"\tThird lattice vector in real space                 {m.a3}")
     print(f"\tFirst lattice vector in reciprocal space           {m.b1}")
     print(f"\tSecond lattice vector in reciprocal space          {m.b2}")
-    print(f"\tThird lattice vector in reciprocal space           {m.b3}")
+    print(f"\tThird lattice vector in reciprocal space           {m.b3}\n")
+
     print(f"\tNumber of points of wfc in real space x direction  {m.nr1}")
     print(f"\tNumber of points of wfc in real space y direction  {m.nr2}")
     print(f"\tNumber of points of wfc in real space z direction  {m.nr3}")
     print(f"\tTotal number of points of wfc in real space        {m.nr}")
+    print(f"\tPoint in real space where all phases match         {m.rpoint}\n")
+
     print(f"\tNumber of bands                                    {m.nbnd}")
-    print(f"\tPath of BERRY files                                {m.berrypath}")
-    print(f"\tPoint in real space where all phases match         {m.rpoint}")
-    print(f"\tWorking directory                                  {m.workdir}")
-    print(f"\tIf the calculation is noncolinear                  {m.noncolin}")
-    print(f"\tDFT software to be used                            {m.program}")
-    print(f"\tSpin polarized calculation                         {m.lsda}")
     print(f"\tNumber of electrons                                {m.nelec}")
-    print(f"\tprefix of the DFT calculations                     {m.prefix}")
-    print(f"\tFile for extracting DFT wfc to real space          {m.wfck2r}")
-    print(f"\tVersion of berry where data was created            {m.version}\n")
+    print(f"\tValence band number                                {m.vb}")
+    print(f"\tNoncolinear calculation                            {m.noncolin}")
+    print(f"\tSpin polarized calculation                         {m.lsda}\n")
+    
+
+    
+    
 
 
 def log_dot1():
@@ -60,7 +75,7 @@ def log_dot1():
     print(f"\tNumber of bands: {m.nbnd}\n")
 
     try:
-        connections = np.load("dp.npy")
+        connections = np.load(m.data_dir+"/dp.npy")
     except FileNotFoundError:
         raise FileNotFoundError("File dp.npy not found. Run the script dotproduct.py to create it.")
 

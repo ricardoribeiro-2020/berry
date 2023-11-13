@@ -1,8 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
+try:
+    import berry._subroutines.loaddata as d
+    import berry._subroutines.loadmeta as m
+except:
+    pass
 
 def bcc(band:int, grad:int, type: str):
-    berry_conn = np.load(f"berryConn{band}_{grad}.npy")
+    berry_conn = np.load(f"{m.geometry_dir}berryConn{band}_{grad}.npy")
 
     M = np.hypot(np.real(berry_conn[0]), np.real(berry_conn[1]))  # Colors for real part
     Q = np.hypot(np.imag(berry_conn[0]), np.imag(berry_conn[1]))  # Colors for imag part
