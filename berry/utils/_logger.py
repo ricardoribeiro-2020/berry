@@ -27,7 +27,7 @@ class log:
         self.version = __version__
         self.level = level
         self.flush = flush
-        logging.basicConfig(filename=program+'.log',
+        logging.basicConfig(filename='log/'+program+'.log',
                             filemode='w',
 #                            encoding='utf-8',
                             format='%(message)s',

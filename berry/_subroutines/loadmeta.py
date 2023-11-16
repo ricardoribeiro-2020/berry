@@ -4,41 +4,47 @@
 
 import numpy as np
 
-with open("datafile.npy", "rb") as fich:
-    k0 = np.load(fich)
-    nkx = int(np.load(fich))
-    nky = int(np.load(fich))
-    nkz = int(np.load(fich))
-    nks = int(np.load(fich))
-    step = float(np.load(fich))
-    npr = int(np.load(fich))
-    dftdirectory = str(np.load(fich))
-    name_scf = str(np.load(fich))
-    name_nscf = str(np.load(fich))
-    wfcdirectory = str(np.load(fich))
-    prefix = str(np.load(fich))
-    outdir = str(np.load(fich))
-    dftdatafile = str(np.load(fich))
-    a1 = np.load(fich)
-    a2 = np.load(fich)
-    a3 = np.load(fich)
-    b1 = np.load(fich)
-    b2 = np.load(fich)
-    b3 = np.load(fich)
-    nr1 = int(np.load(fich))
-    nr2 = int(np.load(fich))
-    nr3 = int(np.load(fich))
-    nr = int(np.load(fich))
-    nbnd = int(np.load(fich))
-    berrypath = str(np.load(fich))
-    rpoint = int(np.load(fich))
-    workdir = str(np.load(fich))
-    noncolin = str(np.load(fich))
-    program = str(np.load(fich))
-    lsda = str(np.load(fich))
-    nelec = float(np.load(fich))
-    prefix = str(np.load(fich))
-    wfck2r = str(np.load(fich))
-    version = str(np.load(fich))
-    refname = str(np.load(fich))
-    vb = int(np.load(fich))
+with open("data/datafile.npy", "rb") as fich:
+    version = str(np.load(fich))  # Version of berry where data was created
+    refname = str(np.load(fich))  # Unique reference for the run
+
+    workdir = str(np.load(fich))  # Working directory
+    data_dir = str(np.load(fich)) # Directory for saving data
+    log_dir = str(np.load(fich))  # Directory for the logs
+    geometry_dir = str(np.load(fich))  # Directory for the Berry geometries
+
+    k0 = np.load(fich) # Initial k-point
+    nkx = int(np.load(fich))    # Number of k-points in the x direction
+    nky = int(np.load(fich))    # Number of k-points in the y direction
+    nkz = int(np.load(fich))    # Number of k-points in the z direction
+    nks = int(np.load(fich))    # Total number of k-points
+    step = float(np.load(fich))  # Step between k-points
+    npr = int(np.load(fich))     # Number of processors for the run
+    rpoint = int(np.load(fich))  # Point in real space where all phases match
+
+    dftdirectory = str(np.load(fich)) # Directory of DFT files
+    name_scf = str(np.load(fich)) # Name of scf file (without suffix)
+    name_nscf = str(np.load(fich)) # Name of nscf file (without suffix)
+    prefix = str(np.load(fich)) # Prefix of the DFT QE calculations
+    wfcdirectory = str(np.load(fich))  # Directory for the wfc files
+    outdir = str(np.load(fich))  # Directory for DFT saved files
+    dftdatafile = str(np.load(fich)) # Path to DFT file with data of the run
+    program = str(np.load(fich))  # DFT software to be used
+
+    a1 = np.load(fich)  # First lattice vector in real space
+    a2 = np.load(fich)  # Second lattice vector in real space
+    a3 = np.load(fich)  # Third lattice vector in real space
+    b1 = np.load(fich)  # First lattice vector in reciprocal space
+    b2 = np.load(fich)  # Second lattice vector in reciprocal space
+    b3 = np.load(fich)  # Third lattice vector in reciprocal space
+    nr1 = int(np.load(fich))   # Number of points of wfc in real space x direction
+    nr2 = int(np.load(fich))   # Number of points of wfc in real space y direction
+    nr3 = int(np.load(fich))   # Number of points of wfc in real space z direction
+    nr = int(np.load(fich))    # Total number of points of wfc in real space
+    nbnd = int(np.load(fich))  # Number of bands
+  
+    noncolin = bool(np.load(fich)) # If the calculation is noncolinear
+    lsda = bool(np.load(fich))     # Spin polarized calculation
+    nelec = float(np.load(fich))   # Number of electrons
+    wfck2r = str(np.load(fich))    # File for extracting DFT wfc to real space
+    vb = int(np.load(fich))        # Valence band number
