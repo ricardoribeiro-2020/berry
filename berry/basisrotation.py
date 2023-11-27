@@ -64,7 +64,7 @@ def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
 
     return signalfinal
 
-
+# Start run of basis rotation
 def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", logger_level: int = logging.INFO, flush: bool = False):
     global signalfinal, d_phase
     logger = log(logger_name, "BASIS ROTATION", level=logger_level, flush=flush)
@@ -72,17 +72,20 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     logger.header()
 
     # Reading data needed for the run
-    berrypath = m.berrypath
+    
     logger.info("\tUnique reference of run:", m.refname)
-    logger.info("\tPath to BERRY files:", berrypath)
     logger.info("\tDirectory where the wfc are:", m.wfcdirectory)
     logger.info("\tNumber of k-points in each direction:", m.nkx, m.nky, m.nkz)
     logger.info("\tTotal number of k-points:", m.nks)
     logger.info("\tTotal number of points in real space:", m.nr)
     logger.info("\tNumber of bands:", m.nbnd)
     logger.info()
-    logger.info("\tNeighbors loaded")
-    logger.info("\tEigenvalues loaded")
+
+    if m.noncolin:
+        logger.info("\n\tThis is a noncolinear calculation: basis rotation is not implemented.")
+        logger.info("\tExiting.")
+        logger.footer()
+        exit(0)
 
     d_phase = np.load(os.path.join(m.workdir, "phase.npy"))
     logger.info("\tPhases loaded")
@@ -96,7 +99,9 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     signalfinal = np.load(os.path.join(m.workdir, "signalfinal.npy"))
     degeneratefinal = np.load(os.path.join(m.workdir, "degeneratefinal.npy"))
 
+    # Finished reading data from files
     ###################################################################################
+    # Start identifying states to apply rotation
     logger.info()
     logger.info("\t**********************")
     logger.info("\n\tProblems not solved")
