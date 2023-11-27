@@ -280,7 +280,7 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
             logger.info(f"\tband {nb} signals {POTENTIAL_MISTAKE} in {nrsignal[nb, POTENTIAL_MISTAKE]} k-points")
     logger.info()
 
-    np.save(os.path.join(d.workdir, 'signalfinal.npy'), signalfinal)
+    np.save(os.path.join(m.data_dir, 'signalfinal.npy'), signalfinal)
 
     ###################################################################################
     # Finished
