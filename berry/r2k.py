@@ -84,10 +84,10 @@ def r_to_k(banda: int, npr: int) -> None:
     start = time()
     #IDEA: Try saving this files into a folder in different chunks
     if m.noncolin:
-        np.save(os.path.join(m.data_dir, f"wfcpos{banda}.npy"), wfcpos0)
-        np.save(os.path.join(m.data_dir, f"wfcpos{banda}.npy"), wfcpos1)
-        np.save(os.path.join(m.data_dir, f"wfcgra{banda}.npy"), wfcgra0)
-        np.save(os.path.join(m.data_dir, f"wfcgra{banda}.npy"), wfcgra1)
+        np.save(os.path.join(m.data_dir, f"wfcpos{banda}-0.npy"), wfcpos0)
+        np.save(os.path.join(m.data_dir, f"wfcpos{banda}-1.npy"), wfcpos1)
+        np.save(os.path.join(m.data_dir, f"wfcgra{banda}-0.npy"), wfcgra0)
+        np.save(os.path.join(m.data_dir, f"wfcgra{banda}-1.npy"), wfcgra1)
     else:
         np.save(os.path.join(m.data_dir, f"wfcpos{banda}.npy"), wfcpos)
         np.save(os.path.join(m.data_dir, f"wfcgra{banda}.npy"), wfcgra)

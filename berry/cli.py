@@ -59,7 +59,7 @@ try:
         BASIS = 1
     if os.path.exists(os.path.join(m.workdir, "data/final.report")):
         R2K = 1
-    if os.path.exists(os.path.join(m.workdir, "data/wfcgra0.npy")):
+    if os.path.exists(os.path.join(m.workdir, "log/r2k.log")):
         GEOMETRY = 1
     if os.path.exists(os.path.join(m.workdir, "data/geometry/berryConn0_0.npy")):
         CONDUCTIVITY = 1
