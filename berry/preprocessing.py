@@ -56,7 +56,18 @@ class Preprocess:
         self.program = program               # Name of the DFT software to be used
         self.ref_name = ref_name             # Unique reference for the whole run
 
-        os.mkdir("log")                      # Creates log directory
+        if self.nkz > 1 and self.nky > 1 and self.nkz > 1:
+            self.dimensions = 3                  # Number of spatial dimensions of the material
+        elif self.nkz == 1 and self.nky > 1:
+            self.dimensions = 2
+        else:
+            self.dimensions = 1
+        # If it is 2D, use x and y directions
+        # If it is 1D, use x direction
+        # Only these possibilities are available
+
+        if not os.path.exists("log"):
+            os.mkdir("log")                      # Creates log directory
         self.logger = log(logger_name, "PREPROCESS", level=logger_level, flush=flush)
 
         # Full path to the log directory:
@@ -109,6 +120,7 @@ class Preprocess:
         # Write header to the log file
         self.logger.header()
         self._log_inputs()
+        self.logger.info("\tRunning a",self.dimensions,"dimensions material.\n")
 
     # Run a sequence of processes based on the data
     def run(self):
@@ -125,11 +137,14 @@ class Preprocess:
 
     def create_directories(self):
         # Create directory where data files will be saved
-        os.mkdir(self.data_dir)
+        if not os.path.exists(self.data_dir):
+            os.mkdir(self.data_dir)
         # Create directory where wavefunctions will be saved
-        os.mkdir(self.wfc_dir)
+        if not os.path.exists(self.wfc_dir):
+            os.mkdir(self.wfc_dir)
         # Create directory where the Berry geometries will be saved
-        os.mkdir(self.geometry_dir)
+        if not os.path.exists(self.geometry_dir):
+            os.mkdir(self.geometry_dir)
 
     # Save data to datafile.npy and other files for future use by the software
     def save_data(self):
@@ -168,6 +183,7 @@ class Preprocess:
         with open("data/datafile.npy", "wb") as fich: #TODO: Try saving with np.savez
             np.save(fich, __version__)  # Version of berry where data was created
             np.save(fich, self.ref_name)  # Unique reference for the run
+            np.save(fich,self.dimensions) # Number of dimensions of the material
 
             np.save(fich, self.work_dir)  # Working directory
             np.save(fich, self.data_dir)  # Directory for saving data

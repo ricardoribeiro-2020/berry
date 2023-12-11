@@ -7,6 +7,7 @@ import numpy as np
 with open("data/datafile.npy", "rb") as fich:
     version = str(np.load(fich))  # Version of berry where data was created
     refname = str(np.load(fich))  # Unique reference for the run
+    dimensions = int(np.load(fich)) # Number of dimensions
 
     workdir = str(np.load(fich))  # Working directory
     data_dir = str(np.load(fich)) # Directory for saving data
