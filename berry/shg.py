@@ -26,7 +26,7 @@ def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_con
 
     for i in range(conduction_band + 1):
         for j in range(conduction_band + 1):
-            berry_connections[i, j] = np.load(os.path.join(m.workdir, f"berryConn{i}_{j}.npy"))
+            berry_connections[i, j] = np.load(os.path.join(m.geometry_dir, f"berryConn{i}_{j}.npy"))
 
     return berry_connections
 
@@ -121,7 +121,10 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
     RY    = 13.6056923                                                          # Conversion factor from Ry to eV
     VK    = m.step * m.step / (2 * np.pi) ** 2                                  # element of volume in k-space in units of bohr^-1
                                                                                 # it is actually an area, because we have a 2D crystal
-    CONST = 2 * np.sqrt(2) * 2 / (2 * np.pi) ** 2                               # = -2e^3/hslash 1/(2pi)^2     in Rydberg units
+    if m.noncolin:
+        CONST = np.sqrt(2) / (2 * np.pi) ** 2
+    else:
+        CONST = 2 * np.sqrt(2) * 2 / (2 * np.pi) ** 2                           # = -2e^3/hslash 1/(2pi)^2     in Rydberg units
                                                                                 # the 2e comes from having two electrons per band
                                                                                 # another minus comes from the negative charge
 
@@ -157,7 +160,7 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
     # 3. CREATE ALL THE ARRAYS
     ###########################################################################
     grad                        = Gradient(h=[m.step, m.step], acc=2)           # Defines gradient function in 2D
-    bandsfinal                  = np.load(os.path.join(m.workdir, "bandsfinal.npy"))
+    bandsfinal                  = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
     eigen_array                 = correct_eigenvalues(bandsfinal)
     berry_connections           = load_berry_connections(conduction_band, berry_conn_size, berry_conn_shape)
     fermi, delta_ea, grad_dea   = get_fermi_delta_ea_grad_ea(grad, eigen_array, conduction_band)
