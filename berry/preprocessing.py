@@ -261,27 +261,75 @@ class Preprocess:
     # Creates array with the list of 1st neighbors for a 2D material   TODO: extend to 2nd neighbors and 3D
     def _compute_neighbors(self):
         nk = -1
-        neigh = np.full((self.__nks, 4), -1, dtype=np.int64)
-        for j in range(self.nky):
-            for i in range(self.nkx):
+        
+        if self.dimensions == 1:
+            neigh = np.full((self.__nks, 2), -1, dtype=np.int64)
+            for i in range(self.nkx):  
                 nk += 1
                 if i == 0:
                     n0 = -1
                 else:
                     n0 = nk - 1
-                if j == 0:
+                if i == self.nkx - 1:
                     n1 = -1
                 else:
-                    n1 = nk - self.nkx
-                if i == self.nkx - 1:
-                    n2 = -1
-                else:
-                    n2 = nk + 1
-                if j == self.nky - 1:
-                    n3 = -1
-                else:
-                    n3 = nk + self.nkx
-                neigh[nk, :] = [n0, n1, n2, n3]
+                    n1 = nk + 1 
+                neigh[nk, :] = [n0,n1]
+        elif self.dimensions == 2:
+            neigh = np.full((self.__nks, 4), -1, dtype=np.int64)
+            for j in range(self.nky):
+                for i in range(self.nkx):
+                    nk += 1
+                    if i == 0:
+                        n0 = -1
+                    else:
+                        n0 = nk - 1
+                    if j == 0:
+                        n1 = -1
+                    else:
+                        n1 = nk - self.nkx
+                    if i == self.nkx - 1:
+                        n2 = -1
+                    else:
+                        n2 = nk + 1
+                    if j == self.nky - 1:
+                        n3 = -1
+                    else:
+                        n3 = nk + self.nkx
+                    neigh[nk, :] = [n0, n1, n2, n3]
+        elif self.dimensions == 3:
+            neigh = np.full((self.__nks, 6), -1, dtype=np.int64)
+            for l in range(self.nkz):
+                for j in range(self.nky):
+                    for i in range(self.nkx):
+                        nk += 1
+                        if i == 0:
+                            n0 = -1
+                        else:
+                            n0 = nk - 1
+                        if j == 0:
+                            n1 = -1
+                        else:
+                            n1 = nk - self.nkx
+                        if i == self.nkx - 1:
+                            n2 = -1
+                        else:
+                            n2 = nk + 1
+                        if j == self.nky - 1:
+                            n3 = -1
+                        else:
+                            n3 = nk + self.nkx
+                        if l == 0:
+                            n4 = -1
+                        else:
+                            n4 = nk - self.nkx*self.nky
+                        if l == self.nkz - 1:
+                            n5 = -1
+                        else:
+                            n5 = nk + self.nkx*self.nky
+                        neigh[nk, :] = [n0, n1, n2, n3, n4, n5]
+        else:
+            self.logger.error(f"\tWrong number of dimensions: they can be only 1, 2 or 3.")
         return neigh
 
     # Runs the scf DFT calculation
@@ -378,6 +426,8 @@ class Preprocess:
         self.logger.info(f"\tValence band is: {self.vb}\n")
 
         self.eigenvalues = 2 * np.array([list(map(float, it.text.split())) for it in output.find("band_structure").iter("eigenvalues")])
+        # number 2 is to convert from hartree to rydberg energy units
+        # QE uses Ha when saving eigenvalues in xml file, everywhere else uses Ry
 
         self.occupations = np.array([list(map(float, it.text.split())) for it in output.find("band_structure").iter("occupations")])
 
