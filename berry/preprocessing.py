@@ -100,14 +100,22 @@ class Preprocess:
         if self.program == "QE":    # If the DFT program is QE (only option for now)
             # Get outdir from scf
             try:
-                self.out_dir = os.path.abspath(os.path.join("dft", parser("outdir", self.scf)))
+                self.out_dir = parser("outdir", self.scf)
             except IndexError:
                 raise ValueError(f"outdir keyword not found in {self.scf}. Make sure your scf file has the 'outdir' keyword set to './'")
+            if self.out_dir == "./out/":
+                self.out_dir = os.path.join("dft", self.out_dir)
+            self.out_dir = os.path.abspath(self.out_dir)
+
             # Get pseudo_dir from scf
             try:
-                self.pseudo_dir = os.path.abspath(os.path.join("dft", parser("pseudo_dir", self.scf)))
+                self.pseudo_dir = parser("pseudo_dir", self.scf)
             except IndexError:
                 raise ValueError(f"pseudo_dir keyword not found in {self.scf}. Make sure your scf file has the 'pseudo_dir' keyword set.")
+            if self.pseudo_dir == "./out/":
+                self.pseudo_dir = os.path.join("dft", self.pseudo_dir)
+            self.pseudo_dir = os.path.abspath(self.pseudo_dir)
+
             # Get prefix from scf
             try:
                 self.prefix = parser("prefix", self.scf)
@@ -335,7 +343,8 @@ class Preprocess:
     # Runs the scf DFT calculation
     def compute_scf(self):
         # Establishes the name of the output file (assumes the original name ends in '.in')
-        os.chdir(self.dft_dir)
+        if self.out_dir == os.path.join(self.work_dir, "dft/out") and self.pseudo_dir == self.work_dir[:-1]:
+            os.chdir(self.dft_dir)
         scf_out = self.scf[:-3] + ".out"
         if os.path.isfile(scf_out):
             self.logger.info(f"\t{os.path.basename(scf_out)} already exists. Skipping scf calculation.")
@@ -346,11 +355,13 @@ class Preprocess:
             command = f"{self.__mpi} pw.x -i {self.scf} > {scf_out}"
             os.system(command)
             self.logger.debug(f"\tRunning command: {command}")
-        os.chdir(self.work_dir)
+        if self.out_dir == os.path.join(self.work_dir, "dft/out") and self.pseudo_dir == self.work_dir[:-1]:
+            os.chdir(self.work_dir)
 
     # Runs the nscf DFT calculation
     def compute_nscf(self):
-        os.chdir(self.dft_dir)
+        if self.out_dir == os.path.join(self.work_dir, "dft/out") and self.pseudo_dir == self.work_dir[:-1]:
+            os.chdir(self.dft_dir)
         # Reads from template
         self._nscf_template()
 
@@ -365,7 +376,8 @@ class Preprocess:
             command = f"{self.__mpi} pw.x -i {self.nscf} > {nscf_out}"
             os.system(command)
             self.logger.debug(f"Running command: {command}")
-        os.chdir(self.work_dir)
+        if self.out_dir == os.path.join(self.work_dir, "dft/out") and self.pseudo_dir == self.work_dir[:-1]:
+            os.chdir(self.work_dir)
 
     # Makes a list of the points in real space
     def _compute_rpoints(self, l: int, k: int, i: int):
