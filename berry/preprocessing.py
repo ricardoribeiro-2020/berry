@@ -112,7 +112,7 @@ class Preprocess:
                 self.pseudo_dir = parser("pseudo_dir", self.scf)
             except IndexError:
                 raise ValueError(f"pseudo_dir keyword not found in {self.scf}. Make sure your scf file has the 'pseudo_dir' keyword set.")
-            if self.pseudo_dir == "./out/":
+            if self.pseudo_dir == "./":
                 self.pseudo_dir = os.path.join("dft", self.pseudo_dir)
             self.pseudo_dir = os.path.abspath(self.pseudo_dir)
 
@@ -343,7 +343,7 @@ class Preprocess:
     # Runs the scf DFT calculation
     def compute_scf(self):
         # Establishes the name of the output file (assumes the original name ends in '.in')
-        if self.out_dir == os.path.join(self.work_dir, "dft/out") and self.pseudo_dir == self.work_dir[:-1]:
+        if parser("outdir", self.scf) == "./out/" and parser("pseudo_dir", self.scf) == "./":
             os.chdir(self.dft_dir)
         scf_out = self.scf[:-3] + ".out"
         if os.path.isfile(scf_out):
@@ -355,12 +355,12 @@ class Preprocess:
             command = f"{self.__mpi} pw.x -i {self.scf} > {scf_out}"
             os.system(command)
             self.logger.debug(f"\tRunning command: {command}")
-        if self.out_dir == os.path.join(self.work_dir, "dft/out") and self.pseudo_dir == self.work_dir[:-1]:
+        if parser("outdir", self.scf) == "./out/" and parser("pseudo_dir", self.scf) == "./":
             os.chdir(self.work_dir)
 
     # Runs the nscf DFT calculation
     def compute_nscf(self):
-        if self.out_dir == os.path.join(self.work_dir, "dft/out") and self.pseudo_dir == self.work_dir[:-1]:
+        if parser("outdir", self.scf) == "./out/" and parser("pseudo_dir", self.scf) == "./":
             os.chdir(self.dft_dir)
         # Reads from template
         self._nscf_template()
@@ -376,7 +376,7 @@ class Preprocess:
             command = f"{self.__mpi} pw.x -i {self.nscf} > {nscf_out}"
             os.system(command)
             self.logger.debug(f"Running command: {command}")
-        if self.out_dir == os.path.join(self.work_dir, "dft/out") and self.pseudo_dir == self.work_dir[:-1]:
+        if parser("outdir", self.scf) == "./out/" and parser("pseudo_dir", self.scf) == "./":
             os.chdir(self.work_dir)
 
     # Makes a list of the points in real space
