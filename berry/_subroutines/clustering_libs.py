@@ -330,7 +330,7 @@ class MATERIAL:
 
     def make_BandsEnergy(self) -> np.ndarray:
         '''
-        It sets the energy information in more convinient data structure
+        It sets the energy information in more convenient data structure
         
         Parameters
             None
@@ -428,7 +428,7 @@ class MATERIAL:
                     It contains the degenerate points found.
             '''
             degenerates = []
-            for i, v in vectors:
+            for i, v in vectors:     # i is the index of vector v
                 degenerado = np.where(np.all(np.isclose(self.vectors[i+1:]-v, 0),
                                     axis=1))[0] # Verify which points have numerically the same value
                 if len(degenerado) > 0:

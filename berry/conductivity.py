@@ -23,7 +23,7 @@ def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_con
 
     for i in range(conduction_band + 1):
         for j in range(conduction_band + 1):
-            berry_connections[i, j] = np.load(os.path.join(m.workdir, f"berryConn{i}_{j}.npy"))
+            berry_connections[i, j] = np.load(os.path.join(m.geometry_dir, f"berryConn{i}_{j}.npy"))
 
     return berry_connections
 
@@ -91,7 +91,10 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
     RY    = 13.6056923                                                          # Conversion factor from Ry to eV
     VK    = m.step * m.step / (2 * np.pi) ** 2                                  # element of volume in k-space in units of bohr^-1
     # the '4' comes from spin degeneracy, that is summed in s and s'
-    CONST = 4 * 2j / (2 * np.pi) ** 2                                           # = i2e^2/hslash 1/(2pi)^2     in Rydberg units
+    if m.noncolin:
+        CONST = 2j / (2 * np.pi) ** 2 
+    else:
+        CONST = 4 * 2j / (2 * np.pi) ** 2                                           # = i2e^2/hslash 1/(2pi)^2     in Rydberg units
 
     band_list   = list(range(conduction_band + 1))
 
@@ -122,8 +125,8 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS
     ###########################################################################
-    bandsfinal               = np.load(os.path.join(m.workdir, "bandsfinal.npy"))
-    signalfinal              = np.load(os.path.join(m.workdir, "signalfinal.npy"))                       #NOTE: Not used
+    bandsfinal               = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
+    signalfinal              = np.load(os.path.join(m.data_dir, "signalfinal.npy"))                       #NOTE: Not used
     eigen_array              = correct_eigenvalues(bandsfinal)
     berry_connections        = load_berry_connections(conduction_band, berry_conn_size, berry_conn_shape)
     delta_eigen_array, fermi = get_delta_eigen_array_and_fermi(eigen_array, conduction_band)

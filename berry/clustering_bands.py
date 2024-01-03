@@ -67,7 +67,7 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
 
     logger.info('\n\tClustering Done')
 
-    with open(os.path.join(m.workdir, 'final.report'), 'w') as f:
+    with open(os.path.join(m.data_dir, 'final.report'), 'w') as f:
         f.write(material.final_report)
 
     with open(os.path.join(m.data_dir, 'bandsfinal.npy'), 'wb') as f:

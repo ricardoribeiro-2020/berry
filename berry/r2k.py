@@ -22,12 +22,18 @@ def read_wfc_files(banda: int, npr: int) -> None:
     global read_wfc_kp
 
     def read_wfc_kp(kp):
-        if signalfinal[kp, banda] == -1:                                        # if its a signaled wfc, choose interpolated
-            infile = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}.wfc1"
-        else:                                                                   # else choose original
-            infile = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}.wfc"
+        if m.noncolin:
+            infile0  = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}-0.wfc"
+            infile1  = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}-1.wfc"
+            wfct_k0[:, kp] = np.load(infile0)
+            wfct_k1[:, kp] = np.load(infile1)
+        else:
+            if signalfinal[kp, banda] == -1:                                        # if its a signaled wfc, choose interpolated
+                infile = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}.wfc1"
+            else:                                                                   # else choose original
+                infile = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}.wfc"
 
-        wfct_k[:, kp] = np.load(infile)
+            wfct_k[:, kp] = np.load(infile)
 
     with Pool(min(10, npr)) as pool: #TODO: try to abstract this operation 
         pool.map(read_wfc_kp, range(m.nks))
@@ -37,7 +43,11 @@ def calculate_wfcpos(npr: int) -> np.ndarray:
     global calculate_wfcpos_kp
 
     def calculate_wfcpos_kp(kp):
-        wfcpos[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k[kp, d.ijltonk[:, :, 0]]
+        if m.noncolin:
+            wfcpos0[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k0[kp, d.ijltonk[:, :, 0]]
+            wfcpos1[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k1[kp, d.ijltonk[:, :, 0]]
+        else:
+            wfcpos[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k[kp, d.ijltonk[:, :, 0]]
 
     with Pool(npr) as pool:
         pool.map(calculate_wfcpos_kp, range(m.nr))
@@ -47,7 +57,12 @@ def calculate_wfcgra(npr: int) -> np.ndarray:
     global calculate_wfcgra_kp
 
     def calculate_wfcgra_kp(kp):
-        wfcgra[kp] = grad(wfcpos[kp])
+        if m.noncolin:
+            wfcgra0[kp] = grad(wfcpos0[kp])
+            wfcgra1[kp] = grad(wfcpos1[kp])
+
+        else:
+            wfcgra[kp] = grad(wfcpos[kp])
 
     with Pool(npr) as pool:
         pool.map(calculate_wfcgra_kp, range(m.nr))
@@ -68,13 +83,23 @@ def r_to_k(banda: int, npr: int) -> None:
 
     start = time()
     #IDEA: Try saving this files into a folder in different chunks
-    np.save(os.path.join(m.workdir, f"wfcpos{banda}.npy"), wfcpos)
-    np.save(os.path.join(m.workdir, f"wfcgra{banda}.npy"), wfcgra)
+    if m.noncolin:
+        np.save(os.path.join(m.data_dir, f"wfcpos{banda}-0.npy"), wfcpos0)
+        np.save(os.path.join(m.data_dir, f"wfcpos{banda}-1.npy"), wfcpos1)
+        np.save(os.path.join(m.data_dir, f"wfcgra{banda}-0.npy"), wfcgra0)
+        np.save(os.path.join(m.data_dir, f"wfcgra{banda}-1.npy"), wfcgra1)
+    else:
+        np.save(os.path.join(m.data_dir, f"wfcpos{banda}.npy"), wfcpos)
+        np.save(os.path.join(m.data_dir, f"wfcgra{banda}.npy"), wfcgra)
+
     logger.debug(f"\twfcpos{banda} and wfcgra{banda} saved in {time() - start:.2f} seconds\n")
 
 
 def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "r2k", logger_level: int = logging.INFO, flush: bool = False):
-    global grad, signalfinal, bandsfinal, wfct_k, wfcpos, wfcgra, logger, d_phase
+    if m.noncolin:
+        global grad, signalfinal, bandsfinal, wfct_k0, wfct_k1, wfcpos0, wfcpos1, wfcgra0, wfcgra1, logger, d_phase
+    else:
+        global grad, signalfinal, bandsfinal, wfct_k, wfcpos, wfcgra, logger, d_phase
 
     logger = log(logger_name, "R2K", level=logger_level, flush=flush)
 
@@ -109,19 +134,34 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     # 3. CREATE ALL THE ARRAYS AND GRADIENT
     ###########################################################################
     grad = Gradient(h=[m.step, m.step], acc=2)                                  # Defines gradient function in 2D
-    signalfinal = np.load(os.path.join(m.workdir, "signalfinal.npy"))
-    bandsfinal = np.load(os.path.join(m.workdir, "bandsfinal.npy"))
-    d_phase = np.load(os.path.join(m.workdir, "phase.npy"))
+    signalfinal = np.load(os.path.join(m.data_dir, "signalfinal.npy"))
+    bandsfinal = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
+    d_phase = np.load(os.path.join(m.data_dir, "phase.npy"))
     logger.info(f"\tSignal and bands files loaded")
 
-    buffer = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)
-    wfct_k = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCT_K_SHAPE)
+    if m.noncolin:
+        buffer = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)
+        wfct_k0 = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCT_K_SHAPE)
+        wfct_k1 = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCT_K_SHAPE)
 
-    buffer = Array(ctypes.c_double, 2 * WFCPOS_SIZE, lock=False)
-    wfcpos = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCPOS_SHAPE)
+        buffer = Array(ctypes.c_double, 2 * WFCPOS_SIZE, lock=False)
+        wfcpos0 = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCPOS_SHAPE)
+        wfcpos1 = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCPOS_SHAPE)
 
-    buffer = Array(ctypes.c_double, 2 * WFCGRA_SIZE, lock=False)
-    wfcgra = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCGRA_SHAPE)
+        buffer = Array(ctypes.c_double, 2 * WFCGRA_SIZE, lock=False)
+        wfcgra0 = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCGRA_SHAPE)
+        wfcgra1 = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCGRA_SHAPE)
+
+    else:
+        buffer = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)
+        wfct_k = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCT_K_SHAPE)
+
+        buffer = Array(ctypes.c_double, 2 * WFCPOS_SIZE, lock=False)
+        wfcpos = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCPOS_SHAPE)
+
+        buffer = Array(ctypes.c_double, 2 * WFCGRA_SIZE, lock=False)
+        wfcgra = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCGRA_SHAPE)
+
 
     ###########################################################################
     # 4. CALCULATE

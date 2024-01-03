@@ -56,7 +56,18 @@ class Preprocess:
         self.program = program               # Name of the DFT software to be used
         self.ref_name = ref_name             # Unique reference for the whole run
 
-        os.mkdir("log")                      # Creates log directory
+        if self.nkz > 1 and self.nky > 1 and self.nkz > 1:
+            self.dimensions = 3                  # Number of spatial dimensions of the material
+        elif self.nkz == 1 and self.nky > 1:
+            self.dimensions = 2
+        else:
+            self.dimensions = 1
+        # If it is 2D, use x and y directions
+        # If it is 1D, use x direction
+        # Only these possibilities are available
+
+        if not os.path.exists("log"):
+            os.mkdir("log")                      # Creates log directory
         self.logger = log(logger_name, "PREPROCESS", level=logger_level, flush=flush)
 
         # Full path to the log directory:
@@ -89,14 +100,22 @@ class Preprocess:
         if self.program == "QE":    # If the DFT program is QE (only option for now)
             # Get outdir from scf
             try:
-                self.out_dir = os.path.abspath(parser("outdir", self.scf))
+                self.out_dir = parser("outdir", self.scf)
             except IndexError:
                 raise ValueError(f"outdir keyword not found in {self.scf}. Make sure your scf file has the 'outdir' keyword set to './'")
+            if self.out_dir == "./out/":
+                self.out_dir = os.path.join("dft", self.out_dir)
+            self.out_dir = os.path.abspath(self.out_dir)
+
             # Get pseudo_dir from scf
             try:
-                self.pseudo_dir = os.path.abspath(parser("pseudo_dir", self.scf))
+                self.pseudo_dir = parser("pseudo_dir", self.scf)
             except IndexError:
                 raise ValueError(f"pseudo_dir keyword not found in {self.scf}. Make sure your scf file has the 'pseudo_dir' keyword set.")
+            if self.pseudo_dir == "./":
+                self.pseudo_dir = os.path.join("dft", self.pseudo_dir)
+            self.pseudo_dir = os.path.abspath(self.pseudo_dir)
+
             # Get prefix from scf
             try:
                 self.prefix = parser("prefix", self.scf)
@@ -109,6 +128,7 @@ class Preprocess:
         # Write header to the log file
         self.logger.header()
         self._log_inputs()
+        self.logger.info("\tRunning a",self.dimensions,"dimensions material.\n")
 
     # Run a sequence of processes based on the data
     def run(self):
@@ -125,11 +145,14 @@ class Preprocess:
 
     def create_directories(self):
         # Create directory where data files will be saved
-        os.mkdir(self.data_dir)
+        if not os.path.exists(self.data_dir):
+            os.mkdir(self.data_dir)
         # Create directory where wavefunctions will be saved
-        os.mkdir(self.wfc_dir)
+        if not os.path.exists(self.wfc_dir):
+            os.mkdir(self.wfc_dir)
         # Create directory where the Berry geometries will be saved
-        os.mkdir(self.geometry_dir)
+        if not os.path.exists(self.geometry_dir):
+            os.mkdir(self.geometry_dir)
 
     # Save data to datafile.npy and other files for future use by the software
     def save_data(self):
@@ -168,6 +191,7 @@ class Preprocess:
         with open("data/datafile.npy", "wb") as fich: #TODO: Try saving with np.savez
             np.save(fich, __version__)  # Version of berry where data was created
             np.save(fich, self.ref_name)  # Unique reference for the run
+            np.save(fich,self.dimensions) # Number of dimensions of the material
 
             np.save(fich, self.work_dir)  # Working directory
             np.save(fich, self.data_dir)  # Directory for saving data
@@ -245,32 +269,82 @@ class Preprocess:
     # Creates array with the list of 1st neighbors for a 2D material   TODO: extend to 2nd neighbors and 3D
     def _compute_neighbors(self):
         nk = -1
-        neigh = np.full((self.__nks, 4), -1, dtype=np.int64)
-        for j in range(self.nky):
-            for i in range(self.nkx):
+        
+        if self.dimensions == 1:
+            neigh = np.full((self.__nks, 2), -1, dtype=np.int64)
+            for i in range(self.nkx):  
                 nk += 1
                 if i == 0:
                     n0 = -1
                 else:
                     n0 = nk - 1
-                if j == 0:
+                if i == self.nkx - 1:
                     n1 = -1
                 else:
-                    n1 = nk - self.nkx
-                if i == self.nkx - 1:
-                    n2 = -1
-                else:
-                    n2 = nk + 1
-                if j == self.nky - 1:
-                    n3 = -1
-                else:
-                    n3 = nk + self.nkx
-                neigh[nk, :] = [n0, n1, n2, n3]
+                    n1 = nk + 1 
+                neigh[nk, :] = [n0,n1]
+        elif self.dimensions == 2:
+            neigh = np.full((self.__nks, 4), -1, dtype=np.int64)
+            for j in range(self.nky):
+                for i in range(self.nkx):
+                    nk += 1
+                    if i == 0:
+                        n0 = -1
+                    else:
+                        n0 = nk - 1
+                    if j == 0:
+                        n1 = -1
+                    else:
+                        n1 = nk - self.nkx
+                    if i == self.nkx - 1:
+                        n2 = -1
+                    else:
+                        n2 = nk + 1
+                    if j == self.nky - 1:
+                        n3 = -1
+                    else:
+                        n3 = nk + self.nkx
+                    neigh[nk, :] = [n0, n1, n2, n3]
+        elif self.dimensions == 3:
+            neigh = np.full((self.__nks, 6), -1, dtype=np.int64)
+            for l in range(self.nkz):
+                for j in range(self.nky):
+                    for i in range(self.nkx):
+                        nk += 1
+                        if i == 0:
+                            n0 = -1
+                        else:
+                            n0 = nk - 1
+                        if j == 0:
+                            n1 = -1
+                        else:
+                            n1 = nk - self.nkx
+                        if i == self.nkx - 1:
+                            n2 = -1
+                        else:
+                            n2 = nk + 1
+                        if j == self.nky - 1:
+                            n3 = -1
+                        else:
+                            n3 = nk + self.nkx
+                        if l == 0:
+                            n4 = -1
+                        else:
+                            n4 = nk - self.nkx*self.nky
+                        if l == self.nkz - 1:
+                            n5 = -1
+                        else:
+                            n5 = nk + self.nkx*self.nky
+                        neigh[nk, :] = [n0, n1, n2, n3, n4, n5]
+        else:
+            self.logger.error(f"\tWrong number of dimensions: they can be only 1, 2 or 3.")
         return neigh
 
     # Runs the scf DFT calculation
     def compute_scf(self):
         # Establishes the name of the output file (assumes the original name ends in '.in')
+        if parser("outdir", self.scf) == "./out/" and parser("pseudo_dir", self.scf) == "./":
+            os.chdir(self.dft_dir)
         scf_out = self.scf[:-3] + ".out"
         if os.path.isfile(scf_out):
             self.logger.info(f"\t{os.path.basename(scf_out)} already exists. Skipping scf calculation.")
@@ -281,9 +355,13 @@ class Preprocess:
             command = f"{self.__mpi} pw.x -i {self.scf} > {scf_out}"
             os.system(command)
             self.logger.debug(f"\tRunning command: {command}")
+        if parser("outdir", self.scf) == "./out/" and parser("pseudo_dir", self.scf) == "./":
+            os.chdir(self.work_dir)
 
     # Runs the nscf DFT calculation
     def compute_nscf(self):
+        if parser("outdir", self.scf) == "./out/" and parser("pseudo_dir", self.scf) == "./":
+            os.chdir(self.dft_dir)
         # Reads from template
         self._nscf_template()
 
@@ -298,6 +376,8 @@ class Preprocess:
             command = f"{self.__mpi} pw.x -i {self.nscf} > {nscf_out}"
             os.system(command)
             self.logger.debug(f"Running command: {command}")
+        if parser("outdir", self.scf) == "./out/" and parser("pseudo_dir", self.scf) == "./":
+            os.chdir(self.work_dir)
 
     # Makes a list of the points in real space
     def _compute_rpoints(self, l: int, k: int, i: int):
@@ -362,6 +442,8 @@ class Preprocess:
         self.logger.info(f"\tValence band is: {self.vb}\n")
 
         self.eigenvalues = 2 * np.array([list(map(float, it.text.split())) for it in output.find("band_structure").iter("eigenvalues")])
+        # number 2 is to convert from hartree to rydberg energy units
+        # QE uses Ha when saving eigenvalues in xml file, everywhere else uses Ry
 
         self.occupations = np.array([list(map(float, it.text.split())) for it in output.find("band_structure").iter("occupations")])
 
