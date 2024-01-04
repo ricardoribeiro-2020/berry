@@ -1,10 +1,24 @@
-"""This module contains the algorithm behind band classification.
-It determines which points belong to each band used for posterior calculations.
-The algorithm uses machine learning techniques to cluster the data.
 """
+Band Classification Algorithm
+
+This module houses the band classification algorithm, which determines the assignment
+of points to respective bands for subsequent calculations. The algorithm employs graph theory
+to determine the connectivity of points in the k-space, and then uses unsupervised machine learning
+to classify the points into bands.
+
+TODO:
+  - Implement parallelization of the algorithm
+  - Extend the algorithm to handle 3D cases, adjusting data reading based on dimensionality and data structure
+  - Implement the algorithm to resolve forbidden paths
+  - Implement the algorithm to address points connected to more than one band
+"""
+
 
 from __future__ import annotations
 from multiprocessing import Process, Manager
+import random
+import string
+import textwrap
 from typing import Tuple, Union, Callable
 from functools import partial
 
@@ -39,33 +53,36 @@ NOT_SOLVED = 0
 N_NEIGS = 4
 
 EVALUATE_RESULT_HELP = '''
-    -------------- Report considering dot-product information -------------
+    ---------------------- Report considering dot-product information ----------------------------
             C -> Mean dot-product |<i|j>| of each k-point
-            ---------------------------------------------------------
-            Value |                              Description
-            ------------------------------------------------------
-            0     :                        The point is not solved
-            1     :  MISTAKE               C <= 0.2
-            2     :  DEGENERATE            It is a degenerate point.
-            3     :  POTENTIAL_MISTAKE     C <= 0.8
-            4     :  POTENTIAL_CORRECT     0.8 < C < 0.9
-            5     :  CORRECT               C > 0.9
-    -----------------------------------------------------------------------
+            ----------------------------------------------------------------------------
+            Value | Abbreviation |                Description
+            ----------------------------------------------------------------------------
+            0     |     NOT      |      -                     The point is not solved
+            1     |     MIS      |      MISTAKE               C <= 0.2
+            2     |     DEG      |      DEGENERATE            It is a degenerate point
+            3     |     PMI      |      POTENTIAL_MISTAKE     C <= 0.8
+            4     |     PCO      |      POTENTIAL_CORRECT     0.8 < C < 0.9
+            5     |     COR      |      CORRECT               C > 0.9
+    -----------------------------------------------------------------------------------------------
 '''
+EVALUATE_RESULT_HEADER = ['NOT', 'MIS', 'DEG', 'PMI', 'PCO', 'COR']
 
 VALIDATE_RESULT_HELP = '''
-    ------------- Report considering energy continuity criteria -----------
-            N -> Number of directions that preserves energy continuity.
-            ---------------------------------------------------------
-            Value |                              Description
-            ---------------------------------------------------------
-            0     :                        The point is not solved
-            1     :  MISTAKE               N = 0
-            2     :  DEGENERATE            It is a degenerate point.
-            3     :  OTHER                 0 < N < 4
-            4     :  CORRECT               N = 4
-    -----------------------------------------------------------------------
+    ----------------------- Report considering energy continuity criteria -------------------------
+            N -> Number of directions that preserves energy continuity. (4 is the maximum)
+            C -> Mean dot-product |<i|j>| of each k-point. (1 is the maximum)
+            ----------------------------------------------------------------------------
+            Value | Abbreviation |                Description
+            ----------------------------------------------------------------------------
+            0     |     NOT      |      -                       The point is not solved
+            1     |     MIS      |      MISTAKE         N = 0    and/or        C <= 0.2
+            2     |     DEG      |      DEGENERATE             It is a degenerate point
+            3     |     OTH      |      OTHER           0 < N < 4 and     0.8 < C < 0.9
+            4     |     COR      |      CORRECT         N = 4     and           C > 0.9
+    ----------------------------------------------------------------------------------------------
 '''
+VALIDATE_RESULT_HEADER = ['NOT', 'MIS', 'DEG', 'OTH', 'COR']
 
 
 def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
@@ -283,7 +300,7 @@ class MATERIAL:
         obtain_output() : None
             This function prepares the final data structures
                 that are essential to other programs.
-        print_report() : None
+        print_report() : (str, np.ndarray)
             Shows on screen the report for each band.
         correct_signal() : None
             This function evaluates the k-point signal calculated on previous analysis and attributes
@@ -330,7 +347,7 @@ class MATERIAL:
 
     def make_BandsEnergy(self) -> np.ndarray:
         '''
-        It sets the energy information in more convenient data structure
+        It sets the energy information in more convinient data structure
         
         Parameters
             None
@@ -408,6 +425,7 @@ class MATERIAL:
         eigenvalues = self.eigenvalues[:, bands].T.reshape(n_vectors)
         self.vectors = np.stack([ik, jk, eigenvalues], axis=1)
         self.logger.percent_complete(100, 100, title=process_name)
+        print()
 
         self.GRAPH.add_nodes_from(np.arange(n_vectors))     # Add the nodes, each node represent a k point
         
@@ -428,7 +446,7 @@ class MATERIAL:
                     It contains the degenerate points found.
             '''
             degenerates = []
-            for i, v in vectors:     # i is the index of vector v
+            for i, v in vectors:
                 degenerado = np.where(np.all(np.isclose(self.vectors[i+1:]-v, 0),
                                     axis=1))[0] # Verify which points have numerically the same value
                 if len(degenerado) > 0:
@@ -489,7 +507,7 @@ class MATERIAL:
             neigh = neighs.pop(0) if len(neighs) > 0 else None
         return neigh == j if neigh is not None else False
 
-    def make_connections(self, tol:float=0.95) -> None:
+    def make_connections(self, tol:float=0.6) -> None:
         '''
         This function evaluates the connection between each k point,
         and adds an edge to the graph if its connection is greater
@@ -535,14 +553,16 @@ class MATERIAL:
                     for each first neighbor
                     Edge(i,j) = 1 iff <i, j> ~ 1
                     '''
+                    connection = 1 - 2/np.pi * np.arccos(connection)
                     if connection > tol:
-                        edges.append([i_, j_])
+                        edges.append([i_, j_, connection])  # Add the weighted edge
             return edges
 
+        self.logger.info(f'\tTolerance: {tol}')
         # Parallelize the edges calculation
         edges = self.parallelize('Computing Edges', connection_component, range(len(self.vectors)))
         # Establish the edges on the graph from edges array
-        self.GRAPH.add_edges_from(edges)
+        self.GRAPH.add_weighted_edges_from(edges)
 
         ###########################################################################
         # Solve problems that a degenerate point may cause
@@ -554,6 +574,7 @@ class MATERIAL:
             The degenerate points may cause problems.
             The algorithm below finds its problems and solves them.
             '''
+            flag = False
             if not self.find_path(d1, d2):
                 # Verify if exist a path that connects two forbidden points
                 # The points does not cause problems but are degenerated, then, they are signaled
@@ -625,10 +646,18 @@ class MATERIAL:
         # Show the degenerate points that causes problems
         ###########################################################################
         self.solved_problems_info : list[str, list] = ['', []]
-        self.solved_problems_info[0] = '\n\tThe number of points with forbidden paths between them is: ' + str(len(problems))
+        forbidden_points = '''\n\t\t  ''' + textwrap.fill(
+            'A forbidden path indicates that a specific k-point was identified as degenerate. However, this k-point establishes a connection between two distinct bands, culminating in the k-point having a link with the same k-point in a different band—an arrangement that is not allowed.',
+            width=110,
+            subsequent_indent='\t\t  '
+        ) + '\n'
+
+        self.solved_problems_info[0] = '\n\t\tThe number of points with forbidden paths between them is: ' + str(len(problems))
+        self.solved_problems_info[0] += '\n\t' + forbidden_points
         if len(problems) > 0:
-            self.solved_problems_info[0] += '\n\t    Problems in points:'
+            self.solved_problems_info[0] += '\n\t\t  Problems in points:'
             self.logger.info('\t*** Points with forbidden paths found and solved ***')
+            self.logger.info(forbidden_points)
             self.logger.info('\t    The problems and their solutions are:')
         
         calc_k_bn = lambda p: (p % self.nks, p // self.nks + self.min_band )
@@ -710,7 +739,7 @@ class MATERIAL:
             value = f(iterator, *args)              # The function f is applied to the iterator
             if value is not None:
                 # The function may not return anything
-                result += f(iterator, *args)        # Store the output into result array
+                result += value        # Store the output into result array
             per[0] += len(iterator)                 # The counter is actualized
             
             # Show on screen the progress bar
@@ -733,11 +762,11 @@ class MATERIAL:
         while len(process) > 0:
             p = process.pop(0)
             p.join()
+        self.logger.percent_complete(N, N, title=process_name)
+        print()
+        return result
 
-        self.logger.info()
-        return np.array(result)
-
-    def get_components(self, alpha: float=0.5) -> None:
+    def get_components(self, alpha: float=0.5, first_iteration=False) -> None:
         '''
         The make_connections function constructs the graph, in which
         it can detect components well constructed.
@@ -759,49 +788,119 @@ class MATERIAL:
         ###########################################################################
         self.logger.info('\n\n\t\tNumber of Components: '.rstrip('\n'))
         self.logger.info(f'\t\t{nx.number_connected_components(self.GRAPH)}')
-        self.components = [COMPONENT(self.GRAPH.subgraph(c),
-                                     self.kpoints_index,
-                                     self.matrix)
-                           for c in nx.connected_components(self.GRAPH)]    # Identify the components
-        index_sorted = np.argsort([component.N
-                                   for component in self.components])[::-1] # Sort the components by the number of nodes in decreasing order
 
-        ###########################################################################
-        # Identify the clusters and samples
-        ###########################################################################
-        self.solved : list[COMPONENT] = []
-        clusters : list[COMPONENT] = []
-        samples : list[COMPONENT] = []
-        for i in index_sorted:
-            # The first biggest components that can not join to the others are identified as clusters
-            component = self.components[i]
-            if component.N == self.nks:
-                #  If the number of nodes inside the component equals the total number of k points, the cluster is considered solved
-                self.solved.append(component)
-                continue
-            component.calculate_pointsMatrix()  # Computes the projection into k-space
-            component.calc_boundary()           # Undersample the points by representative points identification
-            if len(clusters) == 0:
-                # The biggest component if it is not complete then it is the first cluster
-                clusters.append(component)
-                continue
-            if not np.any([cluster.validate(component)
-                           for cluster in clusters]):
-                # Verification if the component can join other clusters.
-                # If it can not, then it is a cluster.
-                clusters.append(component)
+        resolution = 1
+        step = 0.1 
+        flag_resolution = True
+        max_iter = 5
+        iteration = 0
+
+        best_score = 0
+        best_iteration = None
+        max_solved = 0
+        
+        N_g_nks_prev = self.nbnd
+
+        def communites2clusters(communities: list[list[Kpoint]]) -> list[COMPONENT]:
+            self.components = [COMPONENT(self.GRAPH.subgraph(c),
+                                        self.kpoints_index,
+                                        self.matrix)
+                            for c in communities]    # Identify the components
+
+            index_sorted = np.argsort([component.N
+                                    for component in self.components])[::-1] # Sort the components by the number of nodes in decreasing order
+
+            ###########################################################################
+            # Identify the clusters and samples
+            ###########################################################################
+            self.solved : list[COMPONENT] = []
+            clusters : list[COMPONENT] = []
+            samples : list[COMPONENT] = []
+            number_nodes = []
+            for i in index_sorted:
+                # The first biggest components that can not join to the others are identified as clusters
+                component = self.components[i]
+                number_nodes.append(component.N)
+                if component.N == self.nks:
+                    #  If the number of nodes inside the component equals the total number of k points, the cluster is considered solved
+                    self.solved.append(component)
+                    continue
+
+                component.calculate_pointsMatrix()  # Computes the projection into k-space
+                component.calc_boundary()           # Undersample the points by representative points identification
+                if len(clusters) == 0:
+                    # The biggest component if it is not complete then it is the first cluster
+                    clusters.append(component)
+                    continue
+                if not np.any([cluster.validate(component)
+                            for cluster in clusters]):
+                    # Verification if the component can join other clusters.
+                    # If it can not, then it is a cluster.
+                    clusters.append(component)
+                else:
+                    # If it can, then it is a sample.
+                    samples.append(component)
+            
+            self.logger.info(f'\t\tNumber of Communities: {len(self.components)}')
+            self.logger.info(f'\t\tPhase 1: {len(self.solved)}/{self.nbnd} Solved')
+            self.logger.info(f'\t\tInitial clusters: {len(clusters)} Samples: {len(samples)}')
+
+            number_nodes = np.array(number_nodes)
+            N_g_nks = np.sum(number_nodes > self.nks)
+
+            self.logger.info(f'\t\tNumber of components with more than {self.nks} nodes: {N_g_nks}')
+
+            return clusters, samples, N_g_nks
+
+        while flag_resolution:
+            if first_iteration:
+                self.logger.info(f'\n\t\tResolution: {resolution:.2f}, Iteration: {iteration + 1}')
+                communities = nx.community.louvain_communities(self.GRAPH, resolution=resolution, weight='weight')
             else:
-                # If it can, then it is a sample.
-                samples.append(component)
-        self.logger.info(f'\t\tPhase 1: {len(self.solved)}/{self.nbnd} Solved')
-        self.logger.info(f'\t\tInitial clusters: {len(clusters)} Samples: {len(samples)}')
+                communities = nx.connected_components(self.GRAPH) 
+
+            clusters, samples, N_g_nks = communites2clusters(communities)
+
+            total_bands_computed = len(self.solved) + len(clusters)
+            if not first_iteration:
+                break
+
+            if total_bands_computed == self.nbnd and len(self.solved) >= 0 and N_g_nks == 0:
+                flag_resolution = False
+                break
+
+            if best_iteration is None or np.abs(self.nbnd - total_bands_computed) < best_score and len(self.solved) > max_solved and N_g_nks < N_g_nks_prev:
+                best_iteration = communities
+                best_score = np.abs(self.nbnd - total_bands_computed)
+                max_solved = len(self.solved)
+
+            iteration += 1
+            if iteration == max_iter:
+                communities = best_iteration
+                self.logger.info(f'\n\t\tBest Iteration:')
+                clusters, samples, N_g_nks = communites2clusters(communities)
+                break
+
+            if total_bands_computed > self.nbnd:
+                resolution  -= step
+            else:
+                resolution  += step
+            step /= 2
 
         ###########################################################################
         # Assigning samples to clusters by selecting the best option
         ###########################################################################
-        count = np.array([0, len(samples)])
+        count = np.array([0, len(samples) * len(samples) * len(clusters)])
         while len(samples) > 0:
             evaluate_samples = np.zeros((len(samples), 2))                          # Samples' scores storage
+            self.logger.debug(f'Len samples: {len(samples)}')
+            self.logger.debug(f'Len clusters: {len(clusters)}')
+            if len(clusters) == 0 and len(samples) > 0:
+                self.logger.debug('No more clusters')
+                self.logger.debug(f'Len samples: {len(samples)}')
+                self.logger.debug(f'Size samples: {samples[0].N}')
+                self.logger.debug(f'Number solved: {len(self.solved)}')
+                break
             for i_s, sample in enumerate(samples):
                 # Comparison of each sample to each cluster
                 scores = np.zeros(len(clusters))                                    # Storage the score of each cluster with the sample
@@ -820,6 +919,8 @@ class MATERIAL:
                                                            self.ENERGIES,
                                                            self.connections,
                                                            alpha=alpha)             # Calculate the score
+                    count[0] += 1                                                   # Update the counter
+                    self.logger.percent_complete(count[0], count[1], title='Clustering Samples')
                 evaluate_samples[i_s] = np.array([np.max(scores),
                                                 np.argmax(scores)])                 # Store the best cluster's score
 
@@ -840,6 +941,7 @@ class MATERIAL:
                 self.logger.debug('\n\tCluster Solved')
                 self.solved.append(clusters.pop(bn))
 
+        self.logger.percent_complete(count[1], count[1], title='Clustering Samples')
         self.logger.info(f'\t\tPhase 2: {len(self.solved)}/{self.nbnd} Solved')
 
         if len(self.solved)/self.nbnd < 1:
@@ -874,8 +976,10 @@ class MATERIAL:
                 connections = []                                                    # The array that store the dot-product with the k-point's neighbors
                 for i_neig, k_neig in enumerate(self.neighbors[k]):
                     # Obtain the dot-product with each neighbor
-                    if k_neig == -1:
+                    if k_neig == -1 or k_neig not in solved.k_points:
                         continue
+                    if solved.bands_number.get(k_neig) is None:
+                        solved.calculate_values()
                     bn2 = solved.bands_number[k_neig] + self.min_band               # The neighbor's band
                     connections.append(self.connections[k, i_neig, bn1, bn2])       # <k, k neighbor>
 
@@ -920,7 +1024,7 @@ class MATERIAL:
         # Scoring the result.
         # Signaling and storage of degenerate k-points.
         ###########################################################################
-
+        self.degenerate_final = []                                                 # Final degenerates k-points
         for d1, d2 in self.degenerates:
             # Signaling the numerically degenerate points Ei ~ Ej
             k1 = d1 % self.nks                                              # k point
@@ -934,6 +1038,22 @@ class MATERIAL:
 
             self.signal_final[k1, bn1] = DEGENERATE                         # Signal k_point as Degenerate
             self.signal_final[k2, bn2] = DEGENERATE                         # Signal k_point as Degenerate
+
+            k_neigs = self.neighbors[k1]                                    # k-point's neighbors
+            flag_neig = k_neigs != -1                                       # Flag to obtain the allowed neighbors
+            i_neigs = np.arange(N_NEIGS)[flag_neig]                         # Neighbors' index
+            k_neigs = k_neigs[flag_neig]                                    # Allowed neighbors
+
+            if len(k_neigs) == 0:
+                # If there are no neighbors the k-point's score is 0
+                continue
+            bn1 = self.bands_final[k1, bn1]                                 # K-point's band
+            bn2 = self.bands_final[k2, bn2]                                 # K-point's band
+            dps = self.connections[k1, i_neigs, bn1, bn2]        # Dot-product between the k-point and their neighbors
+            if np.any(np.logical_and(dps >= 0.5, dps <= 0.8)):
+                # It is considered degenerate if the k-point has some 
+                # neighbor's dot-product between 0.5 and 0.8
+                self.degenerate_final.append([k1, bn1, bn2])                # Storage the degenerate k-point
 
         k_basis_rotation : list[Tuple[Kpoint, Kpoint, Band, list[Band]]] = []           # Storage pairs of points that are degenerates by dot product 0.5 < <i|j> < 0.8
         for bn in range(self.total_bands):
@@ -997,7 +1117,6 @@ class MATERIAL:
                     continue
                 degenerates.append([k, bn, bn_])
 
-        self.degenerate_final = []                                                 # Final degenerates k-points
         analyzed = []                                                              # K-points analyzed
         for i, (k, bn, bn_) in enumerate(degenerates):
             # For each possible degenerate point stored inside k_basis_rotation.
@@ -1029,8 +1148,8 @@ class MATERIAL:
             self.degenerate_final.append(same_group[np.argmax(points)])                     # There is only one degenerate point
         
         self.degenerate_final = np.array(self.degenerate_final)
-
-    def print_report(self, signal_report: np.ndarray, description:str, show:bool=True) -> None:
+    
+    def print_report(self, signal_report: np.ndarray, description:str, show:bool=True) -> (str, np.ndarray):
         '''
         Shows on screen the report for each band.
 
@@ -1067,35 +1186,31 @@ class MATERIAL:
         final_report += '\n\t\t Signaling: how many events ' + \
                         'in each band signaled.\n'
         bands_header = '\n\t\t Band | '
+        
+        header_text = EVALUATE_RESULT_HEADER if MAX == 6 else VALIDATE_RESULT_HEADER
+        header = header_text + ['Score']
 
-        header = list(range(MAX)) + ['Score']
-        for signal, value in enumerate(header):
-            # Make the header
-            #  Band |    0    1   2     3     4      5 ...
-            n_spaces = len(str(np.max(bands_report[:, signal])))-1
-            bands_header += ' '*n_spaces+str(value) + '   '
+        n_spaces = len(str(np.max(bands_report[:, -1]))) + 4
+
+        bands_header += ''.join(f"{h:^{n_spaces}}" for h in header[:-1])
+        bands_header += f'{header[-1]:>8}'
+
 
         final_report += bands_header + '\n\t\t'
-        final_report += '-'*len(bands_header)
+        final_report += '-' * len(bands_header)
 
         for bn, report in enumerate(bands_report):
             # Make the report
-            #  bn    |    0    0   0     0     0   nks
-            bn += self.min_band
-            final_report += f'\n\t\t {bn}{" "*(4-len(str(bn)))} |' + ' '
-            for signal, value in enumerate(report):
-                if signal < MAX:
-                    value = int(value)
-                n_max = len(str(np.max(bands_report[:, signal])))
-                n_spaces = n_max - len(str(value))
-                final_report += ' '*n_spaces+str(value) + '   '
+            final_report += f'\n\t\t {bn+self.min_band:<4d} | '
+            final_report += ''.join(f"{int(r):^{n_spaces}d}" for r in report[:-1])
+            final_report += f'{report[-1]:>8.4f}'
         final_report += '\n'
         if show:
             self.logger.info(final_report)              # Show on screen
             return None
         return final_report, bands_report
     
-    def correct_signal(self) -> None:
+    def correct_signal(self, last=False) -> None:
         '''
         This function evaluates the k-point signal calculated on previous analysis and attributes
         a new signal value depending only on energy continuity.
@@ -1127,6 +1242,10 @@ class MATERIAL:
             signal, scores = evaluate_point(k, bn, self.kpoints_index,
                                             self.matrix, self.signal_final, 
                                             self.bands_final, self.eigenvalues)         # Obtain the new signal
+            
+            if last and self.final_score[bn] > 0.99 and signal == MISTAKE:
+                signal = OTHER
+
             self.correct_signalfinal[k, bn] = signal                                    # Store this new signal
             if signal == OTHER:
                 # If the point was not marked as a correct or mistake signal, It is stored
@@ -1139,12 +1258,18 @@ class MATERIAL:
         ###########################################################################
         k_error, bn_error = np.where(self.correct_signalfinal == MISTAKE)           # Identify Mistakes
         k_other, bn_other = np.where(self.correct_signalfinal == OTHER)             # Identify k-points with some discontinuity
-        other_same = self.correct_signalfinal_prev[k_other, bn_other] == OTHER      # Verify if these points were the same as the previous iteration
-        k_ot = k_other[other_same]                                                  # Store these repeated k-points
-        bn_ot = bn_other[other_same]                                                # Save their bands
-        not_same = np.logical_not(other_same)                                       # Identify which points are different
-        k_other = k_other[not_same]                                                 # The different k-points
-        bn_other = bn_other[not_same]                                               # Their bands
+        if last:
+            for k, bn in zip(k_error, bn_error):
+                signal = self.correct_signalfinal[k, bn]                                       # The k-point's signal
+                if self.final_score[bn] > 0.99 and signal == MISTAKE:
+                    self.correct_signalfinal[k, bn] = OTHER
+                    self.signal_final[k, bn] = POTENTIAL_CORRECT
+
+        # k_ot = k_other[other_same]                                                  # Store these repeated k-points
+        # bn_ot = bn_other[other_same]                                                # Save their bands
+        # not_same = np.logical_not(other_same)                                       # Identify which points are different
+        # k_other = k_other[not_same]                                                 # The different k-points
+        # bn_other = bn_other[not_same]                                               # Their bands
 
         ks = np.concatenate((k_error, k_other))                                     # Join the k-points marked as a mistake or other signal
         bnds = np.concatenate((bn_error, bn_other))                                 # Join the k-points' bands
@@ -1194,7 +1319,7 @@ class MATERIAL:
             edges = np.array(edges)
             self.GRAPH.add_edges_from(edges)                                                        # Build the identified edges
             self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)                       # Save the currect result
-            self.correct_signalfinal[k_ot, bn_ot] = CORRECT-1                                       # Signaling as CORRECT the repeated k-points
+            # self.correct_signalfinal[k_ot, bn_ot] = CORRECT-1                                       # Signaling as CORRECT the repeated k-points
 
     def report(self):
         self.final_report += '*************************************************************************************************\n'
@@ -1202,20 +1327,20 @@ class MATERIAL:
         self.final_report += '*************************************************************************************************\n\n'
 
         self.final_report += f'\n\tLegend of report:\n'
-        self.final_report += EVALUATE_RESULT_HELP
-        self.final_report += '\n'
+        # self.final_report += EVALUATE_RESULT_HELP
+        # self.final_report += '\n'
         self.final_report += VALIDATE_RESULT_HELP
         self.final_report += '\n'
-        report_s1, report_a1 = self.print_report(self.signal_final, 'Final Report for dot-product information', show=False)
-        self.final_report += report_s1
-        self.final_report += '\n'
-        retport_s2, report_a2 = self.print_report(self.correct_signalfinal, 'Validation Report for energy continuity criteria', show=False)
+        # report_s1, report_a1 = self.print_report(self.signal_final, 'Final Report for dot-product information', show=False)
+        # self.final_report += report_s1
+        # self.final_report += '\n'
+        retport_s2, report_a2 = self.print_report(self.correct_signalfinal, 'Final Report', show=False)
         self.final_report += retport_s2
         self.final_report += '\n'
 
         p_report, problems = self.solved_problems_info
 
-        self.final_report += '\n\tSummary:\n'
+        self.final_report += '\n\t{:-^30}\n\t{: <30}\n\t{:-^30}\n'.format('', 'Summary:', '')
         self.final_report += p_report
 
         point2k_bn = lambda p: (p % self.nks, p // self.nks + self.min_band)
@@ -1228,12 +1353,11 @@ class MATERIAL:
             bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1               # Final band
             bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2               # Final band
         
-            self.final_report += f'\n\t\t K-point: {k1} bands: {bn1}, {bn2}' # Report
+            self.final_report += f'\n\t\t\tK-point: {k1} bands: {bn1}, {bn2}' # Report
         
         if len(problems) > 0:
-            self.final_report += f'\n\t\tThese points were corrected.'
+            self.final_report += f'\n\t\t  These points were corrected.'
         
-        filter_deg = lambda k1, bn1, bn2: np.any(np.all(np.array([k1, bn1, bn2]) == self.degenerate_final, axis=1))
         degenerates = []
 
         for i, (d1, d2) in enumerate(self.degenerates):
@@ -1243,34 +1367,38 @@ class MATERIAL:
             Bk2 = self.bands_final[k2] == bn2                               # Find in which  band the k-point was attributed
             bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1               # Final band
             bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2               # Final band
-            if filter_deg(k1, bn1, bn2):
+            if self.signal_final[k1, bn1] == DEGENERATE:
                 degenerates.append([k1, bn1, bn2])
 
         if len(degenerates) > 0:
             n = len(degenerates)
-            self.final_report += f'\n\n\tNumber of degenerate points: {n}\n'
+            self.final_report += f'\n\n\t\tNumber of degenerate points: {n}\n'
             for k1, bn1, bn2 in degenerates:
-                self.final_report += f'\n\t\t * K-point: {k1} Bands: {bn1}, {bn2}'
-            self.final_report += f'\n\n\t   Run the basis correction program on these bands.'
+                self.final_report += f'\n\t\t\t* K-point: {k1} Bands: {bn1}, {bn2}'
+            self.final_report += f'\n\n\t\t  ' + textwrap.fill(
+                'Degenerate points refer to instances where a point shares the same numerical energy value with another k-point, and the dot product with its neighboring points falls within the range of 0.5 to 0.8. As a result, it is necessary for the rotation basis program to be executed for these points.',
+                width=110,
+                subsequent_indent='\t\t  '
+            ) + '\n'
 
         if len(self.degenerate_final) > 0:
             n = len(self.degenerate_final)
-            self.final_report += f'\n\n\tFound {n} points with one or more neighbor with a dot-product between 0.5 and 0.8.'
-            self.final_report += f'\n\t\tMay not be degenerate points under energy criteria.'
-            self.final_report += f'\n\t\tSo they were not signaled and no corrections were applied.'
-            self.final_report += f'\n\t\tHowever, they are saved in the degeneratefinal.npy file, in case they need analysis.'
+            self.final_report += f'\n\n\t\t  Found {n} points with one or more neighbor with a dot-product between 0.5 and 0.8.'
+            self.final_report += f'\n\t\t  May not be degenerate points under energy criteria.'
+            self.final_report += f'\n\t\t  So they were not signaled and no corrections were applied.'
+            self.final_report += f'\n\t\t  However, they are saved in the degeneratefinal.npy file, in case they need analysis.'
             if self.logger.level == logging.DEBUG:
-                self.final_report += '\n\t\tPoints:'
+                self.final_report += '\n\t\t   Points:'
                 i_sort = np.argsort([k for k, _, _ in self.degenerate_final])
                 for k, bn1, bn2 in self.degenerate_final[i_sort]:
-                    self.final_report += f'\n\t\t * K-point: {k} \tBands: {bn1}, {bn2}'
+                    self.final_report += f'\n\t\t  * K-point: {k} \tBands: {bn1}, {bn2}'
 
         TOL_USABLE = 0.95           # Minimum score to consider a band as usable.
         n_recomended = 0
         max_solved = 0
-
+        
         for i, _ in enumerate(self.final_score):
-            if np.sum(report_a1[i, NOT_SOLVED]) > 0:
+            if np.sum(report_a2[i, NOT_SOLVED]) > 0:
                 break
             max_solved += 1
         
@@ -1282,16 +1410,26 @@ class MATERIAL:
                 break
             n_recomended += 1
         
-        self.final_report += f'\n\n\tThe program solved {self.max_solved} bands.'
-        self.final_report += f'\n\n\tBands from 0 up to {n_recomended-1} can be used.'
+        self.completed_bands = []
+        for i, s in enumerate(self.final_score):
+            if s <= TOL_USABLE or np.sum(report_a2[i, [NOT_SOLVED, MISTAKE]]) > 0:
+                continue
+            self.completed_bands.append(i)
+        self.completed_bands = np.array(self.completed_bands)
+        
+        self.final_report += f'\n\n\n\tThe program has clustered all points for {self.max_solved} bands.'
+        self.final_report += f'\n\n\tYou can use bands from 0 up to {n_recomended - 1}. These bands are completed and do not have potential mistakes.'
 
         if self.max_solved > n_recomended:
-            self.final_report += f'\n\n\tNote that there may be more bands usable but a human verification is required.'
+            self.final_report += f'\n\tNote that there may be more bands usable but a human verification is required.'
             n_max = n_recomended
 
+        self.final_report += f'\n\n\tThe program has clustered withou errors {len(self.completed_bands)} bands. The information is stored in the `completed_bands.npy` file.'
+        self.final_report += f'\n\t\t  Band: ' + ', '.join([str(bn) for bn in self.completed_bands])
+
         if len(degenerates) > 0:
-            self.final_report += f'\n\n\tRun program basis rotation in the following manner:'
-            self.final_report += f'\n\n\t\t $ berry basis {n_max - 1}'
+            self.final_report += f'\n\n\tTo use the program basis rotation, you must run the program for the first {n_max} bands.'
+            self.final_report += f'\n\n\t\t `$ berry basis {n_max - 1}`'
 
         self.final_report += '\n\n*************************************************************************************************\n'
 
@@ -1324,6 +1462,7 @@ class MATERIAL:
         self.final_score = np.zeros(self.total_bands, dtype=float)
         self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
         self.correct_signalfinal_prev = np.full(self.signal_final.shape, -1, int)
+        self.correct_signalfinal_best = np.full(self.signal_final.shape, -1, int)
         self.degenerate_best = None
         max_solved = 0  # The maximum number of solved bands
 
@@ -1334,7 +1473,7 @@ class MATERIAL:
             COUNT += 1
             self.logger.info()
             self.logger.info(f'\n\n\t* Iteration: {COUNT} - Clustering samples for Alpha: {ALPHA} ')
-            self.get_components(alpha=ALPHA)                    # Obtain components from a Graph
+            self.get_components(alpha=ALPHA, first_iteration=COUNT == 1)                    # Obtain components from a Graph
 
             self.logger.info('\n\t\tCalculating output')        
             self.obtain_output()                            # Compute the result
@@ -1351,35 +1490,70 @@ class MATERIAL:
             # Verify and store the best result
             # To be a better result it has to be better score and all k points attributed for all the first max_solved bands
             solved = 0
+            OTHER = 3
+
+            total_not_solved_best = np.sum(self.correct_signalfinal_best == NOT_SOLVED)
+            total_not_solved = np.sum(self.correct_signalfinal == NOT_SOLVED)
+
+            total_best_score = np.sum(self.best_score)
+            total_score = np.sum(self.final_score)
+
+            first_max_bands_best_score = np.sum(self.best_score[:max_solved])
+            first_max_bands_score = np.sum(self.final_score[:max_solved])
+
             for bn, score in enumerate(self.final_score):
                 best_score = self.best_score[bn]
-                not_solved_prev = np.sum(self.correct_signalfinal_prev[:, bn] == NOT_SOLVED)
+                mistake_best = np.sum(self.correct_signalfinal_best[:, bn] == MISTAKE)
+                mistake = np.sum(self.correct_signalfinal[:, bn] == MISTAKE)
+                other_best = np.sum(self.correct_signalfinal_best[:, bn] == OTHER)
+                other = np.sum(self.correct_signalfinal[:, bn] == OTHER)
                 not_solved = np.sum(self.correct_signalfinal[:, bn] == NOT_SOLVED)
-                if score != 0 and score >= best_score and not_solved <= not_solved_prev:
+
+                solved_flag = not_solved == 0 
+                if COUNT > 1:
+                    solved_flag = solved_flag and mistake < mistake_best and other < other_best or score >= best_score and mistake == mistake_best and other == other_best
+                    solved_flag = solved_flag or (score > 0.99 and mistake + other < mistake_best + other_best)
+                self.logger.debug(f'\n\t\t\tPrev best result for band {bn}: {best_score} mistakes: {mistake_best} other: {other_best}')
+                self.logger.debug(f'\n\t\t\tNew best result for band {bn}: {score} mistakes: {mistake} other: {other}. Solved: {solved_flag}')
+                if score != 0 and not_solved == 0 and (score > best_score or solved_flag):
                     solved += 1
                 else:
                     break
-            if solved >= max_solved:
+            
+            self.logger.info(f'\n\t\t Iteration: {COUNT} - Clustered bands: {solved} - Max clustered bands: {max_solved}')
+
+            total_solved_flag = first_max_bands_score >= first_max_bands_best_score and total_score > total_best_score and total_not_solved < total_not_solved_best
+            if total_solved_flag or solved >= max_solved or COUNT == 1:
                 self.best_bands_final = np.copy(self.bands_final)
                 self.best_score = np.copy(self.final_score)
                 self.best_signal_final = np.copy(self.signal_final)
                 self.degenerate_best = np.copy(self.degenerate_final)
+                self.correct_signalfinal_best = np.copy(self.correct_signalfinal)
                 max_solved = solved
+
+                self.logger.debug(f'\n\t\t\tNew best result')
+
             else:
                 self.bands_final = np.copy(self.best_bands_final)
                 self.final_score = np.copy(self.best_score)
-                self.signal_final = np.copy(self.best_signal_final)
-                self.degenerate_final = np.copy(self.degenerate_best)        
-                self.obtain_output()
+                self.degenerate_final = np.copy(self.degenerate_best)      
+                self.signal_final = np.copy(self.best_signal_final)  
+
                 self.correct_signal()
+
+                self.logger.info(f'\n\t\t\tBest result: {max_solved} bands')
+                self.print_report(self.correct_signalfinal, f'Validation Report: Best Iteration')     # Print result
+
             ALPHA -= step
         
         # The best result is maintained
         self.bands_final = np.copy(self.best_bands_final)
         self.final_score = np.copy(self.best_score)
-        self.signal_final = np.copy(self.best_signal_final)
-        self.degenerate_final = np.copy(self.degenerate_best)
+        self.degenerate_final = np.copy(self.degenerate_best)      
+        self.signal_final = np.copy(self.best_signal_final)  
         self.max_solved = max_solved
+
+        self.correct_signal(last=True)
         self.logger.info(self.report())
 
 class COMPONENT:
@@ -1468,19 +1642,27 @@ class COMPONENT:
         self.positions_matrix = None
         self.nodes = np.array(self.GRAPH.nodes)
 
-        self.__id__ = str(self.nodes[0])
+        self.__id__ = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
         self.was_modified = True
         self.scores = {}
+
+    def calculate_values(self):
+        self.nodes = np.array(self.GRAPH.nodes)
+        self.k_points = self.nodes % self.nks                               # Transform node id to k-point notation
+        self.bands_number = dict(zip(self.k_points,
+                                     self.nodes//self.nks))                 # A dictionary that links the initial band to a k-point
 
     def calculate_pointsMatrix(self) -> None:
         '''
         Calculate the k-points' projection on a matrix representation of k-space.
         '''
+        self.nodes = np.array(self.GRAPH.nodes)
+        self.k_points = self.nodes % self.nks                               # Transform node id to k-point notation
+        self.bands_number = dict(zip(self.k_points,
+                                     self.nodes//self.nks))
+
         self.positions_matrix = np.zeros(self.m_shape, int)                 # Position matrix for k-points projection
         index_points = self.kpoints_index[self.nodes % self.nks]            # Get the k-points' indices
-        self.k_points = self.nodes % self.nks                               # Transform node id to k-point notation
-        self.bands_number = dict(zip(self.nodes % self.nks,
-                                     self.nodes//self.nks))                 # A dictionary that links the initial band to a k-point
         self.positions_matrix[index_points[:, 0], index_points[:, 1]] = 1   # Mark the k-point projection
 
     def get_bands(self) -> None:
@@ -1704,6 +1886,7 @@ class COMPONENT:
             return self.scores[cluster.__id__]
 
         score = 0
+        count_k = 0
         for k in self.k_edges:
             # Each k-point is compared with his respective neighbor
             # that belongs to the comparison component
@@ -1711,6 +1894,7 @@ class COMPONENT:
             ik1, jk1 = self.kpoints_index[k]                                        # k-point idices
             for i_neig, k_n in enumerate(neighbors[k]):
                 # k-point's neighbors
+                count_k += 1
                 if k_n == -1 or k_n not in cluster.k_edges:
                     # If the neighbor is not a valid point the score for that point is 0
                     continue
@@ -1719,6 +1903,6 @@ class COMPONENT:
                 connection = connections[k, i_neig, bn1, bn2]                       # Dot product between k-point and his neighbor
                 energy_val = fit_energy(bn1, bn2, (ik1, jk1), (ik_n, jk_n))         # Computes the energy continuity score
                 score += alpha*connection + (1-alpha)*energy_val                    # Calculates the final k-point score
-        score /= len(self.k_edges)*4                                                # Get the final score
+        score /= count_k if count_k > 0 else 1                                             # Get the final score
         self.scores[cluster.__id__] = score                                         # Store the score
         return score
