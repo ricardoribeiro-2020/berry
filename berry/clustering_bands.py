@@ -84,6 +84,9 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
 
     with open(os.path.join(m.data_dir, 'final_score.npy'), 'wb') as f:
         np.save(f, material.final_score)
+    
+    with open(os.path.join(m.data_dir, 'completed_bands.npy'), 'wb') as f:
+        np.save(f, material.completed_bands)
 
     sys.stdout.write('\n')
     logger.footer()
