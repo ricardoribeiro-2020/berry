@@ -9,7 +9,7 @@ decorator==5.1.1
 entrypoints==0.4
 executing==1.2.0
 findiff==0.9.2
-fonttools==4.38.0
+fonttools>=4.43.0
 ipykernel==6.17.1
 ipython>=8.10
 jedi==0.18.2
