@@ -89,7 +89,7 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
     dpc_base = Array(ctypes.c_double, 2 * DPC_SIZE, lock=False)
     dpc = np.frombuffer(dpc_base, dtype=np.complex128).reshape(DPC_SHAPE)
     dp = np.zeros(DPC_SHAPE, dtype=np.float64)
-    d_phase = np.load(os.path.join(m.workdir, "data/phase.npy"))
+    d_phase = np.load(os.path.join(m.workdir, os.path.join(m.data_dir, "phase.npy")))
 
     ###########################################################################
     # 4. CALCULATE
