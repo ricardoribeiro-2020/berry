@@ -17,7 +17,6 @@ except:
     pass
 
 
-#TODO: Figure out how to share the dpc array between processes inside a class
 def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
     start = time()
 
@@ -71,8 +70,8 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
     ########################################################################### 
-    DPC_SIZE = m.nks * 4 * m.nbnd * m.nbnd
-    DPC_SHAPE = (m.nks, 4, m.nbnd, m.nbnd)
+    DPC_SIZE = m.nks * 2 * m.dimensions * m.nbnd * m.nbnd
+    DPC_SHAPE = (m.nks, 2 * m.dimensions, m.nbnd, m.nbnd)
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
@@ -109,8 +108,8 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
     ###########################################################################
     # 5. SAVE OUTPUT
     ###########################################################################
-    np.save(os.path.join(m.workdir, "data/dpc.npy"), dpc)
-    np.save(os.path.join(m.workdir, "data/dp.npy"), dp)
+    np.save(os.path.join(m.data_dir, "dpc.npy"), dpc)
+    np.save(os.path.join(m.data_dir, "dp.npy"), dp)
     logger.info(f"\n\tDot products saved to file dpc.npy")
     logger.info(f"\tDot products modulus saved to file dp.npy")
 
