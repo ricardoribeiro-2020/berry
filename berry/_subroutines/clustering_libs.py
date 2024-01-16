@@ -8,7 +8,6 @@ to classify the points into bands.
 
 TODO:
   - Implement parallelization of the algorithm
-  - Extend the algorithm to handle 3D cases, adjusting data reading based on dimensionality and data structure
   - Implement the algorithm to resolve forbidden paths
   - Implement the algorithm to address points connected to more than one band
 """
