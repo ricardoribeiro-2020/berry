@@ -24,7 +24,7 @@ from functools import partial
 
 import logging
 
-from scipy.ndimage import correlate
+from scipy.ndimage import sobel, correlate
 from scipy.optimize import curve_fit
 
 import numpy as np
@@ -50,7 +50,6 @@ DEGENERATE = 2
 MISTAKE = 1
 NOT_SOLVED = 0
 
-N_NEIGS = 4
 
 EVALUATE_RESULT_HELP = '''
     ---------------------- Report considering dot-product information ----------------------------
@@ -68,9 +67,9 @@ EVALUATE_RESULT_HELP = '''
 '''
 EVALUATE_RESULT_HEADER = ['NOT', 'MIS', 'DEG', 'PMI', 'PCO', 'COR']
 
-VALIDATE_RESULT_HELP = '''
+VALIDATE_RESULT_HELP = lambda N: f'''
     ----------------------- Report considering energy continuity criteria -------------------------
-            N -> Number of directions that preserves energy continuity. (4 is the maximum)
+            N -> Number of directions that preserves energy continuity. ({N} is the maximum)
             C -> Mean dot-product |<i|j>| of each k-point. (1 is the maximum)
             ----------------------------------------------------------------------------
             Value | Abbreviation |                Description
@@ -78,7 +77,7 @@ VALIDATE_RESULT_HELP = '''
             0     |     NOT      |      -                   The point is not solved
             1     |     MIS      |      MISTAKE             N = 0 and/or C <= 0.2
             2     |     DEG      |      DEGENERATE          It is a degenerate point
-            3     |     OTH      |      OTHER               0 < N < 4 and 0.8 < C < 0.9
+            3     |     OTH      |      OTHER               0 < N < {N} and 0.8 < C < 0.9
             4     |     COR      |      CORRECT             N = 4 and C > 0.9
     ----------------------------------------------------------------------------------------------
 '''
@@ -124,12 +123,14 @@ def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
 
     return MISTAKE
 
-def evaluate_point(k: Kpoint, bn: Band, k_index: np.ndarray, k_matrix: np.ndarray,
+def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_matrix: np.ndarray,
                    signal: np.ndarray, bands: np.ndarray, energies: np.ndarray) -> Tuple[int, list[int]]:
     '''
     Assign a signal value depending on energy continuity.
 
     Parameters
+        dimension: int
+            Dimension of the problem.
         k: Kpoint
             Integer that index the k point on analysis.
         bn: Band
@@ -166,12 +167,20 @@ def evaluate_point(k: Kpoint, bn: Band, k_index: np.ndarray, k_matrix: np.ndarra
     MISTAKE = 1
     OTHER = 3
 
-    TOL = 0.9         # Tolerance to consider that exist energy continuity
-    N = 4             # Number of points to fit the curve
+    TOL = 0.9                       # Tolerance to consider that exist energy continuity
+    N = 4                           # Number of points to fit the curve
+    N_NEIGS = 2 * dimension         # Number of neighbors to consider the continuity
 
     mach_bn = bands[k, bn]          # original band
     sig = signal[k, bn]             # signal
-    ik, jk = k_index[k]             # k point indices on k-space
+
+    if dimension == 1:
+        ik = k_index[k]             # k point index on k-space
+    elif dimension == 2:
+        ik, jk = k_index[k]         # k point indices on k-space
+    else:
+        ik, jk, kk = k_index[k]     # k point indices on k-space
+
     Ek = energies[k, mach_bn]       # k point's Energy value
 
     def difference_energy(Ek: float, Enew: float) -> float:
@@ -191,47 +200,140 @@ def evaluate_point(k: Kpoint, bn: Band, k_index: np.ndarray, k_matrix: np.ndarra
         delta_energy = np.abs(Enew-Ek)                          # Actual difference between Ek and Enew
         return min_energy/delta_energy if delta_energy else 1   # Score
 
-    directions = np.array([[1,0], [0,1], [-1,0], [0,-1]])       # Down, Right, Up, Left
-    energy_vals = []
 
-    ###########################################################################
-    # Calculate the score for each direction
-    ###########################################################################
+    if dimension == 1:
+        directions = np.array([[1], [-1]])                     # Right, Left
+        energy_vals = []
 
-    for direction in directions:
-        # Iterates each direction and obtain N points to be used for fit the curve
-        n = np.repeat(np.arange(1,N+1),2).reshape(N,2)
-        kn_index = n*direction + np.array([ik, jk])
-        i, j = kn_index[:, 0], kn_index[:, 1]   # Selects the indices of these N points
-        flag = len(np.unique(i)) > 1            # Necessary to identify which will be the direction of the fit
-        if flag:
+        ###########################################################################
+        # Calculate the score for each direction
+        ###########################################################################
+
+        for direction in directions:
+            # Iterates each direction and obtain N points to be used for fit the curve
+            n = np.repeat(np.arange(1,N+1),2).reshape(N,2)
+            kn_index = n*direction + np.array([ik])
+            i = kn_index[:, 0]
             i = i[i >= 0]
             i = i[i < k_matrix.shape[0]]
-            j = np.full(len(i), j[0])
-        else:
-            j = j[j >= 0]
-            j = j[j < k_matrix.shape[1]]
-            i = np.full(len(j), i[0])
-        
-        ks = k_matrix[i, j] if len(i) > 0 else []   # Identify the N k points
-        if len(ks) == 0:    
-            # The direction in analysis does not have points
-            energy_vals.append(1)
-            continue
-        if len(ks) <= 3:    
-            # If there are not enough points to fit the curve it is used the Energy of the nearest neighbor
-            Eneig = energies[ks[0], bands[ks[0], bn]]
-            energy_vals.append(difference_energy(Ek, Eneig))
-            continue
-        
-        k_bands = bands[ks, bn]
-        Es = energies[ks, k_bands]
-        X = i if flag else j
-        new_x = ik if flag else jk
-        pol = lambda x, a, b, c: a*x**2 + b*x + c           # Second order polynomial
-        popt, pcov = curve_fit(pol, X, Es)                  # Curve fitting
-        Enew = pol(new_x, *popt)                            # Obtain Energy value
-        energy_vals.append(difference_energy(Ek, Enew))     # Calculate score
+
+            ks = k_matrix[i] if len(i) > 0 else []               # Identify the N k points
+            if len(ks) == 0:
+                # The direction in analysis does not have points
+                energy_vals.append(1)
+                continue
+            if len(ks) <= 3:
+                # If there are not enough points to fit the curve it is used the Energy of the nearest neighbor
+                Eneig = energies[ks[0], bands[ks[0], bn]]
+                energy_vals.append(difference_energy(Ek, Eneig))
+                continue
+            
+            k_bands = bands[ks, bn]
+            Es = energies[ks, k_bands]
+            X = i
+            new_x = ik
+            pol = lambda x, a, b, c: a*x**2 + b*x + c           # Second order polynomial
+            popt, pcov = curve_fit(pol, X, Es)                  # Curve fitting
+            Enew = pol(new_x, *popt)                            # Obtain Energy value
+            energy_vals.append(difference_energy(Ek, Enew))     # Calculate score
+
+    elif dimension == 2:
+
+        directions = np.array([[1,0], [0,1], [-1,0], [0,-1]])       # Down, Right, Up, Left
+        energy_vals = []
+
+        ###########################################################################
+        # Calculate the score for each direction
+        ###########################################################################
+
+        for direction in directions:
+            # Iterates each direction and obtain N points to be used for fit the curve
+            n = np.repeat(np.arange(1,N+1),2).reshape(N,2)
+            kn_index = n*direction + np.array([ik, jk])
+            i, j = kn_index[:, 0], kn_index[:, 1]   # Selects the indices of these N points
+            flag = len(np.unique(i)) > 1            # Necessary to identify which will be the direction of the fit
+            if flag:
+                i = i[i >= 0]
+                i = i[i < k_matrix.shape[0]]
+                j = np.full(len(i), j[0])
+            else:
+                j = j[j >= 0]
+                j = j[j < k_matrix.shape[1]]
+                i = np.full(len(j), i[0])
+            
+            ks = k_matrix[i, j] if len(i) > 0 else []   # Identify the N k points
+            if len(ks) == 0:    
+                # The direction in analysis does not have points
+                energy_vals.append(1)
+                continue
+            if len(ks) <= 3:    
+                # If there are not enough points to fit the curve it is used the Energy of the nearest neighbor
+                Eneig = energies[ks[0], bands[ks[0], bn]]
+                energy_vals.append(difference_energy(Ek, Eneig))
+                continue
+            
+            k_bands = bands[ks, bn]
+            Es = energies[ks, k_bands]
+            X = i if flag else j
+            new_x = ik if flag else jk
+            pol = lambda x, a, b, c: a*x**2 + b*x + c           # Second order polynomial
+            popt, pcov = curve_fit(pol, X, Es)                  # Curve fitting
+            Enew = pol(new_x, *popt)                            # Obtain Energy value
+            energy_vals.append(difference_energy(Ek, Enew))     # Calculate score
+    
+    else:
+            
+        directions = np.array([[1,0,0], [0,1,0], [0,0,1], [-1,0,0], [0,-1,0], [0,0,-1]]) # Down, Right, Up, Left, Front, Back
+        energy_vals = []
+
+        ###########################################################################
+        # Calculate the score for each direction
+        ###########################################################################
+
+        for direction in directions:
+            # Iterates each direction and obtain N points to be used for fit the curve
+            n = np.repeat(np.arange(1,N+1),3).reshape(N,3)
+            kn_index = n*direction + np.array([ik, jk, kk])
+            i, j, k = kn_index[:, 0], kn_index[:, 1], kn_index[:, 2]
+            flag_i = len(np.unique(i)) > 1
+            flag_j = len(np.unique(j)) > 1
+
+            if flag_i:
+                i = i[i >= 0]
+                i = i[i < k_matrix.shape[0]]
+                j = np.full(len(i), j[0])
+                k = np.full(len(i), k[0])
+            elif flag_j:
+                j = j[j >= 0]
+                j = j[j < k_matrix.shape[1]]
+                i = np.full(len(j), i[0])
+                k = np.full(len(j), k[0])
+            else:
+                k = k[k >= 0]
+                k = k[k < k_matrix.shape[2]]
+                i = np.full(len(k), i[0])
+                j = np.full(len(k), j[0])
+
+            ks = k_matrix[i, j, k] if len(i) > 0 else []   # Identify the N k points
+            if len(ks) == 0:
+                # The direction in analysis does not have points
+                energy_vals.append(1)
+                continue
+            if len(ks) <= 3:
+                # If there are not enough points to fit the curve it is used the Energy of the nearest neighbor
+                Eneig = energies[ks[0], bands[ks[0], bn]]
+                energy_vals.append(difference_energy(Ek, Eneig))
+                continue
+
+            k_bands = bands[ks, bn]
+            Es = energies[ks, k_bands]
+            X = i if flag_i else j if flag_j else k
+            new_x = ik if flag_i else jk if flag_j else kk
+            pol = lambda x, a, b, c: a*x**2 + b*x + c           # Second order polynomial
+            popt, pcov = curve_fit(pol, X, Es)                  # Curve fitting
+            Enew = pol(new_x, *popt)                            # Obtain Energy value
+            energy_vals.append(difference_energy(Ek, Enew))     # Calculate score
+
     
     energy_vals = np.array(energy_vals)
     scores = (energy_vals > TOL)*1  # Verification energy continuity on each direction
@@ -360,27 +462,60 @@ class MATERIAL:
         '''
         bands_final, _ = np.meshgrid(np.arange(0, self.nbnd),
                                      np.arange(0, self.nks))
-        BandsEnergy = np.empty((self.nbnd, self.nkx, self.nky), float)
+        
+        if self.dimensions == 1:
+            BandsEnergy = np.empty((self.nbnd, self.nks), float)
+            for bn in range(self.nbnd):
+                BandsEnergy[bn] = self.eigenvalues[:, bands_final[:, bn]]
+            return BandsEnergy
+        
+        if self.dimensions == 2:
+            BandsEnergy = np.empty((self.nbnd, self.nkx, self.nky), float)
+            for bn in range(self.nbnd):
+                count = -1
+                for j in range(self.nky):
+                    for i in range(self.nkx):
+                        count += 1
+                        BandsEnergy[bn, i, j] = self.eigenvalues[count,
+                                                        bands_final[count, bn]]
+            return BandsEnergy
+        
+        BandsEnergy = np.empty((self.nbnd, self.nkx, self.nky, self.nkz), float)
         for bn in range(self.nbnd):
             count = -1
-            zarray = np.empty((self.nkx, self.nky), float)
-            for j in range(self.nky):
-                for i in range(self.nkx):
-                    count += 1
-                    zarray[i, j] = self.eigenvalues[count,
-                                                    bands_final[count, bn]]
-            BandsEnergy[bn] = zarray
-        return BandsEnergy
+            for k in range(self.nkz):
+                for j in range(self.nky):
+                    for i in range(self.nkx):
+                        count += 1
+                        BandsEnergy[bn, i, j, k] = self.eigenvalues[count,
+                                                                    bands_final[count, bn]]
 
     def make_kpointsIndex(self) -> None:
         '''
         It computes the indices of each k point in their correspondence in k-space.
         '''
-        My, Mx = np.meshgrid(np.arange(self.nky), np.arange(self.nkx))
-        self.matrix = My*self.nkx+Mx
-        counts = np.arange(self.nks)
-        self.kpoints_index = np.stack([counts % self.nkx, counts//self.nkx],
-                                      axis=1)
+        if self.dimensions == 1:
+            self.matrix = np.arange(self.nks)
+            self.kpoints_index = np.arange(self.nks)
+            return
+    
+        if self.dimensions == 2:
+            My, Mx = np.meshgrid(np.arange(self.nky), np.arange(self.nkx))
+            self.matrix = My * self.nkx + Mx
+            counts = np.arange(self.nks)
+            self.kpoints_index = np.stack([counts % self.nkx, counts//self.nkx],
+                                            axis=1)
+            return
+        
+        self.matrix = np.empty((self.nkx, self.nky, self.nkz), int)
+        self.kpoints_index = np.empty((self.nks, 3), int)
+        count = -1
+        for k in range(self.nkz):
+            for j in range(self.nky):
+                for i in range(self.nkx):
+                    count += 1
+                    self.matrix[i, j, k] = count
+                    self.kpoints_index[count] = [i, j, k]
 
     def make_vectors(self, min_band: int=0, max_band: int=-1) -> None:
         '''
@@ -395,8 +530,8 @@ class MATERIAL:
                     default: All
 
         Result
-            self.vectors: [kx_b, ky_b, E_b]
-                k = (kx, ky)_b: k point
+            self.vectors: [kx_b, ky_b, kz_b, E_b]
+                k = (kx, ky, k_z)_b: k point
                 b: band number
             self.degenerados: It marks the degenerate points
             self.GRPAH: It is a graph in which each node represents a vector.
@@ -421,14 +556,25 @@ class MATERIAL:
         # Compute the vector representation of each k point
         ###########################################################################
         n_vectors = (nbnd-min_band)*self.nks
-        ik = np.tile(self.kpoints_index[:, 0], nbnd-min_band)
-        jk = np.tile(self.kpoints_index[:, 1], nbnd-min_band)
+        ik = np.tile(self.kpoints_index[:, 0], nbnd-min_band) if self.dimensions > 1 else np.tile(self.kpoints_index, nbnd-min_band)
+
+        stack_aux = [ik]
+
+        if self.dimensions >= 2:
+            jk = np.tile(self.kpoints_index[:, 1], nbnd-min_band)
+            stack_aux.append(jk)
+        if self.dimensions == 3:
+            kk = np.tile(self.kpoints_index[:, 2], nbnd-min_band)
+            stack_aux.append(kk)
+
         bands = np.arange(min_band, nbnd)
         eigenvalues = self.eigenvalues[:, bands].T.reshape(n_vectors)
-        self.vectors = np.stack([ik, jk, eigenvalues], axis=1)
+        stack_aux.append(eigenvalues)
+
+        self.vectors = np.stack(stack_aux, axis=1)
         self.logger.percent_complete(100, 100, title=process_name)
         print()
-
+        
         self.GRAPH.add_nodes_from(np.arange(n_vectors))     # Add the nodes, each node represent a k point
         
         ###########################################################################
@@ -538,7 +684,7 @@ class MATERIAL:
                     List of all edges that was found.
             '''
             edges = []
-            bands = np.repeat(np.arange(self.min_band, self.max_band+1), len(self.neighbors[0]))
+            bands = np.repeat(np.arange(self.min_band, self.max_band+1), self.number_neighbors)
             for i_ in vectors:
                 bn1 = i_//self.nks + self.min_band  # bi
                 k1 = i_ % self.nks
@@ -806,7 +952,8 @@ class MATERIAL:
         def communites2clusters(communities: list[list[Kpoint]]) -> list[COMPONENT]:
             self.components = [COMPONENT(self.GRAPH.subgraph(c),
                                         self.kpoints_index,
-                                        self.matrix)
+                                        self.matrix,
+                                        self.dimensions)
                             for c in communities]    # Identify the components
 
             index_sorted = np.argsort([component.N
@@ -1043,7 +1190,7 @@ class MATERIAL:
 
             k_neigs = self.neighbors[k1]                                    # k-point's neighbors
             flag_neig = k_neigs != -1                                       # Flag to obtain the allowed neighbors
-            i_neigs = np.arange(N_NEIGS)[flag_neig]                         # Neighbors' index
+            i_neigs = np.arange(self.number_neighbors)[flag_neig]                         # Neighbors' index
             k_neigs = k_neigs[flag_neig]                                    # Allowed neighbors
 
             if len(k_neigs) == 0:
@@ -1069,7 +1216,7 @@ class MATERIAL:
                     continue
                 kneigs = self.neighbors[k]                                                  # k-point's neighbors
                 flag_neig = kneigs != -1                                                    # Flag to obtain the allowed neighbors 
-                i_neigs = np.arange(N_NEIGS)[flag_neig]                                     # Neighbors' index
+                i_neigs = np.arange(self.number_neighbors)[flag_neig]                                     # Neighbors' index
                 kneigs = kneigs[flag_neig]                                                  # Allowed neighbors
                 flag_neig = self.signal_final[kneigs, bn] != NOT_SOLVED                     # Flag to obtain only attributed neighbors
                 i_neigs = i_neigs[flag_neig]                                                # Update Neighbors' index
@@ -1088,7 +1235,7 @@ class MATERIAL:
                     dps_deg = self.connections[k, i_neigs, bn_k]                                # All k-point dot-products
                     k = k[0]                                                                    # K-point
                     i_deg, bn_deg = np.where(np.logical_and(dps_deg >= 0.5, dps_deg <= 0.8))    # Find where the k-point dot-product is considered degenerate
-                    k_deg = self.neighbors[k][i_deg+np.min(i_neigs)]                            # Identify the degenerate neighbors
+                    k_deg = self.neighbors[k][i_deg + np.min(i_neigs)]                            # Identify the degenerate neighbors
                     i_sort = np.argsort(k_deg)                                                  # Sort the degenerate neighbors
                     k_deg = k_deg[i_sort]                                                       # Sort the degenerate neighbors
                     bn_deg = bn_deg[i_sort]                                                     # Sort the degenerate bands    
@@ -1178,8 +1325,6 @@ class MATERIAL:
             bands_report.append(report)
 
             self.logger.debug(f'\t\t\tNew Band: {bn}\tnr fails: {report[0]}')
-            if self.logger.level == logging.DEBUG:
-                self.logger.debug(_bands_numbers(self.nkx, self.nky, self.bands_final[:, bn]))
 
         ###########################################################################
         # Set up the data representation
@@ -1241,7 +1386,7 @@ class MATERIAL:
         ###########################################################################
         for k, bn in zip(ks, bnds):
             # Iterate over all k-point signaled as potential points where the energy continuity may fail
-            signal, scores = evaluate_point(k, bn, self.kpoints_index,
+            signal, scores = evaluate_point(self.dimensions, k, bn, self.kpoints_index,
                                             self.matrix, self.signal_final, 
                                             self.bands_final, self.eigenvalues)         # Obtain the new signal
             
@@ -1278,18 +1423,25 @@ class MATERIAL:
 
         bands_signaling = np.zeros((self.total_bands, *self.matrix.shape), int)     # The array used to identify the k-points' projection in k-space
         k_index = self.kpoints_index[ks]                                            # k-points' indeces
-        ik, jk = k_index[:, 0], k_index[:, 1]                                       # unfold idices
-        bands_signaling[bnds, ik, jk] = 1                                           # Marking the projection
+
+        ik = k_index[:, 0]
+        indices = [ik]
+        if self.dimensions >= 2:
+            jk = k_index[:, 1]
+            indices.append(jk)
+        if self.dimensions == 3:
+            kk = k_index[:, 2]
+            indices.append(kk)
+        bands_signaling[bnds, indices] = 1                                           # Mark the k-points' projection in k-space
 
         mean_fitler = np.ones((3,3))                                                # It is the kernel used to select the problems' boundary
         self.GRAPH = nx.Graph()                                                     # The new Graph
         self.GRAPH.add_nodes_from(np.arange(len(self.vectors)))                     # Set the nodes
-        directions = np.array([[1, 0], [0, 1]])                                     # Auxiliary array with the directions to evaluate the edges' existence
 
         for bn, band in enumerate(bands_signaling[self.min_band: self.max_band+1]):
             # For each band construct the new graph
             bn += self.min_band                                                                     # Initial band correction
-            if np.sum(band) > self.nks*0.05:
+            if self.dimensions == 2 and np.sum(band) > self.nks*0.05:
                 # If there are more than 5% of marked points, the boundaries of 
                 # the problem are considered a problem too.
                 identify_points = correlate(band, mean_fitler, output=None,
@@ -1298,10 +1450,13 @@ class MATERIAL:
                 # Otherwise, just the marked points are considered
                 identify_points = band > 0
             edges = []
-            for ik, row in enumerate(identify_points):
-                for jk, need_correction in enumerate(row):
+
+            if self.dimensions == 1:
+                directions = np.array([1])                                                  # Auxiliary array with the directions to evaluate the edges' existence
+                # If the problem is 1D, the graph is built by the neighbors
+                for k, need_correction in enumerate(identify_points):
                     # For each not identified point the graph is built
-                    kp = self.matrix[ik, jk]                                                        # The k-point on position ik, jk in k-space
+                    kp = self.matrix[k]                                                         # The k-point on position k in k-space
                     if need_correction and kp not in self.degenerate_final:
                         # If the point was identified as an error or as degenerate
                         # It does not have an edge in the graph
@@ -1309,15 +1464,62 @@ class MATERIAL:
                     for direction in directions:
                         # It is verified for each direction (Down, Right) if the points,
                         # and their neighbors belong to the same band
-                        ikn, jkn = np.array([ik, jk]) + direction                                   # Neighbor's idices in k-space
-                        if ikn >= self.matrix.shape[0] or jkn >= self.matrix.shape[1]:
+                        kn = k + direction                                                      # Neighbor's idices in k-space
+                        if kn >= self.matrix.shape[0]:
                             # The neighbor is outside of the boundaries
                             continue
-                        kneig = self.matrix[ikn, jkn]                                               # Neighbor k-point
-                        if not identify_points[ikn, jkn]:
-                            p = kp + (self.bands_final[kp, bn] - self.min_band)*self.nks            # The kpoint's node id
-                            pn = kneig + (self.bands_final[kneig, bn] - self.min_band)*self.nks     # The neighbor's node id
-                            edges.append([p, pn])                                                   # Establish an edge between nodes p (k-point) and pn (neighbor)
+                        kneig = self.matrix[kn]                                                 # Neighbor k-point
+                        if not identify_points[kn]:
+                            p = kp + (self.bands_final[k, bn] - self.min_band)*self.nks
+                            pn = kneig + (self.bands_final[kn, bn] - self.min_band)*self.nks
+                            edges.append([p, pn])                                               # Establish an edge between nodes p (k-point) and pn (neighbor)
+
+            if self.dimensions == 2:
+                directions = np.array([[1, 0], [0, 1]])                                     # Auxiliary array with the directions to evaluate the edges' existence
+                for ik, row in enumerate(identify_points):
+                    for jk, need_correction in enumerate(row):
+                        # For each not identified point the graph is built
+                        kp = self.matrix[ik, jk]                                                        # The k-point on position ik, jk in k-space
+                        if need_correction and kp not in self.degenerate_final:
+                            # If the point was identified as an error or as degenerate
+                            # It does not have an edge in the graph
+                            continue
+                        for direction in directions:
+                            # It is verified for each direction (Down, Right) if the points,
+                            # and their neighbors belong to the same band
+                            ikn, jkn = np.array([ik, jk]) + direction                                   # Neighbor's idices in k-space
+                            if ikn >= self.matrix.shape[0] or jkn >= self.matrix.shape[1]:
+                                # The neighbor is outside of the boundaries
+                                continue
+                            kneig = self.matrix[ikn, jkn]                                               # Neighbor k-point
+                            if not identify_points[ikn, jkn]:
+                                p = kp + (self.bands_final[kp, bn] - self.min_band)*self.nks            # The kpoint's node id
+                                pn = kneig + (self.bands_final[kneig, bn] - self.min_band)*self.nks     # The neighbor's node id
+                                edges.append([p, pn])                                                   # Establish an edge between nodes p (k-point) and pn (neighbor)
+
+            if self.dimensions == 3:
+                directions = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])                        # Auxiliary array with the directions to evaluate the edges' existence
+                for ik, plane in enumerate(identify_points):
+                    for jk, row in enumerate(plane):
+                        for kk, need_correction in enumerate(row):
+                            # For each not identified point the graph is built
+                            kp = self.matrix[ik, jk, kk]                                                        # The k-point on position ik, jk in k-space
+                            if need_correction and kp not in self.degenerate_final:
+                                # If the point was identified as an error or as degenerate
+                                # It does not have an edge in the graph
+                                continue
+                            for direction in directions:
+                                # It is verified for each direction (Down, Right) if the points,
+                                # and their neighbors belong to the same band
+                                ikn, jkn, kkn = np.array([ik, jk, kk]) + direction                            # Neighbor's idices in k-space
+                                if ikn >= self.matrix.shape[0] or jkn >= self.matrix.shape[1] or kkn >= self.matrix.shape[2]:
+                                    # The neighbor is outside of the boundaries
+                                    continue
+                                kneig = self.matrix[ikn, jkn, kkn]                                            # Neighbor k-point
+                                if not identify_points[ikn, jkn, kkn]:
+                                    p = kp + (self.bands_final[kp, bn] - self.min_band)*self.nks             # The kpoint's node id
+                                    pn = kneig + (self.bands_final[kneig, bn] - self.min_band)*self.nks
+                                    edges.append([p, pn])                                                       # Establish an edge between nodes p (k-point) and pn (neighbor)
             edges = np.array(edges)
             self.GRAPH.add_edges_from(edges)                                                        # Build the identified edges
             self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)                       # Save the currect result
@@ -1331,7 +1533,7 @@ class MATERIAL:
         self.final_report += f'\n\tLegend of report:\n'
         # self.final_report += EVALUATE_RESULT_HELP
         # self.final_report += '\n'
-        self.final_report += VALIDATE_RESULT_HELP
+        self.final_report += VALIDATE_RESULT_HELP(self.dimensions * 2)
         self.final_report += '\n'
         # report_s1, report_a1 = self.print_report(self.signal_final, 'Final Report for dot-product information', show=False)
         # self.final_report += report_s1
@@ -1378,7 +1580,7 @@ class MATERIAL:
             for k1, bn1, bn2 in degenerates:
                 self.final_report += f'\n\t\t\t* K-point: {k1} Bands: {bn1}, {bn2}'
             self.final_report += f'\n\n\t\t  ' + textwrap.fill(
-                'Degenerate points refer to instances where a point shares the same numerical energy value with another k-point, and the dot product with its neighboring points falls within the range of 0.5 to 0.8. \n\tAs a result, it is necessary for the rotation basis program to be executed for these points.'
+                'Degenerate points refer to instances where a point shares the same numerical energy value with another k-point, and the dot product with its neighboring points falls within the range of 0.5 to 0.8. \n\tAs a result, it is necessary for the rotation basis program to be executed for these points.',
                 width=110,
                 subsequent_indent='\t\t  '
             ) + '\n'
@@ -1577,6 +1779,8 @@ class COMPONENT:
             Contains the k-points' indices on a k-space projection.
         matrix : array_like
             The matrix that contains in each position the k-point identification.
+        dimensions : int
+            The number of dimensions of the k-space.
         position_matrix : None
             Contains the k-points' projection on k-space for points that belong to the graph.
         nodes : array_like
@@ -1606,7 +1810,7 @@ class COMPONENT:
                 into account the dot product of all essential points and their
                 energy value.
     '''
-    def __init__(self, component: nx.Graph, kpoints_index:np.ndarray, matrix: np.ndarray) -> None:
+    def __init__(self, component: nx.Graph, kpoints_index:np.ndarray, matrix: np.ndarray, dimensions:int) -> None:
         '''
         Setup the component information.
 
@@ -1623,6 +1827,8 @@ class COMPONENT:
                 Contains the k-points' indices on a k-space projection.
             matrix : array_like
                 The matrix that contains in each position the k-point identification.
+            dimensions : int
+                The number of dimensions of the k-space.
             position_matrix : None
                 Contains the k-points' projection on k-space for points that belong to the graph.
             nodes : array_like
@@ -1641,6 +1847,7 @@ class COMPONENT:
         self.nks = self.m_shape[0]*self.m_shape[1]
         self.kpoints_index = np.array(kpoints_index)
         self.matrix = matrix
+        self.dimensions = dimensions
         self.positions_matrix = None
         self.nodes = np.array(self.GRAPH.nodes)
 
@@ -1665,7 +1872,12 @@ class COMPONENT:
 
         self.positions_matrix = np.zeros(self.m_shape, int)                 # Position matrix for k-points projection
         index_points = self.kpoints_index[self.nodes % self.nks]            # Get the k-points' indices
-        self.positions_matrix[index_points[:, 0], index_points[:, 1]] = 1   # Mark the k-point projection
+        if self.dimensions == 1:
+            self.positions_matrix[index_points] = 1                          # Mark the k-point projection
+        elif self.dimensions == 2:
+            self.positions_matrix[index_points[:, 0], index_points[:, 1]] = 1   # Mark the k-point projection
+        else:
+            self.positions_matrix[index_points[:, 0], index_points[:, 1], index_points[:, 2]] = 1
 
     def get_bands(self) -> None:
         '''
@@ -1730,22 +1942,26 @@ class COMPONENT:
         if self.positions_matrix is None:
             # Calculates the k-space projection if it does not exist
             self.calculate_pointsMatrix()
-        # Prewitt operator as the kernel for processing the positions
-        # matrix to obtain the boundary points
-        #       | -1 0 +1 |                       | -1 -1 -1 |      
-        # Gx =  | -1 0 +1 |         Gy =  Gx^T =  |  0  0  0 |
-        #       | -1 0 +1 |                       | +1 +1 +1 |
-        Gx = np.array([[-1, 0, 1]]*3)
-        Gy = np.array([[-1, 0, 1]]*3).T
-        # Compute the convolution between the Prewitt Kernel and the position matrix
-        # Ax = Gx*position_matrix   Ay = Gy*position_matrix
-        # Boundary = sqrt( Ax^2 + Ay^2)
-        Ax = correlate(self.positions_matrix, Gx, output=None,
-                       mode='reflect', cval=0.0, origin=0)
-        Ay = correlate(self.positions_matrix, Gy, output=None,
-                       mode='reflect', cval=0.0, origin=0)
-        self.boundary = np.sqrt(Ax**2+Ay**2)*self.positions_matrix
+
+        if self.dimensions == 1:
+            A = np.where(self.positions_matrix == 1)[0]
+            self.boundary = np.zeros(self.positions_matrix.shape, dtype=int)
+            if len(A) > 0:
+                self.boundary[A[0]] = 1
+                self.boundary[A[-1]] = 1
+        
+        elif self.dimensions == 2:
+            Ax = sobel(self.positions_matrix, axis=0)    # Sobel operator for x-axis
+            Ay = sobel(self.positions_matrix, axis=1)    # Sobel operator for y-axis
+            self.boundary = np.sqrt(Ax**2 + Ay**2)         # Boundary points
+        else:
+            Ax = sobel(self.positions_matrix, axis=0)
+            Ay = sobel(self.positions_matrix, axis=1)
+            Az = sobel(self.positions_matrix, axis=2)
+            self.boundary = np.sqrt(Ax**2 + Ay**2 + Az**2)
+
         # Maintain  all marked points
+        self.boundary = self.boundary * self.positions_matrix
         self.boundary = (self.boundary > 0)
         self.k_edges = self.matrix[self.boundary]
         if len(self.k_edges) == 0:
@@ -1779,7 +1995,7 @@ class COMPONENT:
             score: float
                 It is a float that represents the similarity between components.
         '''
-        def difference_energy(bn1 : int, bn2 : int, iK1 : Tuple[int, int], iK2: Tuple[int, int], Ei : float = None) -> float:
+        def difference_energy(bn1 : int, bn2 : int, iK1 : list[int], iK2: list[int], Ei : float = None) -> float:
             '''
             Compute the score for the k-point with their neighbor by comparing all possible energies with Ei energy.
 
@@ -1788,9 +2004,9 @@ class COMPONENT:
                     k-point's band.
                 bn2 : int
                     neighbor's band.
-                iK1 : Tuple[int, int]
+                iK1 : list[int]
                     K-point's indices on k-space.
-                iK2 : Tuple[int, int]
+                iK2 : list[int]
                     Neighbor's indices on k-space.
                 Ei : float
                     Energy to comparison. The default is None
@@ -1799,16 +2015,31 @@ class COMPONENT:
                 score : float
                     If the neighbor's energy is the closest one to Ei the score is one, otherwise is between 0 and 1.
             '''
-            ik1, jk1 = iK1                                                  # Unfold k-point's indices
-            ik_n, jk_n = iK2                                                # Unfold neighbor's indices
-            Ei = energies[bn1, ik1, jk1] if Ei is None else Ei              # The k-point Energy is used as default
+            ik1 = iK1[0]
+            ik_n = iK2[0]
+            if self.dimensions >= 2:
+                jk1 = iK1[1]
+                jk_n = iK2[1]
+            if self.dimensions == 3:
+                kk1 = iK1[2]
+                kk_n = iK2[2]
+
+            energies_candidates = lambda bn: energies[bn, ik_n] if self.dimensions == 1 else energies[bn, ik_n, jk_n] if self.dimensions == 2 else energies[bn, ik_n, jk_n, kk_n]
+
+            if self.dimensions == 1:
+                Ei = energies[bn1, ik1] if Ei is None else Ei              # The k-point Energy is used as default
+            elif self.dimensions == 2:
+                Ei = energies[bn1, ik1, jk1] if Ei is None else Ei
+            else:
+                Ei = energies[bn1, ik1, jk1, kk1] if Ei is None else Ei        
+
             bands = np.arange(min_band, max_band+1)                         # Bands in analysis
-            min_energy = np.min([np.abs(Ei-energies[bn, ik_n, jk_n])        # The energy difference between Ei and all possibilities
+            min_energy = np.min([np.abs(Ei-energies_candidates(bn))        # The energy difference between Ei and all possibilities
                                     for bn in bands])
-            delta_energy = np.abs(Ei-energies[bn2, ik_n, jk_n])             # Actual energy difference
+            delta_energy = np.abs(Ei-energies_candidates(bn2))             # Actual energy difference
             return min_energy/delta_energy if delta_energy else 1           # score
         
-        def fit_energy(bn1 : int, bn2 : int, iK1 : Tuple[int, int], iK2: Tuple[int, int]) -> float:
+        def fit_energy(bn1 : int, bn2 : int, iK1 : list[int], iK2: list[int]) -> float:
             '''
             Computes the best energy approximation for the neighbor's position.
 
@@ -1817,9 +2048,9 @@ class COMPONENT:
                     k-point's band.
                 bn2 : int
                     neighbor's band.
-                iK1 : Tuple[int, int]
+                iK1 : list[int]
                     K-point's indices on k-space.
-                iK2 : Tuple[int, int]
+                iK2 : list[int]
                     Neighbor's indices on k-space.
             
             Return
@@ -1827,58 +2058,162 @@ class COMPONENT:
                     Result of difference_energy function using the computed Energy.
             '''
             N = 4                                                               # Number of points to take account into the curve fitting
-            ik1, jk1 = iK1                                                      # Unfold k-point's indices
-            ik_n, jk_n = iK2                                                    # Unfold neighbor's indices
+            ik1 = iK1[0]
+            ik_n = iK2[0]
+            if self.dimensions >= 2:
+                jk1 = iK1[1]
+                jk_n = iK2[1]
+            if self.dimensions == 3:
+                kk1 = iK1[2]
+                kk_n = iK2[2]
+            
 
             ###########################################################################
             # Preparation of the points' indices
             ###########################################################################
-            I = np.full(N+1,ik1)                                                # Repeat N+1 times the ik1 value  
-            J = np.full(N+1,jk1)                                                # Repeat N+1 times the jk1 value  
-            flag = ik1 == ik_n                                                  # Identify the neighbor's direction
-            # Take the (i,j) indices of N+1 points
-            i = I if flag else I + np.arange(0,N+1)*np.sign(ik1-ik_n)
-            j = J if not flag else J + np.arange(0,N+1)*np.sign(jk1-jk_n)
-            
-            if not flag:
-                # If the neighbor is in jk's direction then i is corrected to be inside boundaries.
-                # The shape of js indices is corrected
+
+            if self.dimensions == 1:
+                I = np.full(N+1,ik1)                                                # Repeat N+1 times the ik1 value  
+                i = I + np.arange(0,N+1)*np.sign(ik1-ik_n)
                 i = i[i >= 0]
                 i = i[i < self.m_shape[0]]
-                j = np.full(len(i), jk1)
-            else:
-                # If the neighbor is in ik's direction then j is corrected to be inside boundaries.
-                # The shape of is indices is corrected
-                j = j[j >= 0]
-                j = j[j < self.m_shape[1]]
-                i = np.full(len(j), ik1)
+                ###########################################################################
+                # Computes the best energy using the points above defined
+                ###########################################################################
+                ks = self.matrix[i]                                                  # Select k-points on positions delimited by the (i,j) indices
+                f = lambda e: e in self.k_points                                     # Auxiliar lambda function to verify if an e point is inside component's k-points
+                exist_ks = list(map(f, ks))                                          # Apply f to all ks
+                ks = ks[exist_ks]                                                    # Maintain only the existent k-points
+                if len(ks) <= 3:
+                    # It is necessary at least 3 points to fitting a second order curve
+                    # If there are not enough points is used the difference_energy's default
+                    return difference_energy(bn1, bn2, iK1, iK2)
+                aux_bands = np.array([self.bands_number[kp] for kp in ks])
+                bands = aux_bands + min_band
+                # Use the existent k-points' indices
+                i = i[exist_ks]
+                Es = energies[bands, i]                                              # Get the ks' energies
+                X = i                                                               # Obtain the x values for Es.
+                new_x = ik_n                                                         # Get the position to approximate the energy
 
-            ###########################################################################
-            # Computes the best energy using the points above defined
-            ###########################################################################
-            ks = self.matrix[i, j]                                                  # Select k-points on positions delimited by the (i,j) indices
-            f = lambda e: e in self.k_points                                        # Auxiliar lambda function to verify if an e point is inside component's k-points
-            exist_ks = list(map(f, ks))                                             # Apply f to all ks
-            ks = ks[exist_ks]                                                       # Maintain only the existent k-points
-            if len(ks) <= 3:
-                # It is necessary at least 3 points to fitting a second order curve
-                # If there are not enough points is used the difference_energy's default
-                return difference_energy(bn1, bn2, iK1, iK2)
-            aux_bands = np.array([self.bands_number[kp] for kp in ks])              # Get the ks' bands
-            bands = aux_bands + min_band                                            # Initial band correction
-            # Use the existent k-points' indices
-            i = i[exist_ks]
-            j = j[exist_ks]
-            Es = energies[bands, i, j]                                              # Get the ks' energies
-            X = i if jk1 == jk_n else j                                             # Obtain the x values for Es.
-            new_x = ik_n if jk1 == jk_n else jk_n                                   # Get the position to approximate the energy
+                pol = lambda x, a, b, c: a*x**2 + b*x + c                           # Second order polynomial
+                popt, pcov = curve_fit(pol, X, Es)                                  # Get the optimum parameters
+                Enew = pol(new_x, *popt)                                            # Calculates the new energy
+                # Ei = energies[bn1, ik1, jk1]
+                # LOG.debug(f'Actual Energy: {Ei} Energy founded: {Enew} for {bn1} with {len(i)} points.')
+                return difference_energy(bn1, bn2, iK1, iK2, Ei = Enew)             # Score
 
-            pol = lambda x, a, b, c: a*x**2 + b*x + c                               # Second order polynomial
-            popt, pcov = curve_fit(pol, X, Es)                                      # Get the optimum parameters
-            Enew = pol(new_x, *popt)                                                # Calculates the new energy
-            # Ei = energies[bn1, ik1, jk1]
-            # LOG.debug(f'Actual Energy: {Ei} Energy founded: {Enew} for {bn1} with {len(i)} points.')
-            return difference_energy(bn1, bn2, iK1, iK2, Ei = Enew)                 # Score
+            if self.dimensions == 2:
+
+                I = np.full(N+1,ik1)                                                # Repeat N+1 times the ik1 value  
+                J = np.full(N+1,jk1)                                                # Repeat N+1 times the jk1 value  
+                flag = ik1 == ik_n                                                  # Identify the neighbor's direction
+                # Take the (i,j) indices of N+1 points
+                i = I if flag else I + np.arange(0,N+1)*np.sign(ik1-ik_n)
+                j = J if not flag else J + np.arange(0,N+1)*np.sign(jk1-jk_n)
+                
+                if not flag:
+                    # If the neighbor is in jk's direction then i is corrected to be inside boundaries.
+                    # The shape of js indices is corrected
+                    i = i[i >= 0]
+                    i = i[i < self.m_shape[0]]
+                    j = np.full(len(i), jk1)
+                else:
+                    # If the neighbor is in ik's direction then j is corrected to be inside boundaries.
+                    # The shape of is indices is corrected
+                    j = j[j >= 0]
+                    j = j[j < self.m_shape[1]]
+                    i = np.full(len(j), ik1)
+
+                ###########################################################################
+                # Computes the best energy using the points above defined
+                ###########################################################################
+                ks = self.matrix[i, j]                                                  # Select k-points on positions delimited by the (i,j) indices
+                f = lambda e: e in self.k_points                                        # Auxiliar lambda function to verify if an e point is inside component's k-points
+                exist_ks = list(map(f, ks))                                             # Apply f to all ks
+                ks = ks[exist_ks]                                                       # Maintain only the existent k-points
+                if len(ks) <= 3:
+                    # It is necessary at least 3 points to fitting a second order curve
+                    # If there are not enough points is used the difference_energy's default
+                    return difference_energy(bn1, bn2, iK1, iK2)
+                aux_bands = np.array([self.bands_number[kp] for kp in ks])              # Get the ks' bands
+                bands = aux_bands + min_band                                            # Initial band correction
+                # Use the existent k-points' indices
+                i = i[exist_ks]
+                j = j[exist_ks]
+                Es = energies[bands, i, j]                                              # Get the ks' energies
+                X = i if jk1 == jk_n else j                                             # Obtain the x values for Es.
+                new_x = ik_n if jk1 == jk_n else jk_n                                   # Get the position to approximate the energy
+
+                pol = lambda x, a, b, c: a*x**2 + b*x + c                               # Second order polynomial
+                popt, pcov = curve_fit(pol, X, Es)                                      # Get the optimum parameters
+                Enew = pol(new_x, *popt)                                                # Calculates the new energy
+                # Ei = energies[bn1, ik1, jk1]
+                # LOG.debug(f'Actual Energy: {Ei} Energy founded: {Enew} for {bn1} with {len(i)} points.')
+                return difference_energy(bn1, bn2, iK1, iK2, Ei = Enew)                 # Score
+
+            if self.dimensions == 3:
+                    
+                I = np.full(N+1,ik1)                                                    # Repeat N+1 times the ik1 value  
+                J = np.full(N+1,jk1)                                                    # Repeat N+1 times the jk1 value  
+                K = np.full(N+1,kk1)                                                    # Repeat N+1 times the kk1 value  
+                flag_i = ik1 == ik_n                                                      # Identify the neighbor's direction
+                flag_j = jk1 == jk_n                                                      # Identify the neighbor's direction
+                # Take the (i,j, k) indices of N+1 points
+                i = I if flag_i else I + np.arange(0,N+1)*np.sign(ik1-ik_n)
+                j = J if flag_j else J + np.arange(0,N+1)*np.sign(jk1-jk_n)
+                k = K if not flag_i and not flag_j else K + np.arange(0,N+1)*np.sign(kk1-kk_n)
+
+                if not flag_i:   
+                    # If the neighbor is in jk's direction then i is corrected to be inside boundaries.
+                    # The shape of js indices is corrected
+                    i = i[i >= 0]
+                    i = i[i < self.m_shape[0]]
+                    j = np.full(len(i), jk1)
+                    k = np.full(len(i), kk1)
+                elif not flag_j:
+                    # If the neighbor is in ik's direction then j is corrected to be inside boundaries.
+                    # The shape of is indices is corrected
+                    j = j[j >= 0]
+                    j = j[j < self.m_shape[1]]
+                    i = np.full(len(j), ik1)
+                    k = np.full(len(j), kk1)
+                else:
+                    # If the neighbor is in kk's direction then k is corrected to be inside boundaries.
+                    # The shape of is indices is corrected
+                    k = k[k >= 0]
+                    k = k[k < self.m_shape[2]]
+                    i = np.full(len(k), ik1)
+                    j = np.full(len(k), jk1)
+
+                ###########################################################################
+                # Computes the best energy using the points above defined
+                ###########################################################################
+                ks = self.matrix[i, j, k]                                               # Select k-points on positions delimited by the (i,j) indices
+                f = lambda e: e in self.k_points                                        # Auxiliar lambda function to verify if an e point is inside component's k-points
+                exist_ks = list(map(f, ks))                                             # Apply f to all ks
+                ks = ks[exist_ks]                                                       # Maintain only the existent k-points
+                if len(ks) <= 3:
+                    # It is necessary at least 3 points to fitting a second order curve
+                    # If there are not enough points is used the difference_energy's default
+                    return difference_energy(bn1, bn2, iK1, iK2)
+                aux_bands = np.array([self.bands_number[kp] for kp in ks])              # Get the ks' bands
+                bands = aux_bands + min_band                                            # Initial band correction
+                # Use the existent k-points' indices
+                i = i[exist_ks]
+                j = j[exist_ks]
+                k = k[exist_ks]
+                Es = energies[bands, i, j, k]                                           # Get the ks' energies
+                X = i if jk1 == jk_n and kk1 == kk_n else j if ik1 == ik_n and kk1 == kk_n else k # Obtain the x values for Es.
+                new_x = ik_n if jk1 == jk_n and kk1 == kk_n else jk_n if ik1 == ik_n and kk1 == kk_n else kk_n # Get the position to approximate the energy
+
+                pol = lambda x, a, b, c: a*x**2 + b*x + c                               # Second order polynomial
+                popt, pcov = curve_fit(pol, X, Es)                                      # Get the optimum parameters
+                Enew = pol(new_x, *popt)                                                # Calculates the new energy
+                # Ei = energies[bn1, ik1, jk1]
+                # LOG.debug(f'Actual Energy: {Ei} Energy founded: {Enew} for {bn1} with {len(i)} points.')
+                return difference_energy(bn1, bn2, iK1, iK2, Ei = Enew)                 # Score
+                
 
         ###########################################################################
         # Computes the final score between components
@@ -1893,17 +2228,35 @@ class COMPONENT:
             # Each k-point is compared with his respective neighbor
             # that belongs to the comparison component
             bn1 = self.bands_number[k] + min_band                                   # k-point's band
-            ik1, jk1 = self.kpoints_index[k]                                        # k-point idices
+
+            ik_point_index = []
+            ik1 = self.kpoints_index[k, 0] if self.dimensions > 1 else self.kpoints_index[k]
+            ik_point_index.append(ik1)
+            if self.dimensions >= 2:
+                jk1 = self.kpoints_index[k, 1]                                        # k-point idices
+                ik_point_index.append(jk1)
+            if self.dimensions == 3:
+                kk1 = self.kpoints_index[k, 2]                                   # k-point idices
+                ik_point_index.append(kk1)
+
             for i_neig, k_n in enumerate(neighbors[k]):
                 # k-point's neighbors
                 count_k += 1
                 if k_n == -1 or k_n not in cluster.k_edges:
                     # If the neighbor is not a valid point the score for that point is 0
                     continue
-                ik_n, jk_n = self.kpoints_index[k_n]                                # neighbor's indices
+                ik_n_point_index = []
+                ik_n = cluster.kpoints_index[k_n, 0] if self.dimensions > 1 else cluster.kpoints_index[k_n]
+                ik_n_point_index.append(ik_n)
+                if self.dimensions >= 2:
+                    jk_n = cluster.kpoints_index[k_n, 1]                             # neighbor's indices
+                    ik_n_point_index.append(jk_n)
+                if self.dimensions == 3:
+                    kk_n = cluster.kpoints_index[k_n, 2]                             # neighbor's indices
+                    ik_n_point_index.append(kk_n)
                 bn2 = cluster.bands_number[k_n]+min_band                            # neighbor's band
                 connection = connections[k, i_neig, bn1, bn2]                       # Dot product between k-point and his neighbor
-                energy_val = fit_energy(bn1, bn2, (ik1, jk1), (ik_n, jk_n))         # Computes the energy continuity score
+                energy_val = fit_energy(bn1, bn2, ik_point_index, ik_n_point_index)
                 score += alpha*connection + (1-alpha)*energy_val                    # Calculates the final k-point score
         score /= count_k if count_k > 0 else 1                                             # Get the final score
         self.scores[cluster.__id__] = score                                         # Store the score
