@@ -98,7 +98,7 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
         pre_connection_args = (
             args
             for nk in range(m.nks)
-            for j in range(4)
+            for j in range(2 * m.dimensions)
             if (args := get_point_neighbors(nk, j)) is not None
         )
         pool.starmap(dot, pre_connection_args)
