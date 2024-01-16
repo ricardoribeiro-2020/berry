@@ -1377,7 +1377,7 @@ class MATERIAL:
             for k1, bn1, bn2 in degenerates:
                 self.final_report += f'\n\t\t\t* K-point: {k1} Bands: {bn1}, {bn2}'
             self.final_report += f'\n\n\t\t  ' + textwrap.fill(
-                'Degenerate points refer to instances where a point shares the same numerical energy value with another k-point, and the dot product with its neighboring points falls within the range of 0.5 to 0.8. \n\tAs a result, it is necessary for the rotation basis program to be executed for these points.',
+                'Degenerate points refer to instances where a point shares the same numerical energy value with another k-point, and the dot product with its neighboring points falls within the range of 0.5 to 0.8. \n\tAs a result, it is necessary for the rotation basis program to be executed for these points.'
                 width=110,
                 subsequent_indent='\t\t  '
             ) + '\n'
