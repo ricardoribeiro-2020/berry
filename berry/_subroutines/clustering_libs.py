@@ -250,10 +250,10 @@ class MATERIAL:
     will be used to solve their bands' problem.
 
     Atributes
-        nkx : int
-            The number ok k points on x direction.
-        nky : int
-            The number ok k points on y direction.
+        d : int
+            Dimension of the problem.
+        nk_i : list[int]
+            It contains the number of k points on each direction. 
         nbnb : int
             Total number of bands.
         total_bands : int
@@ -307,16 +307,16 @@ class MATERIAL:
             This function evaluates the k-point signal calculated on previous analysis and attributes
                 a new signal value depending only on energy continuity.
     '''     
-    def __init__(self, nkx: int, nky: int, nbnd: int, nks: int, eigenvalues: np.ndarray,
+    def __init__(self, dimensions:int, nk_i: list[int], nbnd: int, nks: int, eigenvalues: np.ndarray,
                  connections: np.ndarray, neighbors: np.ndarray, logger: log, n_process: int=1) -> None:
         '''
         Initialize the object.
 
         Parameters
-            nkx : int
-                The number ok k points on x direction.
-            nky : int
-                The number ok k points on y direction.
+            d : int
+                Dimension of the problem.
+            nk_i : list[int]
+                It contains the number of k points on each direction. 
             nbnb : int
                 Total number of bands.
             total_bands : int
@@ -334,14 +334,15 @@ class MATERIAL:
             n_process : int
                 Number of processes to use.
         '''
-        self.nkx = nkx
-        self.nky = nky
+        self.dimensions = dimensions
+        self.nkx, self.nky, self.nkz = nk_i
         self.nbnd = nbnd
         self.total_bands = nbnd
         self.nks = nks
         self.eigenvalues = eigenvalues
         self.connections = connections
         self.neighbors = neighbors
+        self.number_neighbors = self.dimensions * 2
         self.vectors = None
         self.n_process = n_process
         self.logger = logger
