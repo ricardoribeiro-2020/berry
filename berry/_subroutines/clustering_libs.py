@@ -75,11 +75,11 @@ VALIDATE_RESULT_HELP = '''
             ----------------------------------------------------------------------------
             Value | Abbreviation |                Description
             ----------------------------------------------------------------------------
-            0     |     NOT      |      -                       The point is not solved
-            1     |     MIS      |      MISTAKE         N = 0    and/or        C <= 0.2
-            2     |     DEG      |      DEGENERATE             It is a degenerate point
-            3     |     OTH      |      OTHER           0 < N < 4 and     0.8 < C < 0.9
-            4     |     COR      |      CORRECT         N = 4     and           C > 0.9
+            0     |     NOT      |      -                   The point is not solved
+            1     |     MIS      |      MISTAKE             N = 0 and/or C <= 0.2
+            2     |     DEG      |      DEGENERATE          It is a degenerate point
+            3     |     OTH      |      OTHER               0 < N < 4 and 0.8 < C < 0.9
+            4     |     COR      |      CORRECT             N = 4 and C > 0.9
     ----------------------------------------------------------------------------------------------
 '''
 VALIDATE_RESULT_HEADER = ['NOT', 'MIS', 'DEG', 'OTH', 'COR']
@@ -137,7 +137,8 @@ def evaluate_point(k: Kpoint, bn: Band, k_index: np.ndarray, k_matrix: np.ndarra
         k_index: array_like
             An array that contains the indices of each k point on the k-space matrix.
         k_matrix: array_like
-            An array with the shape of the k-space. It contains the value of each k point in their corresponding position.
+            An array with the shape of the k-space. 
+            It contains the value of each k point in their corresponding position.
         signal: array_like
             An array with the current signal value for each k point.
         bands: array_like
@@ -1376,7 +1377,7 @@ class MATERIAL:
             for k1, bn1, bn2 in degenerates:
                 self.final_report += f'\n\t\t\t* K-point: {k1} Bands: {bn1}, {bn2}'
             self.final_report += f'\n\n\t\t  ' + textwrap.fill(
-                'Degenerate points refer to instances where a point shares the same numerical energy value with another k-point, and the dot product with its neighboring points falls within the range of 0.5 to 0.8. As a result, it is necessary for the rotation basis program to be executed for these points.',
+                'Degenerate points refer to instances where a point shares the same numerical energy value with another k-point, and the dot product with its neighboring points falls within the range of 0.5 to 0.8. \n\tAs a result, it is necessary for the rotation basis program to be executed for these points.'
                 width=110,
                 subsequent_indent='\t\t  '
             ) + '\n'
@@ -1418,13 +1419,13 @@ class MATERIAL:
         self.completed_bands = np.array(self.completed_bands)
         
         self.final_report += f'\n\n\n\tThe program has clustered all points for {self.max_solved} bands.'
-        self.final_report += f'\n\n\tYou can use bands from 0 up to {n_recomended - 1}. These bands are completed and do not have potential mistakes.'
+        self.final_report += f'\n\n\tYou can use bands from 0 up to {n_recomended - 1}. \n\tThese bands are completed and do not have potential mistakes.'
 
         if self.max_solved > n_recomended:
             self.final_report += f'\n\tNote that there may be more bands usable but a human verification is required.'
             n_max = n_recomended
 
-        self.final_report += f'\n\n\tThe program has clustered withou errors {len(self.completed_bands)} bands. The information is stored in the `completed_bands.npy` file.'
+        self.final_report += f'\n\n\tThe program has clustered without errors {len(self.completed_bands)} bands. \n\tThe information is stored in the `completed_bands.npy` file.'
         self.final_report += f'\n\t\t  Band: ' + ', '.join([str(bn) for bn in self.completed_bands])
 
         if len(degenerates) > 0:

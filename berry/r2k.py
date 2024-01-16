@@ -28,7 +28,7 @@ def read_wfc_files(banda: int, npr: int) -> None:
             wfct_k0[:, kp] = np.load(infile0)
             wfct_k1[:, kp] = np.load(infile1)
         else:
-            if signalfinal[kp, banda] == -1:                                        # if its a signaled wfc, choose interpolated
+            if signalfinal[kp, banda] == -1:                                        # if its a signaled wfc, choose corrected
                 infile = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}.wfc1"
             else:                                                                   # else choose original
                 infile = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}.wfc"
@@ -44,10 +44,10 @@ def calculate_wfcpos(npr: int) -> np.ndarray:
 
     def calculate_wfcpos_kp(kp):
         if m.noncolin:
-            wfcpos0[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k0[kp, d.ijltonk[:, :, 0]]
-            wfcpos1[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k1[kp, d.ijltonk[:, :, 0]]
+            wfcpos0[kp] = d_phase[kp, d.ijltonk[:, :, :]] * wfct_k0[kp, d.ijltonk[:, :, :]]
+            wfcpos1[kp] = d_phase[kp, d.ijltonk[:, :, :]] * wfct_k1[kp, d.ijltonk[:, :, :]]
         else:
-            wfcpos[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k[kp, d.ijltonk[:, :, 0]]
+            wfcpos[kp] = d_phase[kp, d.ijltonk[:, :, :]] * wfct_k[kp, d.ijltonk[:, :, :]]
 
     with Pool(npr) as pool:
         pool.map(calculate_wfcpos_kp, range(m.nr))
@@ -110,12 +110,19 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     ########################################################################### 
 
     WFCT_K_SHAPE = (m.nr, m.nks)
-    WFCPOS_SHAPE = (m.nr, m.nkx, m.nky)
-    WFCGRA_SHAPE = (m.nr, 2, m.nkx, m.nky)
+    if m.dimensions == 1:
+        WFCPOS_SHAPE = (m.nr, m.nkx)
+        WFCGRA_SHAPE = (m.nr, m.dimensions, m.nkx)
+    elif m.dimensions == 2:
+        WFCPOS_SHAPE = (m.nr, m.nkx, m.nky)
+        WFCGRA_SHAPE = (m.nr, m.dimensions, m.nkx, m.nky)
+    else:
+        WFCPOS_SHAPE = (m.nr, m.nkx, m.nky, m.nkz)
+        WFCGRA_SHAPE = (m.nr, m.dimensions, m.nkx, m.nky, m.nkz)
 
     WFCT_K_SIZE = m.nr * m.nks
-    WFCPOS_SIZE = m.nr * m.nkx * m.nky
-    WFCGRA_SIZE = m.nr * 2 * m.nkx * m.nky
+    WFCPOS_SIZE = m.nr * m.nkx * m.nky * m.nkz
+    WFCGRA_SIZE = m.nr * m.dimensions * m.nkx * m.nky * m.nkz
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
@@ -129,11 +136,18 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     logger.info(f"\tTotal number of points in real space: {m.nr}")
     logger.info(f"\tNumber of k-points in each direction: {m.nkx} {m.nky} {m.nkz}")
     logger.info(f"\tDirectory where the wfc are: {m.wfcdirectory}\n")
+    logger.info(f"\n\t{m.dimensions} dimensions calculation.")
 
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS AND GRADIENT
     ###########################################################################
-    grad = Gradient(h=[m.step, m.step], acc=2)                                  # Defines gradient function in 2D
+    if m.dimensions == 1:                   # Defines gradient function in 1, 2 and 3D
+        grad = Gradient(h=[m.step], acc=2)
+    elif m.dimensions == 2:
+        grad = Gradient(h=[m.step, m.step], acc=2) 
+    else:
+        grad = Gradient(h=[m.step, m.step, m.step], acc=2)
+
     signalfinal = np.load(os.path.join(m.data_dir, "signalfinal.npy"))
     bandsfinal = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
     d_phase = np.load(os.path.join(m.data_dir, "phase.npy"))
@@ -176,3 +190,6 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
 
 if __name__ == "__main__":
     run_r2k(9, log("r2k", "R2K", "version", logging.DEBUG), 20)
+
+
+    
