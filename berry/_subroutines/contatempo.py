@@ -6,7 +6,7 @@ import logging
 
 import berry
 
-def tempo(starttime, endtime):
+def tempo(starttime, endtime, name='program'):
     """ Returns a string with the time elapsed between starttime,endtime """
 
     dif = round(endtime - starttime, 2)
@@ -18,7 +18,7 @@ def tempo(starttime, endtime):
 
     if d > 0:
         string = (
-            "The program ran for "
+            f"The {name} ran for "
             + str(d)
             + " days, "
             + str(h)
@@ -28,7 +28,7 @@ def tempo(starttime, endtime):
         )
     elif h > 0:
         string = (
-            "The program ran for "
+            f"The {name} ran for "
             + str(h)
             + " h, "
             + str(m)
@@ -37,9 +37,9 @@ def tempo(starttime, endtime):
             + " s"
         )
     elif m > 0:
-        string = "The program ran for " + str(m) + " m, " + str(s) + " s"
+        string = f"The {name} ran for " + str(m) + " m, " + str(s) + " s"
     else:
-        string = "The program ran for " + str(dif) + " s"
+        string = f"The {name} ran for " + str(dif) + " s"
 
     return string
 
