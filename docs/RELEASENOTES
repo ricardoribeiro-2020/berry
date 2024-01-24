@@ -1,16 +1,17 @@
-RELEASE NOTES for berry v.1.0
+RELEASE NOTES for berry v.2.0.0
 
-New in 1.0 version:
+New in 2.0 version:
 
-This version is the first release for production, and it has many changes relative to previous ones.
+This version has many changes relative to previous ones.
 Therefore, the input and output of most programs may not be compatible with older versions.
 
 The main differences in this version are:
 
-- Implementation of a AI algorithm to improve the selection of the bands.
+- Improvements of a AI algorithm for the selection of the bands.
 
-- Paralelization of most the code, which resulted in a large decrease in wall clock running time.
+- Extension of the software to one and three dimension materials.
 
-- Code more conformed with PEP8 and usual practices.
+- Extension of the software to noncolinear calculations of Quantum ESPRESSO.
 
-- Implementation of a pip instalation.
+
+

@@ -13,7 +13,7 @@ Then the Berry connections can be used to calculate the first order optical cond
 
 Therefore, this suite of programs can be used in calculations other than Berry connections and related topics, with small adaptations.
 
-It still can only be used with 2D materials and with DFT suite Quantum Espresso.
+It still can be used with 1D, 2D or 3D materials and with DFT suite Quantum Espresso, noncolinear or no-spin calculations.
 
 It is expected that this software will evolve with many more possibilities in the near future.
 The list of TODOs is already large.
