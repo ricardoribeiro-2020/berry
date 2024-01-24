@@ -28,9 +28,11 @@ from scipy.optimize import curve_fit
 
 import numpy as np
 import networkx as nx
+import time
 
 from berry import log
 from .write_k_points import _bands_numbers
+from berry._subroutines.contatempo import tempo
 
 
 ###########################################################################
@@ -488,6 +490,7 @@ class MATERIAL:
                         count += 1
                         BandsEnergy[bn, i, j, k] = self.eigenvalues[count,
                                                                     bands_final[count, bn]]
+        return BandsEnergy
 
     def make_kpointsIndex(self) -> None:
         '''
@@ -836,7 +839,7 @@ class MATERIAL:
 
             
 
-    def parallelize(self, process_name: str, f: Callable, iterator: Union[list, np.ndarray], *args) -> np.ndarray:
+    def parallelize(self, process_name: str, f: Callable, iterator: Union[list, np.ndarray], per_actual:int=0, N_total:int=None,*args) -> np.ndarray:
         '''
         Create processes for some function f over an iterator.
 
@@ -858,15 +861,15 @@ class MATERIAL:
         '''
         process = []
         iterator = list(iterator)
-        N = len(iterator)
+        N = len(iterator) if N_total is None else N_total
 
         ###########################################################################
         # Debug information and Progress bar
         ###########################################################################
         
-        self.logger.debug(f'Starting Parallelization for {process_name} with {N} values')
+        self.logger.debug(f'Starting Parallelization for {process_name} with {len(iterator)} values. Number of processes: {self.n_process}. Starting at {per_actual}/{N_total}')
         
-        self.logger.percent_complete(0, N, title=process_name)
+        self.logger.percent_complete(per_actual, N, title=process_name)
 
         ###########################################################################
         # Processes management
@@ -893,14 +896,14 @@ class MATERIAL:
             self.logger.percent_complete(per[0], N, title=process_name)
         
         result = Manager().list([])             # Shared Memory list to store the result
-        per = Manager().list([0])               # Shared Memory to countability the progress
+        per = Manager().list([per_actual])               # Shared Memory to countability the progress
         f_ = partial(parallel_f,  result, per)  # Modified function used to create processes
 
-        n = N//self.n_process                                                   # Number or processes
+        n = len(iterator)//self.n_process                                                   # Number or processes
         for i_start in range(self.n_process):
             # Division of the iterator array into n smaller arrays
             j_end = n*(i_start+1) if i_start < self.n_process-1\
-                else n*(i_start+1) + N % self.n_process
+                else n*(i_start+1) + len(iterator) % self.n_process
             i_start = i_start*n
             p = Process(target=f_, args=(iterator[i_start: j_end], *args))      # Process creation
             p.start()                                                           # Initialize the process
@@ -909,8 +912,12 @@ class MATERIAL:
         while len(process) > 0:
             p = process.pop(0)
             p.join()
-        self.logger.percent_complete(N, N, title=process_name)
-        print()
+
+        if N_total is None:
+            self.logger.percent_complete(N, N, title=process_name)
+            print()
+        else:
+            self.logger.percent_complete(per_actual, N, title=process_name)
         return result
 
     def get_components(self, alpha: float=0.5, first_iteration=False) -> None:
@@ -1038,18 +1045,10 @@ class MATERIAL:
         ###########################################################################
         # Assigning samples to clusters by selecting the best option
         ###########################################################################
-        count = np.array([0, len(samples) * len(samples) * len(clusters)])
-        while len(samples) > 0:
-            evaluate_samples = np.zeros((len(samples), 2))                          # Samples' scores storage
-            self.logger.debug(f'Len samples: {len(samples)}')
-            self.logger.debug(f'Len clusters: {len(clusters)}')
-            if len(clusters) == 0 and len(samples) > 0:
-                self.logger.debug('No more clusters')
-                self.logger.debug(f'Len samples: {len(samples)}')
-                self.logger.debug(f'Size samples: {samples[0].N}')
-                self.logger.debug(f'Number solved: {len(self.solved)}')
-                break
-            for i_s, sample in enumerate(samples):
+        def evaluate_sample(iterator):
+            result = []
+            for i_s in iterator:
+                sample = samples[i_s]
                 # Comparison of each sample to each cluster
                 scores = np.zeros(len(clusters))                                    # Storage the score of each cluster with the sample
                 for j_s, cluster in enumerate(clusters):
@@ -1067,26 +1066,62 @@ class MATERIAL:
                                                            self.ENERGIES,
                                                            self.connections,
                                                            alpha=alpha)             # Calculate the score
-                    count[0] += 1                                                   # Update the counter
-                    self.logger.percent_complete(count[0], count[1], title='Clustering Samples')
-                evaluate_samples[i_s] = np.array([np.max(scores),
-                                                np.argmax(scores)])                 # Store the best cluster's score
+                result.append([i_s, [np.max(scores), np.argmax(scores)], sample.scores])
+
+            return result
+         
+        count = np.array([0, len(samples) * len(samples)])
+        while len(samples) > 0:
+            evaluate_samples = np.zeros((len(samples), 2))                          # Samples' scores storage
+            self.logger.debug(f'Len samples: {len(samples)}')
+            self.logger.debug(f'Len clusters: {len(clusters)}')
+            if len(clusters) == 0 and len(samples) > 0:
+                self.logger.debug('No more clusters')
+                self.logger.debug(f'Len samples: {len(samples)}')
+                self.logger.debug(f'Size samples: {samples[0].N}')
+                self.logger.debug(f'Number solved: {len(self.solved)}')
+                break
+        
+            #self.n_process = 10 # min(self.n_process, len(samples))
+            evaluate_samples_result = self.parallelize('Clustering Samples', evaluate_sample, range(len(samples)), per_actual=count[0], N_total=count[1])
+            count[0] += len(samples)
+            for i_s, res, sample_scores in evaluate_samples_result:
+                samples[i_s].scores = sample_scores
+                evaluate_samples[i_s] = np.array(res)                 # Store the best cluster's score
 
             for cluster in clusters:
                 # Flag used to identify if the score must be calculated again
                 cluster.was_modified = False
-            arg_max = np.argmax(evaluate_samples[:, 0])                             # Obtain the best sample
-            sample = samples.pop(arg_max)                                           # Select the sample
-            score, bn = evaluate_samples[arg_max]                                   # Get the values
-            bn = int(bn)
-            count[0] += 1                                                           # Update the counter
-            clusters[bn].join(sample)                                               # Join the sample to the best cluster               
-            clusters[bn].was_modified = True
-            self.logger.percent_complete(count[0], count[1], title='Clustering Samples')
-            self.logger.debug(f'\t\t{count[0]}/{count[1]} Sample corrected: {score}')
-            if clusters[bn].N == self.nks:
-                #  If the number of nodes inside the component equals the total number of k points, the cluster is considered solved
-                self.logger.debug('\n\tCluster Solved')
+                
+            bn_list = []
+            args_list = []
+            clusters_completed = []
+            args_sort = np.argsort(evaluate_samples[:, 0])[::-1]                       # Sort the samples by the score
+            for arg_max in args_sort:
+                score, bn = evaluate_samples[arg_max]                                   # Get the values
+                bn = int(bn)
+                if bn in bn_list:
+                    # If the cluster was already modified, the score is not updated
+                    break
+                args_list.append(arg_max)
+                bn_list.append(bn)
+                sample = samples[arg_max]                                               # Get the sample
+                count[0] += 1                                                           # Update the counter
+                clusters[bn].join(sample)                                               # Join the sample to the best cluster               
+                clusters[bn].was_modified = True
+    
+                self.logger.percent_complete(count[0], count[1], title='Clustering Samples')
+                self.logger.debug(f'\t\t{count[0]}/{count[1]} Sample corrected: {score}')
+                if clusters[bn].N == self.nks:
+                    #  If the number of nodes inside the component equals the total number of k points, the cluster is considered solved
+                    clusters_completed.append(bn)
+                    self.logger.debug('\n\tCluster Solved')
+                    
+            # Eliminate the samples that were joined to a cluster
+            samples = [samples[arg] for arg in args_sort if arg not in args_list]
+
+            for bn in clusters_completed:
+                # Remove the solved clusters
                 self.solved.append(clusters.pop(bn))
 
         self.logger.percent_complete(count[1], count[1], title='Clustering Samples')
@@ -1097,7 +1132,7 @@ class MATERIAL:
 
         self.clusters : list[COMPONENT] = clusters
 
-    def obtain_output(self) -> None:
+    def obtain_output(self, last=False) -> None:
         '''
         This function prepares the final data structures
         that are essential to other programs.
@@ -1203,6 +1238,9 @@ class MATERIAL:
                 # neighbor's dot-product between 0.5 and 0.8
                 self.degenerate_final.append([k1, bn1, bn2])                # Storage the degenerate k-point
 
+
+
+        # Otherwise, the program continues to the next step. Here it finds the degenerate points
         k_basis_rotation : list[Tuple[Kpoint, Kpoint, Band, list[Band]]] = []           # Storage pairs of points that are degenerates by dot product 0.5 < <i|j> < 0.8
         for bn in range(self.total_bands):
             # Search these degenerate points on each band
@@ -1265,6 +1303,12 @@ class MATERIAL:
                     continue
                 degenerates.append([k, bn, bn_])
 
+
+        if not last:
+            # If it is not the last iteration, the program ends here
+            self.degenerate_final = np.array(self.degenerate_final)
+            return
+
         analyzed = []                                                              # K-points analyzed
         for i, (k, bn, bn_) in enumerate(degenerates):
             # For each possible degenerate point stored inside k_basis_rotation.
@@ -1278,14 +1322,39 @@ class MATERIAL:
             same_group = [[k, bn, bn_]]
             for j, (k_, bn0, bn1) in enumerate(degenerates[i+1:]):
                 # Comparison between each possible pair of degenerate point.
-                ik, jk = self.kpoints_index[k]                                              # Obtain the matrix indices of k-space projection (k-point)
-                ik_, jk_ = self.kpoints_index[k_]                                           # Obtain the matrix indices of k-space projection (k_-point)
-                idif = np.abs(ik - ik_)                                                     # Manhattan distance i axes
-                jdif = np.abs(jk - jk_)                                                     # Manhattan distance j axes
-                if idif > 1 or jdif > 1 or not np.all(np.isin([bn, bn_], [bn0, bn1])):
-                    # If the total Manhattan distance is more than 2 or the points do not belong to the same band,
+
+                if not np.all(np.isin([bn, bn_], [bn0, bn1])):
+                    # If they do not belong to the same bands, the analysis can not be done
+                    continue
+
+                ik =  self.kpoints_index[k, 0] if self.dimensions > 1 else self.kpoints_index[k]       # Obtain the matrix indices of k-space projection (k-point)
+                ik_ = self.kpoints_index[k_, 0] if self.dimensions > 1 else self.kpoints_index[k_]     # Obtain the matrix indices of k-space projection (k_-point)
+
+                idif = np.abs(ik - ik_)                                                                 # Manhattan distance i axes
+
+                if idif > 1:
+                    # If the total Manhattan distance is more than 2,
                     # the analysis can not be done
                     continue
+
+                if self.dimensions >= 2:
+                    jk = self.kpoints_index[k, 1]                                                       # Obtain the matrix indices of k-space projection (k-point)
+                    jk_ = self.kpoints_index[k_, 1]                                                     # Obtain the matrix indices of k-space projection (k_-point)
+                    jdif = np.abs(jk - jk_)                                                             # Manhattan distance j axes
+                    if jdif > 1:
+                        # If the total Manhattan distance is more than 2,
+                        # the analysis can not be done
+                        continue
+                
+                if self.dimensions == 3:
+                    kk = self.kpoints_index[k, 2]                                                       # Obtain the matrix indices of k-space projection (k-point)
+                    kk_ = self.kpoints_index[k_, 2]                                                     # Obtain the matrix indices of k-space projection (k_-point)
+                    kdif = np.abs(kk - kk_)                                                             # Manhattan distance k axes
+                    if kdif > 1:
+                        # If the total Manhattan distance is more than 2,
+                        # the analysis can not be done
+                        continue
+
                 analyzed.append(j+i+1)                                                      # The point k_ was analyzed
                 same_group.append([k_, bn0, bn1])                                           # The k_-point belongs to the same group of k
 
@@ -1674,8 +1743,9 @@ class MATERIAL:
         ###########################################################################
         while bands_final_flag and ALPHA >= min_alpha:
             COUNT += 1
+            start_time = time.time()
             self.logger.info()
-            self.logger.info(f'\n\n\t* Iteration: {COUNT} - Clustering samples for Alpha: {ALPHA} ')
+            self.logger.info(f'\n\n\t* Iteration: {COUNT} - Clustering samples for Alpha: {ALPHA:.4f}')
             self.get_components(alpha=ALPHA, first_iteration=COUNT == 1)                    # Obtain components from a Graph
 
             self.logger.info('\n\t\tCalculating output')        
@@ -1711,11 +1781,17 @@ class MATERIAL:
                 other_best = np.sum(self.correct_signalfinal_best[:, bn] == OTHER)
                 other = np.sum(self.correct_signalfinal[:, bn] == OTHER)
                 not_solved = np.sum(self.correct_signalfinal[:, bn] == NOT_SOLVED)
+                not_solved_best = np.sum(self.correct_signalfinal_best[:, bn] == NOT_SOLVED)
 
                 solved_flag = not_solved == 0 
+                solved_flag_points = True
                 if COUNT > 1:
-                    solved_flag = solved_flag and mistake < mistake_best and other < other_best or score >= best_score and mistake == mistake_best and other == other_best
-                    solved_flag = solved_flag or (score > 0.99 and mistake + other < mistake_best + other_best)
+                    solved_flag_points = mistake < mistake_best and other < other_best or score >= best_score and mistake <= mistake_best and other <= other_best
+                    solved_flag_points = solved_flag_points or (score > 0.99 and mistake + other < mistake_best + other_best)
+
+                solved_flag = (solved_flag or not_solved < not_solved_best) and solved_flag_points
+
+
                 self.logger.debug(f'\n\t\t\tPrev best result for band {bn}: {best_score} mistakes: {mistake_best} other: {other_best}')
                 self.logger.debug(f'\n\t\t\tNew best result for band {bn}: {score} mistakes: {mistake} other: {other}. Solved: {solved_flag}')
                 if score != 0 and not_solved == 0 and (score > best_score or solved_flag):
@@ -1724,8 +1800,11 @@ class MATERIAL:
                     break
             
             self.logger.info(f'\n\t\t Iteration: {COUNT} - Clustered bands: {solved} - Max clustered bands: {max_solved}')
-
+            self.logger.info('\t\t\t' + tempo(start_time, time.time(), name='iteration'))
+                             
+            n_bands = len(self.final_score)
             total_solved_flag = first_max_bands_score >= first_max_bands_best_score and total_score > total_best_score and total_not_solved < total_not_solved_best
+            total_solved_flag = total_solved_flag or (total_score/n_bands > 0.9 and total_best_score/n_bands < 0.9)
             if total_solved_flag or solved >= max_solved or COUNT == 1:
                 self.best_bands_final = np.copy(self.bands_final)
                 self.best_score = np.copy(self.final_score)
@@ -1843,7 +1922,7 @@ class COMPONENT:
         self.GRAPH = component
         self.N = self.GRAPH.number_of_nodes()
         self.m_shape = matrix.shape
-        self.nks = self.m_shape[0]*self.m_shape[1]
+        self.nks = np.prod(self.m_shape)
         self.kpoints_index = np.array(kpoints_index)
         self.matrix = matrix
         self.dimensions = dimensions
@@ -1888,8 +1967,8 @@ class COMPONENT:
         '''
         self.k_points = self.nodes % self.nks                               # Get the k-point from node
         k_bands = self.nodes//self.nks                                      # Get the k-point's band from node
-        self.bands_number = dict(zip(self.nodes % self.nks,
-                                     self.nodes//self.nks))                 # A dictionary that links the initial band to a k-point
+        self.bands_number = dict(zip(self.k_points,
+                                     k_bands))                 # A dictionary that links the initial band to a k-point
         bands, counts = np.unique(k_bands, return_counts=True)              # Count the number of nodes with each band
         self.bands = bands[np.argsort(counts)[::-1]]                        # Save in decreasing order
         return k_bands
