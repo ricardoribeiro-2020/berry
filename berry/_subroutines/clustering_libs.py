@@ -7,7 +7,6 @@ to determine the connectivity of points in the k-space, and then uses unsupervis
 to classify the points into bands.
 
 TODO:
-  - Implement parallelization of the algorithm
   - Implement the algorithm to resolve forbidden paths
   - Implement the algorithm to address points connected to more than one band
 """
