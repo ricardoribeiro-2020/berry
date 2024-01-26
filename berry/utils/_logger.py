@@ -80,6 +80,8 @@ class log:
         author: WinEunuuchs2Unix
         url: https://stackoverflow.com/questions/3002085/how-to-print-out-status-bar-and-percentage
         '''
+        if self.level != logging.DEBUG:
+            return
         # UTF-8 left blocks: 1, 1/8, 1/4, 3/8, 1/2, 5/8, 3/4, 7/8
         utf_8s = ["█", "▏", "▎", "▍", "▌", "▋", "▊", "█"]
         perc = 100 * float(step) / float(total_steps)
