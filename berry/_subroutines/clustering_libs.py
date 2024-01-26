@@ -7,6 +7,9 @@ to determine the connectivity of points in the k-space, and then uses unsupervis
 to classify the points into bands.
 
 TODO:
+  - Implement functionality to allow the algorithm to save intermediate results.
+    Also, consider adding the ability to resume the algorithm or select the best result,
+    which may differ from the last one.
   - Implement the algorithm to resolve forbidden paths
   - Implement the algorithm to address points connected to more than one band
 """
@@ -1294,7 +1297,9 @@ class MATERIAL:
             # For each possible degenerate point have to exist a pair
             for k_, k_deg_, bn_, bns_deg_ in k_basis_rotation[i+1:]:
                 # Comparison between each possible degenerate point.
-                if k != k_ or not np.all(k_deg == k_deg_):
+                k_deg = np.array(k_deg)
+                k_deg_ = np.array(k_deg_)
+                if k != k_ or k_deg.shape != k_deg_.shape or not np.all(k_deg == k_deg_):
                     # The k_ point is not the k's pair
                     continue
                 if not np.all([np.all(np.isin(bns, bns_deg_[j])) for j, bns in enumerate(bns_deg)]):
