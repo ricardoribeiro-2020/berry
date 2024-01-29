@@ -68,12 +68,24 @@ def get_delta_eigen_array_and_fermi(eigen_array: np.ndarray, conduction_band: in
 
     for s in band_list:
         for sprime in band_list:
-            delta_eigen_array[:, :, s, sprime] = eigen_array[:, :, s] - eigen_array[:, :, sprime]
-
-            if s <= m.vb < sprime:
-                fermi[:, :, s, sprime] = 1
-            elif sprime <= m.vb < s:
-                fermi[:, :, s, sprime] = -1
+            if m.dimensions == 1:
+                delta_eigen_array[:, s, sprime] = eigen_array[:, s] - eigen_array[:, sprime]
+                if s <= m.vb < sprime:
+                    fermi[:, s, sprime] = 1
+                elif sprime <= m.vb < s:
+                    fermi[:, s, sprime] = -1
+            elif m.dimensions == 2:
+                delta_eigen_array[:, :, s, sprime] = eigen_array[:, :, s] - eigen_array[:, :, sprime]
+                if s <= m.vb < sprime:
+                    fermi[:, :, s, sprime] = 1
+                elif sprime <= m.vb < s:
+                    fermi[:, :, s, sprime] = -1
+            else:
+                delta_eigen_array[:, :, :, s, sprime] = eigen_array[:, :, :, s] - eigen_array[:, :, :, sprime]
+                if s <= m.vb < sprime:
+                    fermi[:, :, :, s, sprime] = 1
+                elif sprime <= m.vb < s:
+                    fermi[:, :, :, s, sprime] = -1
 
     return delta_eigen_array, fermi
 
@@ -82,20 +94,48 @@ def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.nd
     gamma = CONST * delta_eigen_array / (omegaarray - delta_eigen_array)        # factor that multiplies
     sig = np.full((m.dimensions, m.dimensions), 0.0 + 0j)                       # matrix sig_xx, sig_xy, sig_yy, sig_yx, etc
 
-    for s in band_list:                                                         # runs through index s
-        for sprime in band_list:                                                # runs through index s'
-            if s == sprime:
-                continue
+    if m.dimensions == 1:
+        for s in band_list:                                                         # runs through index s
+            for sprime in band_list:                                                # runs through index s'
+                if s == sprime:
+                    continue
+                for beta in range(m.dimensions):                                    # beta is spatial coordinate
+                    for alpha in range(m.dimensions):                               # alpha is spatial coordinate
 
-            for beta in range(m.dimensions):                                    # beta is spatial coordinate
-                for alpha in range(m.dimensions):                               # alpha is spatial coordinate
+                        sig[alpha, beta] += np.sum(
+                            gamma[:, sprime, s]
+                            * berry_connections[s][sprime][alpha]
+                            * berry_connections[sprime][s][beta]
+                            * fermi[:, s, sprime]
+                        )
+    elif m.dimensions == 2:
+        for s in band_list:                                                         # runs through index s
+            for sprime in band_list:                                                # runs through index s'
+                if s == sprime:
+                    continue
+                for beta in range(m.dimensions):                                    # beta is spatial coordinate
+                    for alpha in range(m.dimensions):                               # alpha is spatial coordinate
 
-                    sig[alpha, beta] += np.sum(
-                        gamma[:, :, sprime, s]
-                        * berry_connections[s][sprime][alpha]
-                        * berry_connections[sprime][s][beta]
-                        * fermi[:, :, s, sprime]
-                    )
+                        sig[alpha, beta] += np.sum(
+                            gamma[:, :, sprime, s]
+                            * berry_connections[s][sprime][alpha]
+                            * berry_connections[sprime][s][beta]
+                            * fermi[:, :, s, sprime]
+                        )
+    else:
+        for s in band_list:                                                         # runs through index s
+            for sprime in band_list:                                                # runs through index s'
+                if s == sprime:
+                    continue
+                for beta in range(m.dimensions):                                    # beta is spatial coordinate
+                    for alpha in range(m.dimensions):                               # alpha is spatial coordinate
+
+                        sig[alpha, beta] += np.sum(
+                            gamma[:, :, :, sprime, s]
+                            * berry_connections[s][sprime][alpha]
+                            * berry_connections[sprime][s][beta]
+                            * fermi[:, :, :, s, sprime]
+                        )
 
     return (omega, sig * VK)
 
