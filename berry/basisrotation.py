@@ -87,17 +87,17 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
         logger.footer()
         exit(0)
 
-    d_phase = np.load(os.path.join(m.workdir, "phase.npy"))
+    d_phase = np.load(os.path.join(m.data_dir, "phase.npy"))
     logger.info("\tPhases loaded")
 
-    dotproduct = np.load(os.path.join(m.workdir, "dpc.npy"))
-    connections = np.load(os.path.join(m.workdir, "dp.npy"))
+    dotproduct = np.load(os.path.join(m.data_dir, "dpc.npy"))
+    connections = np.load(os.path.join(m.data_dir, "dp.npy"))
     logger.info("\tDot product loaded")
 
     logger.info("\tReading files bandsfinal.npy and signalfinal.npy")
-    bandsfinal = np.load(os.path.join(m.workdir, "bandsfinal.npy"))
-    signalfinal = np.load(os.path.join(m.workdir, "signalfinal.npy"))
-    degeneratefinal = np.load(os.path.join(m.workdir, "degeneratefinal.npy"))
+    bandsfinal = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
+    signalfinal = np.load(os.path.join(m.data_dir, "signalfinal.npy"))
+    degeneratefinal = np.load(os.path.join(m.data_dir, "degeneratefinal.npy"))
 
     # Finished reading data from files
     ###################################################################################
