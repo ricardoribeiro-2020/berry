@@ -1,0 +1,9 @@
+This is a list of things to add or improve in the suite berry.
+No special order.
+
+1. Implement more verification of initial conditions in each run
+2. Add calculations of properties derived from Berry curvature
+3. Add calculation of other nonlinear optical properties from Berry connection
+4. Add excitonic calculations
+5. Create a GUI for the software
+

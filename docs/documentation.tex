@@ -3,16 +3,14 @@
 \usepackage{titlesec}
 \usepackage{nameref}
 \usepackage{tabularx}
-\usepackage{amsmath}
-\usepackage{amsfonts}
-\usepackage{amssymb}
-\usepackage{graphicx}
 \usepackage[toc,page]{appendix}
 \usepackage{pdfpages}
 \usepackage{caption}
 \usepackage{subcaption}
 \usepackage{setspace}
-\usepackage{hyperref}
+\onehalfspacing
+
+
 
 \input{spp}
 \pgfplotsset{compat=1.16}
@@ -56,6 +54,15 @@ v2.0}
 
  This guide gives a general introduction to the \textbf{berry} suite of programs, including instalation and running.
  An introduction to the basics of electronic structure calculations is given, in the context of this suite.
+ Another introduction (for version 1.0) can be found in
+  \medskip
+
+ \begin{verbatim}
+   Berry: A code for the differentiation of Bloch wavefunctions
+          from DFT calculations
+   Computer Physics Communications 295 (2024) 10897
+ \end{verbatim}
+
 
 
 \section{What \textbf{berry} does}
@@ -74,14 +81,14 @@ With the Bloch wavefunctions, berry can calculate:
   \item Second harmonic generation (SHG) optical conductivity
 \end{itemize}
 
+It can be used in one, two or three dimension materials, with noncolinear or no-spin calculations.
+
+For the DFT calculations, {\sc Quantum Espresso}\cite{Giannozzi2009,Giannozzi2017} has to be used.
 
 
 
 
-
-
-
-
+\newpage
 \section{People}
 
 The \textbf{berry} suite is coordinated by Ricardo Mendes Ribeiro (University of Minho and INL, Braga, Portugal),
@@ -91,12 +98,13 @@ Other contributors include
 \begin{itemize}
  \item Irving Leander Reascos Valencia (Braga, Portugal) for improving the performance
  and AI work;
+ \item Daniel Sousa (Braga, Portugal) for implementing the noncolinear code
+ and extension to 1D and 3D materials;
  \item Fábio Carneiro (Braga, Portugal) for the parallelization of the python code
  and its performance;
  \item Nuno Castro (LIP-Minho, Braga, Portugal) for coordinating AI work;
  \item Gonçalo Ventura (Porto, Portugal) for the equations for non-linear optical properties
  calculated from the Berry connections;
- \item Daniel Sousa (Braga, Portugal) for implementing the noncolinear code;
  \item Ícaro Jael Moura (Fortaleza, Brasil) for the exploratory work and testing;
  \item Afonso Duarte Ribeiro, author of the logo.
 \end{itemize}
@@ -118,8 +126,9 @@ ricardo.ribeiro@physics.org or you can create an issue in the github page.
 \section{Aknowledgement}
 
 We aknowledge the Fundação para a Ciência e a Tecnologia (FCT)
-under project  QUEST2D \emph{Excitations in quantum 2D materials}
-PTDC/FIS-MAC/2045/2021 and in the framework of the Strategic Funding UIDB/04650/2020.
+under project \\ QUEST2D \emph{Excitations in quantum 2D materials}
+PTDC/FIS-MAC/2045/2021 \\
+and in the framework of the Strategic Funding UIDB/04650/2020.
 
 
 
@@ -155,12 +164,12 @@ or
 
 \subsection{Patch for noncolinear calculations}
 
-As for the time of this version, the {\sc Quantum ESPRESSO} suite of programs 
-does not include a script to correctly extracts the spinors of the noncolinear calculation
+As for the time of this version, the {\sc Quantum ESPRESSO} suite of programs
+does not include a script to correctly extract the spinors of the noncolinear calculation
 in real space.
 
 The script that should do it is \verb*|wfck2r.x|, but it only writes the first function of the spinor.
-In order to use the \textbf{berry} correctly in noncolinear calculations, 
+In order to use the \textbf{berry} correctly in noncolinear calculations,
 a modified version of \verb*|wfck2r.x| has to be used.
 
 In appendix \ref{ch:noncolinear}, we explain how to do it.
@@ -173,7 +182,7 @@ This version of \textbf{berry} only supports the DFT package {\sc Quantum Espres
 
 So a working {\sc Quantum Espresso} instalation has to be in the system, and must be in the \$PATH.
 
-This version was tested with python 3.8 and 3.10, but likely works with other versions of python3.
+This version was tested with python 3.10, but likely works with other versions of python3.
 
 
 \section{Running}\label{sec:running}
@@ -365,7 +374,10 @@ In order to be able to apply a gradient in momentum space we need to have the ei
 in such a way that analycity is guaranteed.
 That is the first goal of this suite of programs.
 
-
+Berry curvatures can also be calculated using Equation \ref{eq:curvature} \cite{Gradhand_2012}
+\begin{equation}\label{eq:curvature}
+ \pmb{\Omega}_{s,s'} = i\int_{uc}d^3\pmb{r}\;(\nabla_{\pmb{k}}u_{\pmb{k}s}^* \times \nabla_{\pmb{k}} u_{\pmb{k}s'})
+\end{equation}
 
 \subsection*{Band crossings}\label{ssec:bandcrossings}
 
@@ -455,6 +467,63 @@ The band-crossing problem lies in this class of algorithms due to its structure.
 Thus, we will work with this type of clustering algorithm.
 
 
+\section{Optical conductivity and Second Harmonic Generation}
+
+For the calculation of the linear optical conductivity and the second harmonic generation,
+we use the length gauge description of the reduced density matrix \cite{Sipe1995,Sipe2000,Ventura2017},
+as described in reference \cite{Ventura2017}.
+
+For the case of a cold $d$ dimensional semiconductor, the linear conductivity can be expressed in terms of a single, interband, contribution,
+ given by Equation \ref{eq:first_order}
+\begin{equation}\label{eq:first_order}
+ \sigma^{\beta\alpha}(\omega) = \frac{i e^2}{\hslash}\sum_{s's}\int_{BZ}\frac{d^d\pmb{k}}{(2\pi)^d}
+ \frac{\Delta\epsilon_{\pmb{k}s's} \xi_{\pmb{k}ss'}^{\beta}\xi_{\pmb{k}s's}^{\alpha}}{(\hslash\omega + i\Gamma)
+ - \Delta\epsilon_{\pmb{k}s's}}\Delta f_{\pmb{k}ss'},
+\end{equation}
+where $\Delta\epsilon_{\pmb{k}s's} = \epsilon_{\pmb{k}s'} - \epsilon_{\pmb{k}s}$,
+ $\Delta f_{\pmb{k}ss'} = f_{\pmb{k}s} - f_{\pmb{k}s'}$,
+ $\epsilon_{\pmb{k}s}$ is the eigenvalue of band $s$ at $\pmb{k}$, and $f_{\pmb{k}s}=f(\epsilon_{\pmb{k}s})$ is the
+Fermi-Dirac distribution function.
+Note that with the knowledge of the band energies, $\epsilon_{\pmb{k}s}$,
+and the Berry connections, $\xi_{\pmb{k}ss'}^{\beta}$, both of which can be determined by a DFT calculation,
+we can compute the optical response of a crystal.
+The indexes $\alpha$ and $\beta$ run through the spatial coordinates $x$, $y$ and $z$ (depending on the material's dimension).
+
+The second order response can be calculated for the case of the second harmonic generation.
+Following the procedure described in ref. \cite{Ventura2017}
+we obtain, for a diagonal component of the SHG, $\sigma^{\beta\beta\beta}(\omega,\omega)$, Eq.(\ref{eq:second_order}).
+\begin{eqnarray}\label{eq:second_order}
+ & \nonumber\sigma^{\beta\beta\beta}(\omega,\omega) = -\dfrac{e^3}{\hslash}{\int}_{BZ}\dfrac{d^d\pmb{k}}{(2\pi)^d}
+ \left[
+ {\sum}_{s'\ne s}\dfrac{1}{2} \dfrac{\Delta\epsilon_{\pmb{k}ss'} }{ g_{\omega\pmb{k}ss'}}
+ \bigg\lbrace
+ \left[ \xi_{\pmb{k}s's}^{\beta},(\xi_{\pmb{k}ss'}^{\beta})_{;\beta}\right]
+ \dfrac{\Delta f_{\pmb{k}s's}}{  h_{\omega\pmb{k}ss'} }
+ \bigg\rbrace
+ \right.\\
+ & -\dfrac{i}{2}{\sum}_{s'\ne s \ne r}
+ \dfrac{\Delta \epsilon_{\pmb{k}ss'} }{ g_{\omega\pmb{k}ss'}}
+ \left
+  \lbrace \dfrac{\Delta f_{\pmb{k}s'r}}{h_{\omega\pmb{k}rs'}} - \dfrac{\Delta f_{\pmb{k}rs }}{h_{\omega\pmb{k}sr}} \bigg\rbrace
+ \left( \xi_{\pmb{k}s's}^{\beta} \xi_{\pmb{k}sr}^{\beta} \xi_{\pmb{k}rs'}^{\beta}
+     +  \xi_{\pmb{k}s'r}^{\beta} \xi_{\pmb{k}rs}^{\beta} \xi_{\pmb{k}ss'}^{\beta}\right)
+ \right]
+\end{eqnarray}
+where
+\begin{equation}
+ g_{\omega\pmb{k}ss'} = 2(\hslash\omega + i\Gamma) - \Delta\epsilon_{\pmb{k}ss'}
+\end{equation}
+\begin{equation}
+ h_{\omega\pmb{k}ss'} = (\hslash\omega + i\Gamma) - \Delta\epsilon_{\pmb{k}ss'}
+\end{equation}
+\begin{equation}
+  \left[ \xi_{\pmb{k}s's}^{\beta},(\xi_{\pmb{k}ss'}^{\beta})_{;\beta}\right] =
+  \xi_{\pmb{k}s's}^{\beta}(\xi_{\pmb{k}ss'}^{\beta})_{;\beta} - (\xi_{\pmb{k}ss'}^{\beta})_{;\beta}\xi_{\pmb{k}ss'}^{\beta}
+\end{equation}
+\begin{equation}
+ (\xi_{\pmb{k}ss'}^{\beta})_{;\beta}=
+  \left( \nabla^{\beta} \xi_{\pmb{k}ss'}^{\beta}  \right) - i\left( \xi_{\pmb{k}ss}^{\beta} - \xi_{\pmb{k}s's'}^{\beta}\right) \xi_{\pmb{k}ss'}^{\beta}
+\end{equation}
 
 
 
@@ -510,7 +579,9 @@ to change that variable in the input file and attribute the same value for diffe
 \label{code:inputfile}
 \end{figure}
 
-
+For an one dimension material, \verb|nky = nkz = 1|, so the material has to be align with the $x$ axis.
+For a two dimensions material, it has to be in the plane $xy$, so \verb|nkz = 1|.
+This is how the program knows the number of dimensions to be used.
 
 \begin{table}[h]
  \centering
@@ -811,7 +882,7 @@ The options for \texttt{r2k} are shown in table \ref{tab:options_r2k}.
 
 \section{Calculation of the Berry connections and curvatures}
 
-The Berry connections (equation \ref{eq:berry}) and curvature are calculated using the script \texttt{geometry}.
+The Berry connections and curvatures are calculated using the script \texttt{geometry}.
 \begin{verbatim}
   berry geometry highest_band [script options]
  \end{verbatim}
@@ -821,7 +892,7 @@ The highest band is the number of the last band to be used in the calculations.
 In principle, it will be the same as the one used in \texttt{r2k}.
 The options for \texttt{geometry} are shown in table \ref{tab:options_geometry}.
 
-\begin{table}[h]
+\begin{table}[ht]
  \centering
  \caption{Options for script \texttt{geometry}}\label{tab:options_geometry}
 \begin{tabular}[]{lr}
@@ -829,7 +900,7 @@ The options for \texttt{geometry} are shown in table \ref{tab:options_geometry}.
   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
   \texttt{-np}                  & Number of processes to use (default: 1) \\
   \texttt{-mb}                  & Minimum band to consider (default: 0) \\
-  \texttt{-prop} [both,connection,curvature] &  Specify which property to calculate. (default: both)\\
+  \texttt{-prop} [both,connection,curvature] &  Specify property to calculate. (default: both)\\
   \texttt{-o file\_path}        & Name of output log file\\
                                 & Extension will be ignored\\
   \texttt{-flush}               & Flush the ouput to stdout \\
@@ -950,7 +1021,7 @@ You shuld see a link to the executable \verb|wfck2rFR| on the \verb|bin| directo
 This glossary indicates the meaning of the variables used in the suite \textbf{berry}.
 \vspace{0.5cm}
 
-\begin{tabularx}{\textwidth}{Xl}
+\begin{tabularx}{0.9\textwidth}{lX}
  npr            & Number of processors for the run \\
 
  nkx            & Number of k-points in the x direction \\
@@ -968,8 +1039,8 @@ This glossary indicates the meaning of the variables used in the suite \textbf{b
 \end{tabularx}
 \vspace{0.5cm}
 
-\begin{tabularx}{\textwidth}{Xl}
- dftdirectory   & Directory of DFT files \\
+\begin{tabularx}{0.9\textwidth}{lX}
+ dftdirectory    & Directory of DFT files \\
  name\_scf       & Name of scf file (without suffix) \\
  name\_nscf      & Name of nscf file (without suffix) \\
  wfcdirectory   & Directory for the wfc files \\
@@ -980,7 +1051,7 @@ This glossary indicates the meaning of the variables used in the suite \textbf{b
 \end{tabularx}
 \vspace{0.5cm}
 
-\begin{tabularx}{\textwidth}{Xl}
+\begin{tabularx}{0.9\textwidth}{lX}
  a1             & First lattice vector in real space (bohr) \\
  a2             & Second lattice vector in real space (bohr) \\
  a3             & Third lattice vector in real space (bohr) \\
@@ -991,13 +1062,14 @@ This glossary indicates the meaning of the variables used in the suite \textbf{b
 \end{tabularx}
 \vspace{0.5cm}
 
-\hspace*{-2cm}\begin{tabularx}{\textwidth}{ll}
+\begin{tabularx}{0.9\textwidth}{lX}
  nbnd           & Number of bands \\
 
  eigenvalues    & Array with all eigenvalues of the calculation (Ry) \\
  occupations    & Array with all occupations of the calculation \\
 
- phase[i,nk]    & Array with exp(1j*(kpoints[nk,0]*r[i,0] + kpoints[nk,1]*r[i,1] + kpoints[nk,2]*r[i,2])) \\
+ phase[i,nk]    & Array with exp(1j*(kpoints[nk,0]*r[i,0] + kpoints[nk,1]*r[i,1] \\
+                & \hspace*{3cm}+ kpoints[nk,2]*r[i,2])) \\
  kpoints[nk,2]  & Array with coordinates of all k-points ($2\pi$/bohr) \\
  r[i,2]         & Array with coordinates of all points of space (bohr) \\
 
@@ -1461,16 +1533,176 @@ Also, it is possible to change some of the default behaviour by passing some par
 
 
 
-
-
-
-
-
-
-
-
-
-
 \end{appendices}
+
+\begin{thebibliography}{00}
+
+\bibitem{Gradhand_2012}
+M.~Gradhand, D.~V. Fedorov, F.~Pientka, P.~Zahn, I.~Mertig, B.~L. Györffy,
+  \href{https://dx.doi.org/10.1088/0953-8984/24/21/213202}{First-principle
+  calculations of the berry curvature of bloch states for charge and spin
+  transport of electrons}, Journal of Physics: Condensed Matter 24~(21) (2012)
+  213202.
+\newblock \href {https://doi.org/10.1088/0953-8984/24/21/213202}
+  {\path{doi:10.1088/0953-8984/24/21/213202}}.
+% \newline\urlprefix\url{https://dx.doi.org/10.1088/0953-8984/24/21/213202}
+
+
+\bibitem{Sipe1995}
+C.~Aversa, J.~E. Sipe, Nonlinear optical susceptibilities of semiconductors:
+  Results with a length-gauge analysis, Physical Review B 52 (1995)
+  14636--14645.
+\newblock \href {https://doi.org/10.1103/PhysRevB.52.14636}
+  {\path{doi:10.1103/PhysRevB.52.14636}}.
+
+\bibitem{Sipe2000}
+J.~E. Sipe, A.~I. Shkrebtii, Second-order optical response in semiconductors,
+  Physical Review B 61 (2000) 5337--5352.
+\newblock \href {https://doi.org/10.1103/PhysRevB.61.5337}
+  {\path{doi:10.1103/PhysRevB.61.5337}}.
+
+\bibitem{Ventura2017}
+G.~B. Ventura, D.~J. Passos, J.~M.~B. Lopes~dos Santos, J.~M. Viana
+  Parente~Lopes, N.~M.~R. Peres, Gauge covariances and nonlinear optical
+  responses, Physical Review B 96 (2017) 035431.
+\newblock \href {https://doi.org/10.1103/PhysRevB.96.035431}
+  {\path{doi:10.1103/PhysRevB.96.035431}}.
+
+\bibitem{Giannozzi2009}
+P.~Giannozzi, S.~Baroni, N.~Bonini, M.~Calandra, R.~Car, C.~Cavazzoni,
+  D.~Ceresoli, G.~L. Chiarotti, M.~Cococcioni, I.~Dabo, et~al., Quantum
+  espresso: a modular and open-source software project for quantum simulations
+  of materials, Journal of Physics: Condensed Matter 21~(39) (2009) 395502.
+\newblock \href {https://doi.org/10.1088/0953-8984/21/39/395502}
+  {\path{doi:10.1088/0953-8984/21/39/395502}}.
+
+\bibitem{Giannozzi2017}
+P.~Giannozzi, O.~Andreussi, T.~Brumme, O.~Bunau, M.~Buongiorno~Nardelli,
+  M.~Calandra, R.~Car, C.~Cavazzoni, D.~Ceresoli, M.~Cococcioni, et~al.,
+  Advanced capabilities for materials modelling with quantum espresso, Journal
+  of Physics: Condensed Matter 29~(46) (2017) 465901.
+\newblock \href {https://doi.org/10.1088/1361-648X/aa8f79}
+  {\path{doi:10.1088/1361-648X/aa8f79}}.
+%
+%
+% \bibitem{Ventura2019}
+% G.~B. Ventura, D.~Passos, J.~M. V.~P. Lopes, J.~M. B.~L. dos Santos, A study of
+%   the nonlinear optical response of the plain graphene and gapped graphene
+%   monolayers beyond the dirac approximation, Journal of Physics: Condensed
+%   Matter (dec 2019).
+% \newblock \href {https://doi.org/10.1088/1361-648x/ab62bc}
+%   {\path{doi:10.1088/1361-648x/ab62bc}}.
+%
+% \bibitem{Resta1992}
+% R.~Resta, Theory of the electric polarization in crystals, Ferroelectrics
+%   136~(1) (1992) 51--55.
+%
+% \bibitem{Zak1989}
+% J.~Zak, Berry's phase for energy bands in solids, Physical Review Letters 62
+%   (1989) 2747--2750.
+% \newblock \href {https://doi.org/10.1103/PhysRevLett.62.2747}
+%   {\path{doi:10.1103/PhysRevLett.62.2747}}.
+%
+% \bibitem{Strinati1978}
+% G.~Strinati, Multipole wave functions for photoelectrons in crystals. iii. the
+%   role of singular points in the band structure and the tails of the wannier
+%   functions, Phys. Rev. B 18 (1978) 4104--4119.
+% \newblock \href {https://doi.org/10.1103/PhysRevB.18.4104}
+%   {\path{doi:10.1103/PhysRevB.18.4104}}.
+%
+% \bibitem{Virk2007}
+% K.~S. Virk, J.~E. Sipe, Semiconductor optics in length gauge: A general
+%   numerical approach, Phys. Rev. B 76 (2007) 035213.
+% \newblock \href {https://doi.org/10.1103/PhysRevB.76.035213}
+%   {\path{doi:10.1103/PhysRevB.76.035213}}.
+%
+% \bibitem{Fukui2005}
+% T.~Fukui, Y.~Hatsugai, H.~Suzuki, Chern numbers in discretized brillouin zone:
+%   Efficient method of computing (spin) hall conductances, Journal of the
+%   Physical Society of Japan 74~(6) (2005) 1674--1677.
+% \newblock \href {http://arxiv.org/abs/https://doi.org/10.1143/JPSJ.74.1674}
+%   {\path{arXiv:https://doi.org/10.1143/JPSJ.74.1674}}, \href
+%   {https://doi.org/10.1143/JPSJ.74.1674} {\path{doi:10.1143/JPSJ.74.1674}}.
+%
+% \bibitem{Marzari1997}
+% N.~Marzari, D.~Vanderbilt, Maximally localized generalized wannier functions
+%   for composite energy bands, Physical Review B 56 (1997) 12847--12865.
+% \newblock \href {https://doi.org/10.1103/PhysRevB.56.12847}
+%   {\path{doi:10.1103/PhysRevB.56.12847}}.
+%
+% \bibitem{Hipolito2016}
+% F.~Hipolito, T.~G. Pedersen, V.~M. Pereira, Nonlinear photocurrents in
+%   two-dimensional systems based on graphene and boron nitride, Physical Review
+%   B 94~(4) (2016) 045434.
+% \newblock \href {https://doi.org/10/ggqrqd} {\path{doi:10/ggqrqd}}.
+%
+% \bibitem{Taghizadeh2017}
+% A.~Taghizadeh, F.~Hipolito, T.~G. Pedersen, Linear and nonlinear optical
+%   response of crystals using length and velocity gauges: Effect of basis
+%   truncation, Phys. Rev. B 96 (2017) 195413.
+% \newblock \href {https://doi.org/10.1103/PhysRevB.96.195413}
+%   {\path{doi:10.1103/PhysRevB.96.195413}}.
+%
+% \bibitem{Ferreira1970}
+% L.~G. Ferreira, N.~J. Parada, Wannier functions and the phases of the bloch
+%   functions, Physical Review B 2~(6) (1970) 1614–1618.
+% \newblock \href {https://doi.org/10/ff9rs2} {\path{doi:10/ff9rs2}}.
+%
+% \bibitem{Pedersen1991}
+% F.~B. Pedersen, G.~T. Einevoll, P.~C. Hemmer, Wannier functions for the
+%   kronig-penney model, Physical Review B 44 (1991) 5470--5475.
+% \newblock \href {https://doi.org/10.1103/PhysRevB.44.5470}
+%   {\path{doi:10.1103/PhysRevB.44.5470}}.
+%
+% \bibitem{newman2018networks}
+% M.~Newman, Networks, Oxford university press, 2018.
+%
+% \bibitem{SciPyProceedings_11}
+% A.~A. Hagberg, D.~A. Schult, P.~J. Swart, Exploring network structure,
+%   dynamics, and function using networkx, in: G.~Varoquaux, T.~Vaught,
+%   J.~Millman (Eds.), Proceedings of the 7th Python in Science Conference,
+%   Pasadena, CA USA, 2008, pp. 11 -- 15.
+%
+% \bibitem{Alloghani2020}
+% M.~Alloghani, D.~Al-Jumeily, J.~Mustafina, A.~Hussain, A.~J. Aljaaf,
+%   \href{https://doi.org/10.1007/978-3-030-22475-2\_1}{A Systematic Review on
+%   Supervised and Unsupervised Machine Learning Algorithms for Data Science},
+%   Springer International Publishing, 2020.
+% \newblock \href {https://doi.org/10.1007/978-3-030-22475-2\_1}
+%   {\path{doi:10.1007/978-3-030-22475-2\_1}}.
+% % \newline\urlprefix\url{https://doi.org/10.1007/978-3-030-22475-2\_1}
+%
+% \bibitem{UnsupervisedSinaga}
+% K.~P. Sinaga, M.-S. Yang, Unsupervised k-means clustering algorithm, IEEE
+%   Access 8 (2020) 80716--80727.
+% \newblock \href {https://doi.org/10.1109/ACCESS.2020.2988796}
+%   {\path{doi:10.1109/ACCESS.2020.2988796}}.
+%
+%
+%
+%
+% \bibitem{Brener1975}
+% N.~E. Brener, Random-phase-approximation dielectric function for diamond, with
+%   local field effects included, Physical Review B 12~(4) (1975) 1487–1492.
+% \newblock \href {https://doi.org/10/dx6nb4} {\path{doi:10/dx6nb4}}.
+%
+% \bibitem{qe_parallelization}
+% P.~Giannozzi, O.~Andreussi, T.~Brumme, O.~Bunau, M.~B. Nardelli, M.~Calandra,
+%   R.~Car, C.~Cavazzoni, D.~Ceresoli, M.~Cococcioni, N.~Colonna, I.~Carnimeo,
+%   A.~D. Corso, S.~de~Gironcoli, P.~Delugas, R.~A. DiStasio, A.~Ferretti,
+%   A.~Floris, G.~Fratesi, G.~Fugallo, R.~Gebauer, U.~Gerstmann, F.~Giustino,
+%   T.~Gorni, J.~Jia, M.~Kawamura, H.-Y. Ko, A.~Kokalj, E.~Küçükbenli,
+%   M.~Lazzeri, M.~Marsili, N.~Marzari, F.~Mauri, N.~L. Nguyen, H.-V. Nguyen,
+%   A.~O. de-la Roza, L.~Paulatto, S.~Poncé, D.~Rocca, R.~Sabatini, B.~Santra,
+%   M.~Schlipf, A.~P. Seitsonen, A.~Smogunov, I.~Timrov, T.~Thonhauser, P.~Umari,
+%   N.~Vast, X.~Wu, S.~Baroni, Advanced capabilities for materials modelling with
+%   quantum espresso, Journal of Physics: Condensed Matter 29~(46) (oct 2017).
+% \newblock \href {https://doi.org/10.1088/1361-648X/aa8f79}
+%   {\path{doi:10.1088/1361-648X/aa8f79}}.
+%
+
+
+\end{thebibliography}
+
 
 \end{document}

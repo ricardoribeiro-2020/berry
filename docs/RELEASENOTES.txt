@@ -1,0 +1,17 @@
+RELEASE NOTES for berry v.2.0.0
+
+New in 2.0 version:
+
+This version has many changes relative to previous ones.
+Therefore, the input and output of most programs may not be compatible with older versions.
+
+The main differences in this version are:
+
+- Improvements of a AI algorithm for the selection of the bands.
+
+- Extension of the software to one and three dimension materials.
+
+- Extension of the software to noncolinear calculations of Quantum ESPRESSO.
+
+
+
