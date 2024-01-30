@@ -330,7 +330,7 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
         if m.dimensions == 1:
             sigm.write("# Energy (eV), sigma_xxx\n")
             for omega in np.arange(0, energy_max + energy_step, energy_step):
-                outp = "{0:.4f}  {1:.4e}  {2:.4e}  {3:.4e}  {4:.4e}  {5:.4e}  {6:.4e}  {7:.4e}  {8:.4e}\n"
+                outp = "{0:.4f}  {1:.4e}\n"
                 sigm.write(
                     outp.format(
                         omega * RY,
@@ -340,7 +340,7 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
         elif m.dimensions == 2:
             sigm.write("# Energy (eV), sigma_xxx, sigma_yyy, sigma_xxy, sigma_xyx, sigma_xyy, sigma_yyx, sigma_yxy, sigma_yxx\n")
             for omega in np.arange(0, energy_max + energy_step, energy_step):
-                outp = "{0:.4f}  {1:.4e}\n"
+                outp = "{0:.4f}  {1:.4e}  {2:.4e}  {3:.4e}  {4:.4e}  {5:.4e}  {6:.4e}  {7:.4e}  {8:.4e}\n"
                 sigm.write(
                     outp.format(
                         omega * RY,
