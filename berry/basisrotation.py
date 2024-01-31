@@ -28,27 +28,43 @@ MISTAKE = 1
 NOT_SOLVED = 0
 
 def func(aa, ddot):
+    # < Psi_A | Psi_1 > a_1 + < Psi_A | Psi_2 > a_2
     r1 = complex(ddot[0],ddot[1])*aa[0]*np.exp(1j*aa[1]) + complex(ddot[2],ddot[3])*np.sqrt(1 - aa[0]**2)*np.exp(1j*aa[2])
+    # < Psi_B | Psi_1 > b_1 + < Psi_B | Psi_2 > b_2
     r2 = complex(ddot[4],ddot[5])*aa[3]*np.exp(1j*aa[4]) + complex(ddot[6],ddot[7])*np.sqrt(1 - aa[3]**2)*np.exp(1j*aa[5])
+    # return the negative, so it minimizes instead of maximizes
     return -np.absolute(r1) - np.absolute(r2)
 
 def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
-    machbn = bnfinal[k, bn]
+    """Verifies the result of the basis rotation, and make the necessary changes to the signal's file.
+    k              the k-point where transformation was performed
+    bn             array with the original band numbers for each k-point, state
+    psinew         new wavefunction
+    bnfinal        the band where the wavefunction ends up
+    sigfinal       the new signaling of the state
+    connections    the array with the original modulus of the dot products
+    """
+    logger.info("")
+    machbn = bnfinal[k, bn]      # Original band attribution for k-point k and state bn
 
     dot_products = []
-    for i_neig, kneig in enumerate(d.neighbors[k]):
-        if kneig == -1:
+    for i_neig, kneig in enumerate(d.neighbors[k]):  # Run over neighbors
+        if kneig == -1:    # Exclude k-points out of the set
             continue
 
-        bneig = bnfinal[kneig, bn]
+        bneig = bnfinal[kneig, bn]   # Original band attribution of the neighbor
+        logger.info(f"\tCalculating dot product <{k},{machbn}|{kneig},{bneig}>")
+        # Get neighbor's wavefunction
         psineig = np.load(os.path.join(m.wfcdirectory, f"k0{kneig}b0{bneig}.wfc"))
 
+        # Calculate the dot product between the neighbor and the new state
         dphase = d_phase[:, k] * np.conjugate(d_phase[:, kneig])
         dot_product = np.sum(dphase * psinew * np.conjugate(psineig)) / m.nr
         dp = np.abs(dot_product)
-        logger.info(f'\told_dp: {connections[k, i_neig, machbn, bneig]} new_dp: {dp}')
+        logger.info(f'\told dp: {connections[k, i_neig, machbn, bneig]} new dp: {dp}')
         dot_products.append(dp)
 
+        # Evaluates the new signaling of the state
         dot_products_neigs = []
         for j_neig, k2_neig in enumerate(d.neighbors[kneig]):
             if k2_neig == -1:
@@ -57,7 +73,7 @@ def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
             connection = dp if k2_neig == k else connections[kneig, j_neig, bneig, bn2neig]
             dot_products_neigs.append(connection)
         new_signal = evaluate_result(dot_products_neigs)
-        logger.info(f'\told_signal: {sigfinal[kneig, bn]} new_signal: {new_signal}')
+        logger.info(f'\told signal: {sigfinal[kneig, bn]} new signal: {new_signal}')
         sigfinal[kneig, bn] = new_signal
     
     sigfinal[k, bn] = evaluate_result(dot_products)
@@ -131,14 +147,14 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     logger.info("\tin bands\n\t", ', '.join(map(list_str, bnproblem)))
     logger.info("\tmatch  bands\n\t", ', '.join(map(list_str, matchbandproblem)))
 
-
-    for nki, nk0 in enumerate(kpproblem):  # nki is the index in list kpproblem
+    # runs through the list of problems
+    for nkindex, nk0 in enumerate(kpproblem):  # nkindex is the index in list kpproblem
         logger.info("\n\n\tK-point where problem will be solved:", nk0)
         for j in range(m.dimensions*2):    # Find the neigbhors of the k-point to be used on interpolation
             nk = d.neighbors[nk0, j]       # k-point number of neighbor
-            if nk != -1 and signalfinal[nk,bnproblem[nki, 0]] > DEGENERATE and signalfinal[nk,bnproblem[nki, 1]] > DEGENERATE:
-                nb1 = matchbandproblem[nki, 0]   # One of the bands of the neighbor
-                nb2 = matchbandproblem[nki, 1]   # The other band
+            if nk != -1 and signalfinal[nk,bnproblem[nkindex, 0]] > DEGENERATE and signalfinal[nk,bnproblem[nkindex, 1]] > DEGENERATE:
+                nb1 = matchbandproblem[nkindex, 0]   # One of the bands of the neighbor
+                nb2 = matchbandproblem[nkindex, 1]   # The other band
                 nkj = j
                 break                      # Found a valid neighbor, can proceed
             else:
@@ -151,36 +167,42 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
             continue
         else:
             logger.info("\tBands that will be mixed:", nb1, nb2)
-
-        dotA1 = dotproduct[nk0, nkj, nb1, nb1]    # dots products read from file
-        dotA2 = dotproduct[nk0, nkj, nb1, nb2]
-        dotB1 = dotproduct[nk0, nkj, nb2, nb1]
-        dotB2 = dotproduct[nk0, nkj, nb2, nb2]
+        # k-point that has a problem: nk0
+        # k-point that has clear bands A and B: nkj
+        # dots products read from file
+        dotA1 = dotproduct[nk0, nkj, nb1, nb1]    # < nk0,nb1 | nkj,nb1 >
+        dotA2 = dotproduct[nk0, nkj, nb1, nb2]    # < nk0,nb1 | nkj,nb2 >
+        dotB1 = dotproduct[nk0, nkj, nb2, nb1]    # < nk0,nb2 | nkj,nb1 >
+        dotB2 = dotproduct[nk0, nkj, nb2, nb2]    # < nk0,nb2 | nkj,nb2 >
+        # Create array with the dot products, real and imaginary part separated, to be the parameters of func()
         dot = np.array([np.real(dotA1), np.imag(dotA1), np.real(dotA2), np.imag(dotA2), np.real(dotB1), np.imag(dotB1), np.real(dotB2), np.imag(dotB2)])
         
-        a1 = 0.5
-        a1o = 0
-        a2 = np.sqrt(1 - a1**2)
-        a2o = 0
+        # Starting values for the variables we want to find
+        a1 = 0.5                 # Modulus of a_1
+        a1o = 0                  # Phase of a_1
+        a2 = np.sqrt(1 - a1**2)  # Modulus of a_2, is related to modulus of a_1 due to normalization
+        a2o = 0                  # Phase of a_2
 
-        b1 = 0.5
-        b1o = 0
-        b2 = np.sqrt(1 - b1**2)
-        b2o = 0
-
+        b1 = 0.5                 # Modulus of b_1
+        b1o = 0                  # Phase of b_1
+        b2 = np.sqrt(1 - b1**2)  # Modulus of b_2, is related to modulus of b_1 due to normalization
+        b2o = 0                  # Phase of b_2
+        # Array with the initial values
         a = np.array([a1, a1o, a2o, b1, b1o, b2o])
 
-        const = ({'type': 'eq', 'fun': lambda a: a[0]*a[3]*np.cos(a[4] - a[1]) + a2*b2*np.cos(a[5] - a[2])},
-                 {'type': 'eq', 'fun': lambda a: a[0]*a[3]*np.sin(a[4] - a[1]) + a2*b2*np.sin(a[5] - a[2])})
+        # The following is equivalent to the constraint a_1^*b_1 + a_2^*b_2 = 0
+        const = ({'type': 'eq', 'fun': lambda a: a[0]*a[3]*np.cos(a[4] - a[1]) + np.sqrt(1 - a[0]**2)*np.sqrt(1 - a[3]**2)*np.cos(a[5] - a[2])},
+                 {'type': 'eq', 'fun': lambda a: a[0]*a[3]*np.sin(a[4] - a[1]) + np.sqrt(1 - a[0]**2)*np.sqrt(1 - a[3]**2)*np.sin(a[5] - a[2])})
 
         logger.info()
 
         myoptions = {'disp': False}
-        bnds = ((-1, 1), (-np.pi, np.pi), (-np.pi, np.pi), (-1, 1), (-np.pi, np.pi), (-np.pi, np.pi))
-
+        # Bounds for the variables we want to find (modulus vary between 0 and 1 and phases between -pi and +pi)
+        bnds = ((0, 1), (-np.pi, np.pi), (-np.pi, np.pi), (0, 1), (-np.pi, np.pi), (-np.pi, np.pi))
+        # Finds the arguments a that minimizes func() with the constraint const = 0
         res = minimize(func, a, args=dot, options = myoptions, bounds = bnds, constraints = const)
 
-        logger.info("\tResult:", res.x)
+        logger.info("\tResult output:", res.x)
         ca1 = res.x[0]*np.exp(1j*res.x[1])
         logger.info("\ta1 = ", ca1)
         ca2 = np.sqrt(1 - res.x[0]**2)*np.exp(1j*res.x[2])
@@ -189,25 +211,30 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
         logger.info("\tb1 = ", cb1)
         cb2 = np.sqrt(1 - res.x[3]**2)*np.exp(1j*res.x[5])
         logger.info("\tb2 = ", cb2)
+        verification = np.conjugate(ca1)*cb1 + np.conjugate(ca2)*cb2
+        logger.info(f"\tVerification, should be zero: {verification}")
 
+        # Create arrays for the new wavefunctions
         psinewA = np.zeros((int(m.nr)), dtype=complex)
         psinewB = np.zeros((int(m.nr)), dtype=complex)
 
+        # Load old wavefunctions
         infile = os.path.join(m.wfcdirectory, f"k0{nk0}b0{nb1}.wfc")
         logger.info()
-        logger.info("\tReading file: ", infile)
+        logger.info("\tReading old wavefunction 1: ", infile)
         psi1 = np.load(infile)  # puts wfc in this array
         infile = os.path.join(m.wfcdirectory, f"k0{nk0}b0{nb2}.wfc")
-        logger.info("\tReading file: ", infile)
+        logger.info("\tReading old wavefunction 2: ", infile)
         psi2 = np.load(infile)  # puts wfc in this array
 
+        # Calculate new wavefunctions
         psinewA = psi1*ca1 + psi2*ca2
         psinewB = psi1*cb1 + psi2*cb2
 
         signalfinal = set_new_signal(nk0, nb1, psinewA, bandsfinal, signalfinal, connections, logger)
         signalfinal = set_new_signal(nk0, nb2, psinewB, bandsfinal, signalfinal, connections, logger)
 
-        # Save new files
+        # Save new wavefunctions to files with extension wfc1
         logger.info()
         outfile = os.path.join(m.wfcdirectory, f"k0{nk0}b0{nb1}.wfc1")
         logger.info("\tWriting file: ", outfile)
