@@ -49,3 +49,7 @@ with open("data/datafile.npy", "rb") as fich:
     nelec = float(np.load(fich))   # Number of electrons
     wfck2r = str(np.load(fich))    # File for extracting DFT wfc to real space
     vb = int(np.load(fich))        # Valence band number
+
+    kvector1 = np.load(fich)        # First vector that define volume in k space
+    kvector2 = np.load(fich)        # Second vector that define volume in k space
+    kvector3 = np.load(fich)        # Third vector that define volume in k space

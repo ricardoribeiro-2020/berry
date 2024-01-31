@@ -341,6 +341,12 @@ def preprocessing_cli(args: argparse.Namespace):
             args_dict["program"] = str(ii[1])
         if ii[0] == "refname":
             args_dict["ref_name"] = ii[1]
+        if ii[0] == "kvector1":
+            args_dict["kvector1"] = [float(ii[1]), float(ii[2]), float(ii[3])]
+        if ii[0] == "kvector2":
+            args_dict["kvector2"] = [float(ii[1]), float(ii[2]), float(ii[3])]
+        if ii[0] == "kvector3":
+            args_dict["kvector3"] = [float(ii[1]), float(ii[2]), float(ii[3])]            
 
     args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
     args_dict["logger_name"] = args.o

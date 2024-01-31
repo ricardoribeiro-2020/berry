@@ -16,7 +16,7 @@ from berry._subroutines.parserQE import parser
 
 # Time when the run starts, then used for reference to the run:
 now = time.strftime("%d-%m-%Y_%H:%M:%S", time.gmtime())
-Data = Dict[str, Union[int, str, float]]
+Date = Dict[str, Union[int, str, float]]
 
 # This class initializes a berry run
 class Preprocess:
@@ -37,6 +37,9 @@ class Preprocess:
                  point: float = 1.178097, 
                  program: str = "QE", 
                  ref_name: str = now, 
+                 kvector1: List[float] = None,
+                 kvector2: List[float] = None,
+                 kvector3: List[float] = None,
                  flush: bool = False
                 ):
         
@@ -46,6 +49,22 @@ class Preprocess:
         self.nky = nky                       # Number of k-points in the y direction
         self.nkz = nkz                       # Number of k-points in the z direction
         self.step = step                     # Distance between k-points
+
+        if kvector1 == None:
+            self.kvector1 = [1.0,0.0,0.0]
+        else:
+            self.kvector1 = kvector1         # First vector for the volume in k-space
+
+        if kvector2 == None:
+            self.kvector2 = [0.0,1.0,0.0]
+        else:
+            self.kvector2 = kvector2         # Second vector for the volume in k-space
+
+        if kvector3 == None:
+            self.kvector3 = [0.0,0.0,1.0]
+        else:
+            self.kvector3 = kvector3         # Third vector for the volume in k-space
+
         self.nbnd = nbnd                     # Number of bands to be included in the calculation
         self.npr = npr                       # Number of processes to be run
         self.dft_dir = dft_dir               # Directory where the DFT files go
@@ -56,19 +75,60 @@ class Preprocess:
         self.program = program               # Name of the DFT software to be used
         self.ref_name = ref_name             # Unique reference for the whole run
 
-        if self.nkz > 1 and self.nky > 1 and self.nkz > 1:
+        if not os.path.exists("log"):
+            os.mkdir("log")                      # Creates log directory
+        self.logger = log(logger_name, "PREPROCESS", level=logger_level, flush=flush)
+
+        # Verification of the vectors that define k-space that will be dealt with
+        if self.nkx > 1 and self.nky > 1 and self.nkz > 1:
             self.dimensions = 3                  # Number of spatial dimensions of the material
+            if self.kvector1[0]*self.kvector2[0] + self.kvector1[1]*self.kvector2[1] + self.kvector1[2]*self.kvector2[2] != 0:
+                self.logger.info(f"\tVectors 1 and 2 that define the volume in reciprocal space have to be orthogonal.")
+                self.logger.info(f"\tExiting program.")
+                self.logger.footer()
+                exit(0)            
+            elif self.kvector1[0]*self.kvector3[0] + self.kvector1[1]*self.kvector3[1] + self.kvector1[2]*self.kvector3[2] != 0:
+                self.logger.info(f"\tVectors 1 and 3 that define the volume in reciprocal space have to be orthogonal.")
+                self.logger.info(f"\tExiting program.")
+                self.logger.footer()
+            elif self.kvector2[0]*self.kvector3[0] + self.kvector2[1]*self.kvector3[1] + self.kvector2[2]*self.kvector3[2] != 0:
+                self.logger.info(f"\tVectors 2 and 3 that define the volume in reciprocal space have to be orthogonal.")
+                self.logger.info(f"\tExiting program.")
+                self.logger.footer()
+            if self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2 != 1:
+                modulus_kvector1 = np.sqrt(self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2)
+                self.kvector1 = kvector1/modulus_kvector1
+            if self.kvector2[0]**2 + self.kvector2[1]**2 + self.kvector2[2]**2 != 1:
+                modulus_kvector2 = np.sqrt(self.kvector2[0]**2 + self.kvector2[1]**2 + self.kvector2[2]**2)
+                self.kvector2 = kvector2/modulus_kvector2
+            if self.kvector3[0]**2 + self.kvector3[1]**2 + self.kvector3[2]**2 != 1:
+                modulus_kvector3 = np.sqrt(self.kvector3[0]**2 + self.kvector3[1]**2 + self.kvector3[2]**2)
+                self.kvector3 = kvector3/modulus_kvector3           
         elif self.nkz == 1 and self.nky > 1:
             self.dimensions = 2
+            if self.kvector1[0]*self.kvector2[0] + self.kvector1[1]*self.kvector2[1] + self.kvector1[2]*self.kvector2[2] != 0:
+                self.logger.info(f"\tThe two vectors that define the area in reciprocal space have to be orthogonal.")
+                self.logger.info(f"\tExiting program.")
+                self.logger.footer()
+                exit(0)
+            if self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2 != 1:
+                modulus_kvector1 = np.sqrt(self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2)
+                self.kvector1 = kvector1/modulus_kvector1
+            if self.kvector2[0]**2 + self.kvector2[1]**2 + self.kvector2[2]**2 != 1:
+                modulus_kvector2 = np.sqrt(self.kvector2[0]**2 + self.kvector2[1]**2 + self.kvector2[2]**2)
+                self.kvector2 = kvector2/modulus_kvector2
         else:
             self.dimensions = 1
+            if self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2 != 1:
+                modulus_kvector = np.sqrt(self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2)
+                self.kvector1 = kvector1/modulus_kvector
+                #self.kvector2 = [0.0,1.0,0.0]
+                #self.kvector3 = [0.0,0.0,1.0]
         # If it is 2D, use x and y directions
         # If it is 1D, use x direction
         # Only these possibilities are available
 
-        if not os.path.exists("log"):
-            os.mkdir("log")                      # Creates log directory
-        self.logger = log(logger_name, "PREPROCESS", level=logger_level, flush=flush)
+
 
         # Full path to the log directory:
         self.log_dir = os.path.join(self.work_dir, "log")
@@ -234,9 +294,10 @@ class Preprocess:
             np.save(fich, self.wfck2r)  # File for extracting DFT wfc to real space
             np.save(fich, self.vb)  # Valence band number
  
-            np.save(fich, "dummy")  # Saving space for future values and compatibility
-            np.save(fich, "dummy")  # Saving space for future values and compatibility
-            np.save(fich, "dummy")  # Saving space for future values and compatibility
+            np.save(fich, self.kvector1)  # First vector that define volume in k space
+            np.save(fich, self.kvector2)  # Second vector that define volume in k space
+            np.save(fich, self.kvector3)  # Third vector that define volume in k space
+            
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility
@@ -512,6 +573,11 @@ class Preprocess:
         self.logger.info(f"\tStarting k-point of the mesh: {self.k0}")
         self.logger.info(f"\tNumber of k-points in the mesh: {self.nkx}x{self.nky}x{self.nkz}")
         self.logger.info(f"\tStep of the mesh: {self.step}")
+        self.logger.info(f"\tFirst direction vector for k-points: {self.kvector1}")
+        if self.dimensions == 2 or self.dimensions == 3:
+            self.logger.info(f"\tSecond direction vector for k-points: {self.kvector2}")
+        if self.dimensions == 3:
+            self.logger.info(f"\tThird direction vector for k-points: {self.kvector3}")
         self.logger.info(f"\tTo calculate point in real space where all phases match: {self.point}")
         self.logger.info(f"\tNumber of bands to be calculated: {self.nbnd}\n")
 
