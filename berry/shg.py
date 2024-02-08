@@ -67,7 +67,7 @@ def get_fermi_delta_ea_grad_ea(grad: Gradient, eigen_array: np.ndarray, conducti
         fermi = np.zeros((m.nkx, conduction_band + 1, conduction_band + 1))
 
         for s, sprime in product(band_list, repeat=2):
-            delta_ea[:, s, sprime] = eigen_array[:, :, s] - eigen_array[:, sprime]
+            delta_ea[:, s, sprime] = eigen_array[:, s] - eigen_array[:, sprime]
             grad_dea[:, :, s, sprime] = grad(delta_ea[:, s, sprime])
             if s <= m.vb < sprime:
                 fermi[:, s, sprime] = 1
@@ -91,7 +91,7 @@ def get_fermi_delta_ea_grad_ea(grad: Gradient, eigen_array: np.ndarray, conducti
         fermi = np.zeros((m.nkx, m.nky, m.nkz, conduction_band + 1, conduction_band + 1))
 
         for s, sprime in product(band_list, repeat=2):
-            delta_ea[:, :, :, s, sprime] = eigen_array[:, :, s] - eigen_array[:, :, :, sprime]
+            delta_ea[:, :, :, s, sprime] = eigen_array[:, :, :, s] - eigen_array[:, :, :, sprime]
             grad_dea[:, :, :, :, s, sprime] = grad(delta_ea[:, :, :, s, sprime])
             if s <= m.vb < sprime:
                 fermi[:, :, :, s, sprime] = 1
@@ -119,9 +119,9 @@ def calculate_shg(omega: float, broadning: float):
                     continue
                 sig[:, beta, alpha1, alpha2] += (
                     (
-                        grad_dea[alpha2, :, :, s, sprime]
+                        grad_dea[alpha2, :, s, sprime]
                         * comute(berry_connections, sprime, s, beta, alpha1)
-                        + grad_dea[alpha1, :, :, s, sprime]
+                        + grad_dea[alpha1, :, s, sprime]
                         * comute(berry_connections, sprime, s, beta, alpha2)
                     )
                     * gamma12[:, s, sprime]
@@ -134,7 +134,7 @@ def calculate_shg(omega: float, broadning: float):
                     if r in (sprime, s):
                         continue
                     sig[:, beta, alpha1, alpha2] += (
-                        -0.25j * gamma1[:, :, s, sprime] * 
+                        -0.25j * gamma1[:, s, sprime] * 
                         (
                             comute3(berry_connections, sprime, s, r, beta, alpha2, alpha1) + 
                             comute3(berry_connections, sprime, s, r, beta, alpha1, alpha2)
@@ -197,9 +197,9 @@ def calculate_shg(omega: float, broadning: float):
                     continue
                 sig[:, :, :, beta, alpha1, alpha2] += (
                     (
-                        grad_dea[alpha2, :, :, s, sprime]
+                        grad_dea[alpha2, :, :, :, s, sprime]
                         * comute(berry_connections, sprime, s, beta, alpha1)
-                        + grad_dea[alpha1, :, :, s, sprime]
+                        + grad_dea[alpha1, :, :, :, s, sprime]
                         * comute(berry_connections, sprime, s, beta, alpha2)
                     )
                     * gamma12[:, :, :, s, sprime]
