@@ -551,9 +551,9 @@ class Preprocess:
         for l in range(self.nkz):
             for j in range(self.nky):
                 for i in range(self.nkx):
-                    k1 = round(self.k0[0] + i * self.step, 8)
-                    k2 = round(self.k0[1] + j * self.step, 8)
-                    k3 = round(self.k0[2] + l * self.step, 8)
+                    k1 = round(self.k0[0] + self.step*(i*self.kvector1[0] + j*self.kvector2[0] + l*self.kvector3[0]), 8)
+                    k2 = round(self.k0[1] + self.step*(i*self.kvector1[1] + j*self.kvector2[1] + l*self.kvector3[1]), 8)
+                    k3 = round(self.k0[2] + self.step*(i*self.kvector1[2] + j*self.kvector2[2] + l*self.kvector3[2]), 8)
 
                     kkk = f"{k1:.7f}  {k2:.7f}  {k3:.7f}"
                     self.nscf_kpoints += kkk + "  1\n"
