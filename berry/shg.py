@@ -62,7 +62,7 @@ def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
 
 def get_fermi_delta_ea_grad_ea(grad: Gradient, eigen_array: np.ndarray, conduction_band: int, ) -> Tuple[np.ndarray, np.ndarray]:
     if m.dimensions == 1:
-        grad_dea = np.zeros((2, m.nkx, conduction_band + 1, conduction_band + 1), dtype=np.complex128)
+        grad_dea = np.zeros((1, m.nkx, conduction_band + 1, conduction_band + 1), dtype=np.complex128)
         delta_ea = np.zeros((m.nkx, conduction_band + 1, conduction_band + 1))
         fermi = np.zeros((m.nkx, conduction_band + 1, conduction_band + 1))
 
@@ -86,7 +86,7 @@ def get_fermi_delta_ea_grad_ea(grad: Gradient, eigen_array: np.ndarray, conducti
             elif sprime <= m.vb < s:
                 fermi[:, :, s, sprime] = -1
     else:
-        grad_dea = np.zeros((2, m.nkx, m.nky, m.nkz, conduction_band + 1, conduction_band + 1), dtype=np.complex128)
+        grad_dea = np.zeros((3, m.nkx, m.nky, m.nkz, conduction_band + 1, conduction_band + 1), dtype=np.complex128)
         delta_ea = np.zeros((m.nkx, m.nky, m.nkz, conduction_band + 1, conduction_band + 1))
         fermi = np.zeros((m.nkx, m.nky, m.nkz, conduction_band + 1, conduction_band + 1))
 
@@ -224,8 +224,12 @@ def calculate_shg(omega: float, broadning: float):
                         ) * 
                         gamma3[:, :, :, s, r]
                     )
-
-    return (omega, np.sum(np.sum(sig, axis=0), axis=0) * VK)
+    if m.dimensions == 1:
+        return (omega, np.sum(sig, axis=0) * VK)
+    elif m.dimensions == 2:
+        return (omega, np.sum(np.sum(sig, axis=0), axis=0) * VK)
+    else:
+        return (omega, np.sum(np.sum(np.sum(sig, axis=0), axis=0), axis=0) * VK)
 
 
 def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, broadning: complex = 0.01j, logger_name: str = "shg", logger_level: int = logging.INFO, flush: bool = False):
