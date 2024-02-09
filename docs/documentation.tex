@@ -491,24 +491,35 @@ The indexes $\alpha$ and $\beta$ run through the spatial coordinates $x$, $y$ an
 
 The second order response can be calculated for the case of the second harmonic generation.
 Following the procedure described in ref. \cite{Ventura2017}
-we obtain, for a diagonal component of the SHG, $\sigma^{\beta\beta\beta}(\omega,\omega)$, Eq.(\ref{eq:second_order}).
-\begin{eqnarray}\label{eq:second_order}
- & \nonumber\sigma^{\beta\beta\beta}(\omega,\omega) = -\dfrac{e^3}{\hslash}{\int}_{BZ}\dfrac{d^d\pmb{k}}{(2\pi)^d}
+we obtain, for a diagonal component of the SHG, $\sigma^{\beta\alpha_1\alpha_2}(\omega,\omega)$, Eq.(\ref{eq:second_order}).
+\begin{align}\label{eq:second_order}
+ &\sigma^{\beta\alpha_1\alpha_2}(\omega) = -\dfrac{e^3}{\hslash}\int\limits_{BZ}\dfrac{d^2\pmb{k}}{(2\pi)^2}
  \left[
- {\sum}_{s'\ne s}\dfrac{1}{2} \dfrac{\Delta\epsilon_{\pmb{k}ss'} }{ g_{\omega\pmb{k}ss'}}
+ \sum_{s'\ne s}\dfrac{1}{2} \dfrac{\Delta\epsilon_{\pmb{k}ss'} }{ g_{\omega\pmb{k}ss'}}
  \bigg\lbrace
- \left[ \xi_{\pmb{k}s's}^{\beta},(\xi_{\pmb{k}ss'}^{\beta})_{;\beta}\right]
+ \left(\nabla^{\alpha_2} \Delta \epsilon_{\pmb{k}ss'} \right)
+ \left[ \xi_{\pmb{k}s's}^{\beta},\xi_{\pmb{k}ss'}^{\alpha_1}\right]
+ \dfrac{\Delta f_{\pmb{k}s's}}{  h_{\omega\pmb{k}ss'}^2 }
+ + \left[ \xi_{\pmb{k}s's}^{\beta},(\xi_{\pmb{k}ss'}^{\alpha_1})_{;\alpha_2}\right]
  \dfrac{\Delta f_{\pmb{k}s's}}{  h_{\omega\pmb{k}ss'} }
  \bigg\rbrace
- \right.\\
- & -\dfrac{i}{2}{\sum}_{s'\ne s \ne r}
- \dfrac{\Delta \epsilon_{\pmb{k}ss'} }{ g_{\omega\pmb{k}ss'}}
- \left
-  \lbrace \dfrac{\Delta f_{\pmb{k}s'r}}{h_{\omega\pmb{k}rs'}} - \dfrac{\Delta f_{\pmb{k}rs }}{h_{\omega\pmb{k}sr}} \bigg\rbrace
- \left( \xi_{\pmb{k}s's}^{\beta} \xi_{\pmb{k}sr}^{\beta} \xi_{\pmb{k}rs'}^{\beta}
-     +  \xi_{\pmb{k}s'r}^{\beta} \xi_{\pmb{k}rs}^{\beta} \xi_{\pmb{k}ss'}^{\beta}\right)
+ \right.
+ \\ \nonumber
+ &-%\left.
+ \dfrac{i}{4}\sum_{s'\ne s \ne r}
+ \dfrac{\Delta \epsilon_{\pmb{k}ss'} }{ g_{\omega\pmb{k}ss'} }
+ \left\lbrace
+   \dfrac{\Delta f_{\pmb{k}s'r}}{  h_{\omega\pmb{k}rs'} }
+ \left( \xi_{\pmb{k}s's}^{\beta} \xi_{\pmb{k}sr}^{\alpha_2} \xi_{\pmb{k}rs'}^{\alpha_1}
+     +  \xi_{\pmb{k}s'r}^{\alpha_1} \xi_{\pmb{k}rs}^{\alpha_2} \xi_{\pmb{k}ss'}^{\beta}\right)
+ - \dfrac{\Delta f_{\pmb{k}rs }}{  h_{\omega\pmb{k}sr } }
+ \left( \xi_{\pmb{k}s's}^{\beta} \xi_{\pmb{k}sr}^{\alpha_1} \xi_{\pmb{k}rs'}^{\alpha_2}
+     +  \xi_{\pmb{k}s'r}^{\alpha_2} \xi_{\pmb{k}rs}^{\alpha_1} \xi_{\pmb{k}ss'}^{\beta}\right)
+ \right\rbrace \\ \nonumber
+ &\left. + \left( \alpha_1 \leftrightarrow \alpha_2\right)
  \right]
-\end{eqnarray}
+\end{align}
+
 where
 \begin{equation}
  g_{\omega\pmb{k}ss'} = 2(\hslash\omega + i\Gamma) - \Delta\epsilon_{\pmb{k}ss'}
@@ -516,14 +527,17 @@ where
 \begin{equation}
  h_{\omega\pmb{k}ss'} = (\hslash\omega + i\Gamma) - \Delta\epsilon_{\pmb{k}ss'}
 \end{equation}
-\begin{equation}
-  \left[ \xi_{\pmb{k}s's}^{\beta},(\xi_{\pmb{k}ss'}^{\beta})_{;\beta}\right] =
-  \xi_{\pmb{k}s's}^{\beta}(\xi_{\pmb{k}ss'}^{\beta})_{;\beta} - (\xi_{\pmb{k}ss'}^{\beta})_{;\beta}\xi_{\pmb{k}ss'}^{\beta}
-\end{equation}
-\begin{equation}
- (\xi_{\pmb{k}ss'}^{\beta})_{;\beta}=
-  \left( \nabla^{\beta} \xi_{\pmb{k}ss'}^{\beta}  \right) - i\left( \xi_{\pmb{k}ss}^{\beta} - \xi_{\pmb{k}s's'}^{\beta}\right) \xi_{\pmb{k}ss'}^{\beta}
-\end{equation}
+\begin{align}
+  \left[ \xi_{\pmb{k}s's}^{\beta},\xi_{\pmb{k}ss'}^{\alpha_1}\right] &=
+  \xi_{\pmb{k}s's}^{\beta}\xi_{\pmb{k}ss'}^{\alpha_1} - \xi_{\pmb{k}s's}^{\alpha_1}\xi_{\pmb{k}ss'}^{\beta}
+\end{align}
+\begin{align}
+ (\xi_{\pmb{k}ss'}^{\alpha_1})_{;\alpha_2}=
+  \left( \nabla^{\alpha_2} \xi_{\pmb{k}ss'}^{\alpha_1}  \right) - i\left( \xi_{\pmb{k}ss}^{\alpha_2} - \xi_{\pmb{k}s's'}^{\alpha_2}\right) \xi_{\pmb{k}ss'}^{\alpha_1}
+\end{align}
+
+
+
 
 
 
