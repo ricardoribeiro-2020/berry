@@ -1,7 +1,7 @@
-""" Module to include some commutators for condutivity calculations """
+""" Module to include some auxiliary calculations for condutivity. """
 
 from findiff import Gradient
-
+import berry._subroutines.loadmeta as m
 
 def comute(berryConnection, sprime, s, beta, alpha):
     """ Commute two Berry connections."""
@@ -29,9 +29,14 @@ def comute3(berryConnection, sprime, s, r, beta, alpha2, alpha1):
 
 
 def deriv(berryConnection, s, sprime, alpha1, alpha2, dk):
-    """ Derivative of the Berry connection."""
-    grad = Gradient(h=[dk, dk], acc=2)  # Defines gradient function in 2D
-
+    """ Covariant derivative of the Berry connection."""
+    if m.dimensions == 1:
+        grad = Gradient(h=[dk], acc=2)  # Defines gradient function in 1D
+    elif m.dimensions == 2:
+        grad = Gradient(h=[dk, dk], acc=2)  # Defines gradient function in 2D
+    else:
+        grad = Gradient(h=[dk, dk, dk], acc=2)  # Defines gradient function in 3D
+        
     a = grad(berryConnection[s][sprime][alpha1])
 
     e = (
@@ -45,7 +50,7 @@ def deriv(berryConnection, s, sprime, alpha1, alpha2, dk):
 
 
 def comutederiv(berryConnection, s, sprime, beta, alpha1, alpha2, dk):
-    """ Commute Berry connection and a derivative."""
+    """ Commute Berry connection and a covariant derivative."""
 
     e = (
         berryConnection[sprime][s][beta]
