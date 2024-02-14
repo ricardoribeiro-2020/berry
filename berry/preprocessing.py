@@ -50,7 +50,7 @@ class Preprocess:
         self.nky = nky                       # Number of k-points in the y direction
         self.nkz = nkz                       # Number of k-points in the z direction
         self.step = step                     # Distance between k-points
-        if wfcut < 0:
+        if int(wfcut) < 0:
             self.wfcut = -1
         else:
             self.wfcut = wfcut               # Cutoff band: bands bellow are not included in the calculation (inclusive)
@@ -589,7 +589,7 @@ class Preprocess:
         if self.wfcut == -1:
             self.logger.info(f"\tAll bands will be used.\n")
         else:
-            self.logger.info(f"\tCutoff band (bands bellow, inclusive, will not be used: {self.wfcut})\n")
+            self.logger.info(f"\tCutoff band (bands bellow, inclusive, will not be used): {self.wfcut}\n")
 
         self.logger.info(f"\tWill use {self.npr} processors\n")
         self.logger.info(f"\tWorking directory: {self.work_dir}")

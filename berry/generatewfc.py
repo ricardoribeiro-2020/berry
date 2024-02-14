@@ -29,11 +29,12 @@ class WfcGenerator:
 
         os.system("mkdir -p " + m.wfcdirectory)
 
-        if nk_points is None:
+        if nk_points is None and bands is None:
             self.nk_points = range(m.nks)
+            self.bands = range(m.wfcut + 1, m.nbnd)
         elif  bands is None:
             self.nk_points = nk_points
-            self.bands = range(m.nbnd)
+            self.bands = range(m.wfcut + 1, m.nbnd)
         else:
             self.nk_points = nk_points
             self.bands = bands
@@ -45,8 +46,12 @@ class WfcGenerator:
         # prints header on the log file
         self.logger.header()
 
+        initial_band = m.wfcut + 1
+        number_of_bands = m.nbnd - m.wfcut
+        final_band = m.nbnd - 1
+        
         # Logs the parameters for the run
-        self._log_run_params()
+        self._log_run_params(initial_band,number_of_bands,final_band)
 
         # Sets the program used for converting wavefunctions to the real space
         if m.noncolin:
@@ -56,24 +61,25 @@ class WfcGenerator:
             self.k2r_program = "wfck2r.x"
             self.logger.info("\tNonrelativistic calculation, will use wfck2r.x")
 
+
         # Set which k-points and bands will use (for debuging)
         if isinstance(self.nk_points, range):
             self.logger.info("\n\tWill run for all k-points and bands")
-            self.logger.info(f"\tThere are {m.nks} k-points and {m.nbnd} bands.\n")
+            self.logger.info(f"\tThere are {m.nks} k-points and {number_of_bands} bands.\n")
 
             for nk in self.nk_points:
                 self.logger.info(f"\tCalculating wfc for k-point {nk}")
-                self._wfck2r(nk, 0, m.nbnd)
+                self._wfck2r(nk, initial_band, final_band, number_of_bands)
         else:
             if isinstance(self.bands, range):
                 self.logger.info(f"\tWill run for k-point {self.nk_points} and all bands")
-                self.logger.info(f"\tThere are {m.nks} k-points and {m.nbnd} bands.\n")
+                self.logger.info(f"\tThere are {m.nks} k-points and {number_of_bands} bands.\n")
 
                 self.logger.info(f"\tCalculating wfc for k-point {self.nk_points}")
-                self._wfck2r(self.nk_points, 0, m.nbnd)
+                self._wfck2r(self.nk_points, initial_band, final_band, number_of_bands)
             else:
                 self.logger.info(f"\tWill run just for k-point {self.nk_points} and band {self.bands}.\n")
-                self._wfck2r(self.nk_points, self.bands, 1)
+                self._wfck2r(self.nk_points, self.bands, 1, 1)
 
         self.logger.info("\n\tRemoving temporary file 'tmp'")
         os.system(f"rm {os.getcwd()}/tmp")
@@ -83,7 +89,7 @@ class WfcGenerator:
         self.logger.footer()
 
 
-    def _log_run_params(self):
+    def _log_run_params(self, initial_band, number_of_bands, final_band):
         self.logger.info(f"\tUnique reference of run: {self.ref_name}")
         self.logger.info(f"\tWavefunctions will be saved in directory {m.wfcdirectory}")
         self.logger.info(f"\tDFT files are in directory {m.dftdirectory}")
@@ -92,13 +98,14 @@ class WfcGenerator:
         self.logger.info(f"\tTotal number of k-points: {m.nks}")
         self.logger.info(f"\tNumber of r-points in each direction: {m.nr1} {m.nr2} {m.nr3}")
         self.logger.info(f"\tTotal number of points in real space: {m.nr}")
-        self.logger.info(f"\tNumber of bands: {m.nbnd}\n")
+        self.logger.info(f"\tWill use bands from {initial_band} to {final_band}")
+        self.logger.info(f"\tTotal number of bands to be used: {number_of_bands}\n")
 
         self.logger.info(f"\tPoint choosen for sincronizing phases:  {m.rpoint}\n")
 
-    def _wfck2r(self, nk_point: int, initial_band: int, number_of_bands: int):
+    def _wfck2r(self, nk_point: int, initial_band: int, final_band: int, number_of_bands: int):
         # Set the command to run
-        shell_cmd = self._get_command(nk_point, initial_band, number_of_bands)
+        shell_cmd = self._get_command(nk_point, initial_band, final_band, number_of_bands)
 
         # Runs the command
         output = subprocess.check_output(shell_cmd, shell=True)
@@ -174,14 +181,14 @@ class WfcGenerator:
                 with open(outfile, "wb") as fich:
                     np.save(fich, psifinal[i * m.nr : (i + 1) * m.nr])
 
-    def _get_command(self, nk_point: int, initial_band: int, number_of_bands: int):
+    def _get_command(self, nk_point: int, initial_band: int, final_band: int, number_of_bands: int):
         mpi = "" if m.npr == 1 else f"mpirun -np {m.npr} "
         command =f"&inputpp prefix = '{m.prefix}',\
                         outdir = '{m.outdir}',\
                         first_k = {nk_point + 1},\
                         last_k = {nk_point + 1},\
                         first_band = {initial_band + 1},\
-                        last_band = {initial_band + number_of_bands},\
+                        last_band = {final_band + 1},\
                         loctave = .true., /"
         if m.noncolin:
             return f'echo "{command}" | {mpi} wfck2rFR.x > tmp; tail -{m.nr * number_of_bands*2} {m.wfck2r}'
