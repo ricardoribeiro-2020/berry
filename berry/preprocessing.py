@@ -40,6 +40,7 @@ class Preprocess:
                  kvector1: List[float] = None,
                  kvector2: List[float] = None,
                  kvector3: List[float] = None,
+                 wfcut: int = -1,
                  flush: bool = False
                 ):
         
@@ -49,6 +50,11 @@ class Preprocess:
         self.nky = nky                       # Number of k-points in the y direction
         self.nkz = nkz                       # Number of k-points in the z direction
         self.step = step                     # Distance between k-points
+        if wfcut < 0:
+            self.wfcut = -1
+        else:
+            self.wfcut = wfcut               # Cutoff band: bands bellow are not included in the calculation (inclusive)
+                                             # wfcut = -1 means all bands are included
 
         if kvector1 == None:
             self.kvector1 = [1.0,0.0,0.0]
@@ -298,7 +304,7 @@ class Preprocess:
             np.save(fich, self.kvector2)  # Second vector that define volume in k space
             np.save(fich, self.kvector3)  # Third vector that define volume in k space
             
-            np.save(fich, "dummy")  # Saving space for future values and compatibility
+            np.save(fich, self.wfcut)  # Cutoff band
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility
@@ -579,7 +585,11 @@ class Preprocess:
         if self.dimensions == 3:
             self.logger.info(f"\tThird direction vector for k-points: {self.kvector3}")
         self.logger.info(f"\tTo calculate point in real space where all phases match: {self.point}")
-        self.logger.info(f"\tNumber of bands to be calculated: {self.nbnd}\n")
+        self.logger.info(f"\tNumber of bands to be calculated: {self.nbnd}")
+        if self.wfcut == -1:
+            self.logger.info(f"\tAll bands will be used.\n")
+        else:
+            self.logger.info(f"\tCutoff band (bands bellow, inclusive, will not be used: {self.wfcut})\n")
 
         self.logger.info(f"\tWill use {self.npr} processors\n")
         self.logger.info(f"\tWorking directory: {self.work_dir}")

@@ -53,3 +53,5 @@ with open("data/datafile.npy", "rb") as fich:
     kvector1 = np.load(fich)        # First vector that define volume in k space
     kvector2 = np.load(fich)        # Second vector that define volume in k space
     kvector3 = np.load(fich)        # Third vector that define volume in k space
+
+    wfcut = np.load(fich)           # Cutoff band
