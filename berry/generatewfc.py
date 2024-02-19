@@ -32,13 +32,13 @@ class WfcGenerator:
         if nk_points is None and bands is None:
             self.nk_points = range(m.nks)
             self.bands = range(m.wfcut + 1, m.nbnd)
-        elif  bands is None:
+        elif  bands is None:                          # Just for debugging
             self.nk_points = nk_points
             self.bands = range(m.wfcut + 1, m.nbnd)
-        elif nk_points is None:
+        elif nk_points is None:                       # Just for debugging
             self.nk_points = range(m.nks)
             self.bands = bands
-        else:
+        else:                                         # Just for debugging
             self.nk_points = nk_points
             self.bands = bands
         self.ref_name = m.refname
@@ -48,13 +48,9 @@ class WfcGenerator:
     def run(self):
         # prints header on the log file
         self.logger.header()
-
-        initial_band = m.wfcut + 1
-        number_of_bands = m.nbnd - m.wfcut - 1
-        final_band = m.nbnd - 1
         
         # Logs the parameters for the run
-        self._log_run_params(initial_band,number_of_bands,final_band)
+        self._log_run_params(m.initial_band, m.number_of_bands, m.final_band)
 
         # Sets the program used for converting wavefunctions to the real space
         if m.noncolin:
@@ -65,21 +61,21 @@ class WfcGenerator:
             self.logger.info("\tNonrelativistic calculation, will use wfck2r.x")
 
 
-        # Set which k-points and bands will use (for debuging)
+        # Set which k-points and bands will use (for debugging)
         if isinstance(self.nk_points, range):
             self.logger.info("\n\tWill run for all k-points and bands")
-            self.logger.info(f"\tThere are {m.nks} k-points and {number_of_bands} bands.\n")
+            self.logger.info(f"\tThere are {m.nks} k-points and {m.number_of_bands} bands.\n")
 
             for nk in self.nk_points:
                 self.logger.info(f"\tCalculating wfc for k-point {nk}")
-                self._wfck2r(nk, initial_band, final_band, number_of_bands)
-        else:
+                self._wfck2r(nk, m.initial_band, m.final_band, m.number_of_bands)
+        else:                       # Just for debugging
             if isinstance(self.bands, range):
                 self.logger.info(f"\tWill run for k-point {self.nk_points} and all bands")
-                self.logger.info(f"\tThere are {m.nks} k-points and {number_of_bands} bands.\n")
+                self.logger.info(f"\tThere are {m.nks} k-points and {m.number_of_bands} bands.\n")
 
                 self.logger.info(f"\tCalculating wfc for k-point {self.nk_points}")
-                self._wfck2r(self.nk_points, initial_band, final_band, number_of_bands)
+                self._wfck2r(self.nk_points, m.initial_band, m.final_band, m.number_of_bands)
             else:
                 self.logger.info(f"\tWill run just for k-point {self.nk_points} and band {self.bands}.\n")
                 self._wfck2r(self.nk_points, self.bands, 1, 1)

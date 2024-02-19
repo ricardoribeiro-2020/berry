@@ -304,7 +304,13 @@ class Preprocess:
             np.save(fich, self.kvector2)  # Second vector that define volume in k space
             np.save(fich, self.kvector3)  # Third vector that define volume in k space
             
-            np.save(fich, self.wfcut)  # Cutoff band
+            np.save(fich, self.wfcut)                  # Cutoff band
+            np.save(fich, int(self.wfcut) + 1)              # Initial band
+            np.save(fich, int(self.nbnd) - int(self.wfcut) - 1)  # Number of bands
+            np.save(fich, int(self.nbnd) - 1)               # Final band
+            np.save(fich, "dummy")  # Saving space for future values and compatibility
+            np.save(fich, "dummy")  # Saving space for future values and compatibility
+            np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility
@@ -590,8 +596,11 @@ class Preprocess:
             self.logger.info(f"\tAll bands will be used.\n")
         else:
             self.logger.info(f"\tCutoff band (bands bellow, inclusive, will not be used): {self.wfcut}\n")
+        self.logger.info(f"\tInitial band is nr {int(self.wfcut) + 1}")
+        self.logger.info(f"\tNumber of bands that will be used: {int(self.nbnd) - int(self.wfcut) - 1}")
+        self.logger.info(f"\tFinal band is band nr {int(self.nbnd) - 1}")
 
-        self.logger.info(f"\tWill use {self.npr} processors\n")
+        self.logger.info(f"\n\tWill use {self.npr} processors\n")
         self.logger.info(f"\tWorking directory: {self.work_dir}")
         self.logger.info(f"\tData directory: {self.data_dir}")
         self.logger.info(f"\tLog directory: {self.log_dir}")
