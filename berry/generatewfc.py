@@ -35,6 +35,9 @@ class WfcGenerator:
         elif  bands is None:
             self.nk_points = nk_points
             self.bands = range(m.wfcut + 1, m.nbnd)
+        elif nk_points is None:
+            self.nk_points = range(m.nks)
+            self.bands = bands
         else:
             self.nk_points = nk_points
             self.bands = bands
@@ -47,7 +50,7 @@ class WfcGenerator:
         self.logger.header()
 
         initial_band = m.wfcut + 1
-        number_of_bands = m.nbnd - m.wfcut
+        number_of_bands = m.nbnd - m.wfcut - 1
         final_band = m.nbnd - 1
         
         # Logs the parameters for the run
