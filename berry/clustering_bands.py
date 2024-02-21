@@ -23,7 +23,8 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
     # 1. DEFINING THE CONSTANTS
     ###########################################################################
     OUTPUT_PATH = ''
-    max_band = max_band if max_band != -1 else m.nbnd-1
+    max_band = max_band if max_band != -1 else m.final_band
+    min_band = m.initial_band
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
@@ -40,7 +41,7 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
     logger.info(f"\tDirectory where the wfc are: {m.wfcdirectory}")
     logger.info(f"\tNumber of k-points in each direction: {m.nkx}, {m.nky}, {m.nkz}")
     logger.info(f"\tTotal number of k-points: {m.nks}")
-    logger.info(f"\tNumber of bands: {m.nbnd}\n")
+    logger.info(f"\tNumber of bands: {m.number_of_bands}\n")
     logger.info("\tNeighbors loaded")
     logger.info("\tEigenvalues loaded")
 
@@ -53,7 +54,7 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
     # 3. CLUSTERING ALGORITHM
     ########################################################################### 
 
-    material = MATERIAL(m.dimensions, [m.nkx, m.nky, m.nkz], m.nbnd, m.nks, d.eigenvalues,
+    material = MATERIAL(m.dimensions, [m.nkx, m.nky, m.nkz], m.number_of_bands, m.nks, d.eigenvalues,
                         connections, d.neighbors, logger, n_process=npr)
 
     logger.info('\tCalculating Vectors')

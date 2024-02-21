@@ -35,7 +35,10 @@ import time
 from berry import log
 from .write_k_points import _bands_numbers
 from berry._subroutines.contatempo import tempo
-
+try:
+    import berry._subroutines.loadmeta as m
+except:
+    pass
 
 ###########################################################################
 # Type Definition
@@ -379,7 +382,7 @@ class MATERIAL:
             An array with final result of bands attribution.
         signal_final : array_like
             Contains the resulting signal for each k point.
-        final_score : aray_like
+        final_score : array_like
             It contains the result score for each band.
 
     Methods
@@ -454,7 +457,7 @@ class MATERIAL:
 
     def make_BandsEnergy(self) -> np.ndarray:
         '''
-        It sets the energy information in more convinient data structure
+        It sets the energy information in more convenient data structure
         
         Parameters
             None
@@ -550,8 +553,8 @@ class MATERIAL:
         ###########################################################################
         self.GRAPH = nx.Graph()     # Create the initail Graph
         self.min_band = min_band
-        self.max_band = max_band
-        nbnd = self.nbnd if max_band == -1 else max_band+1
+        self.max_band = m.final_band
+        nbnd = self.nbnd if max_band == -1 else m.number_of_bands
         self.make_kpointsIndex()
         energies = self.make_BandsEnergy()
         self.logger.percent_complete(20, 100, title=process_name)
@@ -559,7 +562,7 @@ class MATERIAL:
         ###########################################################################
         # Compute the vector representation of each k point
         ###########################################################################
-        n_vectors = (nbnd-min_band)*self.nks
+        n_vectors = (nbnd - min_band)*self.nks
         ik = np.tile(self.kpoints_index[:, 0], nbnd-min_band) if self.dimensions > 1 else np.tile(self.kpoints_index, nbnd-min_band)
 
         stack_aux = [ik]
