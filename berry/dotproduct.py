@@ -20,6 +20,8 @@ except:
 def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
     start = time()
 
+    initial_band = m.wfcut + 1
+
     dphase = d_phase[:, nk] * d_phase[:, neighbor].conj()
 
     if m.noncolin:  # Noncolinear case
@@ -39,6 +41,9 @@ def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
                 dpc[nk, j, b0, b1] = np.einsum("k,k,k->", dphase, wfc00, wfc10) + np.einsum("k,k,k->", dphase, wfc01, wfc11)
                 dpc[neighbor, jNeighbor, b1, b0] = dpc[nk, j, b0, b1].conj()
                 logger.debug(f"\t{nk}\t{band0}\t{j}\t{band1}\t",str(dpc[nk, j, b0, b1]))
+                dpc[nk, j, b0, b1] = np.einsum("k,k,k->", dphase, wfc00, wfc10) + np.einsum("k,k,k->", dphase, wfc01, wfc11)
+                dpc[neighbor, jNeighbor, b1, b0] = dpc[nk, j, b0, b1].conj()
+                logger.debug(f"\t{nk}\t{band0}\t{j}\t{band1}\t",str(dpc[nk, j, b0, b1]))
 
     else:  # Non-relativistic case
         for band0 in range(m.initial_band,m.nbnd):
@@ -52,6 +57,9 @@ def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
                 b1 = band1 - m.initial_band
 
                 # not normalized dot product
+                dpc[nk, j, b0, b1] = np.einsum("k,k,k->", dphase, wfc0, wfc1)
+                dpc[neighbor, jNeighbor, b1, b0] = dpc[nk, j, b0, b1].conj()
+                logger.debug(f"\t{nk}\t{band0}\t{j}\t{band1}\t",str(dpc[nk, j, b0, b1]))
                 dpc[nk, j, b0, b1] = np.einsum("k,k,k->", dphase, wfc0, wfc1)
                 dpc[neighbor, jNeighbor, b1, b0] = dpc[nk, j, b0, b1].conj()
                 logger.debug(f"\t{nk}\t{band0}\t{j}\t{band1}\t",str(dpc[nk, j, b0, b1]))
