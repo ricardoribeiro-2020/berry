@@ -554,7 +554,7 @@ class MATERIAL:
         self.GRAPH = nx.Graph()     # Create the initail Graph
         self.min_band = min_band
         self.max_band = m.final_band
-        nbnd = self.nbnd if max_band == -1 else m.number_of_bands
+        nbnd = self.nbnd if max_band == -1 else self.nbnd
         self.make_kpointsIndex()
         energies = self.make_BandsEnergy()
         self.logger.percent_complete(20, 100, title=process_name)
@@ -692,16 +692,18 @@ class MATERIAL:
                     List of all edges that was found.
             '''
             edges = []
-            bands = np.repeat(np.arange(self.min_band, self.max_band+1), self.number_neighbors)
+            bands = np.repeat(np.arange(self.min_band, self.max_band + 1), self.number_neighbors)
             for i_ in vectors:
-                bn1 = i_//self.nks + self.min_band  # bi
+                # bn1 = i_//self.nks + self.min_band  # bi
+                bn1 = i_//self.nks  # bi
                 k1 = i_ % self.nks
                 neighs = np.tile(self.neighbors[k1], self.nbnd)
                 ks = neighs + bands*self.nks
                 ks = ks[neighs != -1]
                 for j_ in ks:
                     k2 = j_ % self.nks
-                    bn2 = j_//self.nks + self.min_band  # bj
+                    # bn2 = j_//self.nks + self.min_band  # bj
+                    bn2 = j_//self.nks  # bj
                     i_neig = np.where(self.neighbors[k1] == k2)[0]
                     connection = self.connections[k1, i_neig,
                                                     bn1, bn2]  # <i|j>
