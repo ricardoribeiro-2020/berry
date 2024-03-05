@@ -692,7 +692,8 @@ class MATERIAL:
                     List of all edges that was found.
             '''
             edges = []
-            bands = np.repeat(np.arange(self.min_band, self.max_band + 1), self.number_neighbors)
+            # bands = np.repeat(np.arange(self.min_band, self.max_band + 1), self.number_neighbors)
+            bands = np.repeat(np.arange(0, self.nbnd), self.number_neighbors)
             for i_ in vectors:
                 # bn1 = i_//self.nks + self.min_band  # bi
                 bn1 = i_//self.nks  # bi
@@ -961,7 +962,7 @@ class MATERIAL:
         best_score = 0
         best_iteration = None
         max_solved = 0
-        
+
         N_g_nks_prev = self.nbnd
 
         def communites2clusters(communities: list[list[Kpoint]]) -> list[COMPONENT]:
@@ -1160,11 +1161,13 @@ class MATERIAL:
                 bn = solved.bands[0] + self.min_band                                # initial band correction
                 solved.bands = solved.bands[1:]                                     # Update the bands array
             solved_bands.append(bn)                                                 # Append the solved band
-            self.bands_final[solved.k_points, bn] = bands + self.min_band           # Update the resultant bands' attribution array
+            # self.bands_final[solved.k_points, bn] = bands + self.min_band           # Update the resultant bands' attribution array
+            self.bands_final[solved.k_points, bn] = bands                           # Update the resultant bands' attribution array
 
             for k in solved.k_points:
                 # For each k-point is calculate the solution score
-                bn1 = solved.bands_number[k] + self.min_band                        # The k-point's band
+                # bn1 = solved.bands_number[k] + self.min_band                        # The k-point's band
+                bn1 = solved.bands_number[k]                                        # The k-point's band
                 connections = []                                                    # The array that store the dot-product with the k-point's neighbors
                 for i_neig, k_neig in enumerate(self.neighbors[k]):
                     # Obtain the dot-product with each neighbor
@@ -1172,7 +1175,8 @@ class MATERIAL:
                         continue
                     if solved.bands_number.get(k_neig) is None:
                         solved.calculate_values()
-                    bn2 = solved.bands_number[k_neig] + self.min_band               # The neighbor's band
+                    # bn2 = solved.bands_number[k_neig] + self.min_band               # The neighbor's band
+                    bn2 = solved.bands_number[k_neig]                               # The neighbor's band
                     connections.append(self.connections[k, i_neig, bn1, bn2])       # <k, k neighbor>
 
                 self.signal_final[k, bn] = evaluate_result(connections)             # Computes the k-point's signal
@@ -1193,10 +1197,12 @@ class MATERIAL:
                 break
 
             solved_bands.append(bn)                                                 # Append the solved band
-            self.bands_final[cluster.k_points, bn] = bands + self.min_band          # Update the resultant bands' attribution array
+            # self.bands_final[cluster.k_points, bn] = bands + self.min_band          # Update the resultant bands' attribution array
+            self.bands_final[cluster.k_points, bn] = bands                          # Update the resultant bands' attribution array
             for k in cluster.k_points:
                 # For each k-point is calculate the solution score
-                bn1 = cluster.bands_number[k] + self.min_band                       # The k-point's band
+                # bn1 = cluster.bands_number[k] + self.min_band                       # The k-point's band
+                bn1 = cluster.bands_number[k]                                       # The k-point's band
                 connections = []                                                    # The array that store the dot-product with the k-point's neighbors
                 for i_neig, k_neig in enumerate(self.neighbors[k]):
                     # Obtain the dot-product with each neighbor
@@ -1206,7 +1212,8 @@ class MATERIAL:
                         # If the neighbor does not exist inside the cluster, the dot-product is 0
                         connections.append(0)
                         continue
-                    bn2 = cluster.bands_number[k_neig] + self.min_band              # The neighbor's band
+                    # bn2 = cluster.bands_number[k_neig] + self.min_band              # The neighbor's band
+                    bn2 = cluster.bands_number[k_neig]                              # The neighbor's band
                     connections.append(self.connections[k, i_neig, bn1, bn2])       # <k, k neighbor>
 
                 self.signal_final[k, bn] = evaluate_result(connections)             # Computes the k-point's signal
@@ -1221,8 +1228,10 @@ class MATERIAL:
             # Signaling the numerically degenerate points Ei ~ Ej
             k1 = d1 % self.nks                                              # k point
             bn1 = d1 // self.nks + self.min_band                            # band
+            # bn1 = d1 // self.nks                                            # band
             k2 = d2 % self.nks                                              # k point
             bn2 = d2 // self.nks + self.min_band                            # band
+            # bn2 = d2 // self.nks                                            # band
             Bk1 = self.bands_final[k1] == bn1                               # Find in which  band the k-point was attributed
             Bk2 = self.bands_final[k2] == bn2                               # Find in which  band the k-point was attributed
             bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1               # Final band
@@ -1680,7 +1689,7 @@ class MATERIAL:
         n_recomended = 0
         max_solved = 0
         
-        for i, _ in enumerate(self.final_score):
+        for i, _ in enumerate(self.final_score[self.min_band:]):
             if np.sum(report_a2[i, NOT_SOLVED]) > 0:
                 break
             max_solved += 1
@@ -1688,13 +1697,13 @@ class MATERIAL:
         self.max_solved = max_solved
 
         n_max = max_solved
-        for i, s in enumerate(self.final_score):
+        for i, s in enumerate(self.final_score[self.min_band:]):
             if s <= TOL_USABLE or i > max_solved or np.sum(report_a2[i, [NOT_SOLVED, MISTAKE]]) > 0:
                 break
             n_recomended += 1
         
         self.completed_bands = []
-        for i, s in enumerate(self.final_score):
+        for i, s in enumerate(self.final_score[self.min_band:]):
             if s <= TOL_USABLE or np.sum(report_a2[i, [NOT_SOLVED, MISTAKE]]) > 0:
                 continue
             self.completed_bands.append(i)
@@ -1784,8 +1793,8 @@ class MATERIAL:
 
             first_max_bands_best_score = np.sum(self.best_score[:max_solved])
             first_max_bands_score = np.sum(self.final_score[:max_solved])
-
-            for bn, score in enumerate(self.final_score):
+#TODO: ver best_score e bn
+            for bn, score in enumerate(self.final_score[self.min_band:]):
                 best_score = self.best_score[bn]
                 mistake_best = np.sum(self.correct_signalfinal_best[:, bn] == MISTAKE)
                 mistake = np.sum(self.correct_signalfinal[:, bn] == MISTAKE)
@@ -1813,7 +1822,7 @@ class MATERIAL:
             self.logger.info(f'\n\t\t Iteration: {COUNT} - Clustered bands: {solved} - Max clustered bands: {max_solved}')
             self.logger.info('\t\t\t' + tempo(start_time, time.time(), name='iteration'))
                              
-            n_bands = len(self.final_score)
+            n_bands = len(self.final_score[self.min_band:])
             total_solved_flag = first_max_bands_score >= first_max_bands_best_score and total_score > total_best_score and total_not_solved < total_not_solved_best
             total_solved_flag = total_solved_flag or (total_score/n_bands > 0.9 and total_best_score/n_bands < 0.9)
             if total_solved_flag or solved >= max_solved or COUNT == 1:
@@ -2316,7 +2325,8 @@ class COMPONENT:
         for k in self.k_edges:
             # Each k-point is compared with his respective neighbor
             # that belongs to the comparison component
-            bn1 = self.bands_number[k] + min_band                                   # k-point's band
+            # bn1 = self.bands_number[k] + min_band                                   # k-point's band
+            bn1 = self.bands_number[k]                                               # k-point's band
 
             ik_point_index = []
             ik1 = self.kpoints_index[k, 0] if self.dimensions > 1 else self.kpoints_index[k]
@@ -2343,7 +2353,8 @@ class COMPONENT:
                 if self.dimensions == 3:
                     kk_n = cluster.kpoints_index[k_n, 2]                             # neighbor's indices
                     ik_n_point_index.append(kk_n)
-                bn2 = cluster.bands_number[k_n]+min_band                            # neighbor's band
+                # bn2 = cluster.bands_number[k_n]+min_band                            # neighbor's band
+                bn2 = cluster.bands_number[k_n]                                     # neighbor's band
                 connection = connections[k, i_neig, bn1, bn2]                       # Dot product between k-point and his neighbor
                 energy_val = fit_energy(bn1, bn2, ik_point_index, ik_n_point_index)
                 score += alpha*connection + (1-alpha)*energy_val                    # Calculates the final k-point score
