@@ -1260,7 +1260,7 @@ class MATERIAL:
 
         # Otherwise, the program continues to the next step. Here it finds the degenerate points
         k_basis_rotation : list[Tuple[Kpoint, Kpoint, Band, list[Band]]] = []           # Storage pairs of points that are degenerates by dot product 0.5 < <i|j> < 0.8
-        for bn in range(self.total_bands):
+        for bn in range(self.min_band, self.total_bands):
             # Search these degenerate points on each band
             # Calculating the score of the result
             score = 0
@@ -1308,6 +1308,7 @@ class MATERIAL:
             score /= self.nks                                                               # Compute the mean socore
             self.final_score[bn] = score                                                    # Storage the band score
 
+#TODO: degenerates usa o total banda bn
         degenerates = []
         for i, (k, k_deg, bn, bns_deg) in enumerate(k_basis_rotation[:-1]):
             # For each possible degenerate point have to exist a pair
@@ -1659,6 +1660,9 @@ class MATERIAL:
             Bk2 = self.bands_final[k2] == bn2                               # Find in which  band the k-point was attributed
             bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1               # Final band
             bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2               # Final band
+            bn1 = self.bands_final[k1, bn1]
+            bn2 = self.bands_final[k2, bn2]
+
             if self.signal_final[k1, bn1] == DEGENERATE:
                 degenerates.append([k1, bn1, bn2])
 
