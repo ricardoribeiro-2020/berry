@@ -13,8 +13,8 @@ def corrected(args):
 
     starttime = time.time()  # Starts counting time
 
-    startband = args.mb  # Number of the first band
-    endband = args.Mb  # Number of the last band
+    startband = args.mb - m.initial_band  # Number of the first band
+    endband = args.Mb - m.initial_band # Number of the last band
 
     fig = plt.figure(figsize=(6, 6))
 
@@ -54,7 +54,7 @@ def corrected(args):
     nbnd = m.nbnd
     print(" Number of bands:", nbnd)
     print()
-    eigenvalues = d.eigenvalues
+    eigenvalues = d.eigenvalues[:, m.initial_band:]
     print(" Eigenvalues loaded")
     kpoints = d.kpoints
     print(" K-points loaded")
@@ -121,8 +121,8 @@ def machine(args):
 
     starttime = time.time()  # Starts counting time
 
-    startband = args.mb  # Number of the first band
-    endband = args.Mb  # Number of the last band
+    startband = args.mb - m.initial_band # Number of the first band
+    endband = args.Mb - m.initial_band # Number of the last band
 
     fig = plt.figure(figsize=(6, 6))
 
@@ -162,8 +162,8 @@ def machine(args):
     nbnd = m.nbnd
     print(" Number of bands:", nbnd)
     print()
-    eigenvalues = d.eigenvalues
-    print(" Eigenvlaues loaded")
+    eigenvalues = d.eigenvalues[:, m.initial_band:]
+    print(" Eigenvalues loaded")
     kpoints = d.kpoints
     print(" K-points loaded")
 
