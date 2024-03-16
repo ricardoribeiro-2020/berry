@@ -55,7 +55,7 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.95, npr: int
     ########################################################################### 
 
     material = MATERIAL(m.dimensions, [m.nkx, m.nky, m.nkz], m.nbnd, m.nks, d.eigenvalues,
-                        connections, d.neighbors, logger, n_process=npr)
+                        connections, d.neighbors, logger, min_band, n_process=npr)
 
     logger.info('\tCalculating Vectors')
     material.make_vectors(min_band=min_band, max_band=max_band)

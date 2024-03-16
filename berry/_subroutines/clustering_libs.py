@@ -416,7 +416,7 @@ class MATERIAL:
                 a new signal value depending only on energy continuity.
     '''     
     def __init__(self, dimensions:int, nk_i: list[int], nbnd: int, nks: int, eigenvalues: np.ndarray,
-                 connections: np.ndarray, neighbors: np.ndarray, logger: log, n_process: int=1) -> None:
+                 connections: np.ndarray, neighbors: np.ndarray, logger: log, min_band: int, n_process: int=1) -> None:
         '''
         Initialize the object.
 
@@ -444,16 +444,17 @@ class MATERIAL:
         '''
         self.dimensions = dimensions
         self.nkx, self.nky, self.nkz = nk_i
-        self.nbnd = nbnd
-        self.total_bands = nbnd
+        self.nbnd = nbnd - min_band
+        self.total_bands = nbnd - min_band
         self.nks = nks
-        self.eigenvalues = eigenvalues
+        self.eigenvalues = eigenvalues[:, min_band:]
         self.connections = connections
         self.neighbors = neighbors
         self.number_neighbors = self.dimensions * 2
         self.vectors = None
         self.n_process = n_process
         self.logger = logger
+        self.min_band = min_band
 
     def make_BandsEnergy(self) -> np.ndarray:
         '''
@@ -562,19 +563,24 @@ class MATERIAL:
         ###########################################################################
         # Compute the vector representation of each k point
         ###########################################################################
-        n_vectors = (nbnd - min_band)*self.nks
-        ik = np.tile(self.kpoints_index[:, 0], nbnd-min_band) if self.dimensions > 1 else np.tile(self.kpoints_index, nbnd-min_band)
+        # n_vectors = (nbnd - min_band)*self.nks
+        n_vectors = nbnd*self.nks
+        # ik = np.tile(self.kpoints_index[:, 0], nbnd-min_band) if self.dimensions > 1 else np.tile(self.kpoints_index, nbnd-min_band)
+        ik = np.tile(self.kpoints_index[:, 0], nbnd) if self.dimensions > 1 else np.tile(self.kpoints_index, nbnd)
 
         stack_aux = [ik]
 
         if self.dimensions >= 2:
-            jk = np.tile(self.kpoints_index[:, 1], nbnd-min_band)
+            # jk = np.tile(self.kpoints_index[:, 1], nbnd-min_band)
+            jk = np.tile(self.kpoints_index[:, 1], nbnd)
             stack_aux.append(jk)
         if self.dimensions == 3:
-            kk = np.tile(self.kpoints_index[:, 2], nbnd-min_band)
+            # kk = np.tile(self.kpoints_index[:, 2], nbnd-min_band)
+            kk = np.tile(self.kpoints_index[:, 2], nbnd)
             stack_aux.append(kk)
 
-        bands = np.arange(min_band, nbnd)
+        # bands = np.arange(min_band, nbnd)
+        bands = np.arange(0 , nbnd)
         eigenvalues = self.eigenvalues[:, bands].T.reshape(n_vectors)
         stack_aux.append(eigenvalues)
 
@@ -619,7 +625,7 @@ class MATERIAL:
                 self.logger.debug(f'\t\t{d}')
 
         self.ENERGIES = energies
-        self.nbnd = nbnd-min_band
+        # self.nbnd = nbnd-min_band
         self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
 
     def get_neigs(self, i: Kpoint) -> list[Kpoint]:
@@ -819,7 +825,8 @@ class MATERIAL:
             self.logger.info(forbidden_points)
             self.logger.info('\t    The problems and their solutions are:')
         
-        calc_k_bn = lambda p: (p % self.nks, p // self.nks + self.min_band )
+        # calc_k_bn = lambda p: (p % self.nks, p // self.nks + self.min_band )
+        calc_k_bn = lambda p: (p % self.nks, p // self.nks )
         for problem_dic in problems:
             d1, d2 = problem_dic['points']
             problem = problem_dic['problem']
@@ -1154,11 +1161,13 @@ class MATERIAL:
         solved_bands = []
         for solved in self.solved:
             bands = solved.get_bands()                                              # Getting the k-points' raw bands inside the solved cluster
-            bn = solved.bands[0] + self.min_band                                    # Select the most repeated band and apply the initial band correction
+            # bn = solved.bands[0] + self.min_band                                    # Select the most repeated band and apply the initial band correction
+            bn = solved.bands[0]                                                    # Select the most repeated band and apply the initial band correction
             solved.bands = solved.bands[1:]                                         # Update the bands array
             while bn in solved_bands:
                 # If the band to be solved is already solved, the next most repeated band is selected
-                bn = solved.bands[0] + self.min_band                                # initial band correction
+                # bn = solved.bands[0] + self.min_band                                # initial band correction
+                bn = solved.bands[0]                                                # initial band correction
                 solved.bands = solved.bands[1:]                                     # Update the bands array
             solved_bands.append(bn)                                                 # Append the solved band
             # self.bands_final[solved.k_points, bn] = bands + self.min_band           # Update the resultant bands' attribution array
@@ -1185,11 +1194,13 @@ class MATERIAL:
         for i_arg in clusters_sort[::-1]:
             cluster = self.clusters[i_arg]
             bands = cluster.get_bands()                                             # Getting the k-points' raw bands inside the cluster
-            bn = cluster.bands[0] + self.min_band                                   # Select the most repeated band and apply the initial band correction
+            # bn = cluster.bands[0] + self.min_band                                   # Select the most repeated band and apply the initial band correction
+            bn = cluster.bands[0]                                                   # Select the most repeated band and apply the initial band correction
             cluster.bands = cluster.bands[1:]                                       # Update the bands array
             while bn in solved_bands and len(cluster.bands) > 0:
                 # If the band to be solved is already solved, the next most repeated band is selected
-                bn = cluster.bands[0] + self.min_band
+                # bn = cluster.bands[0] + self.min_band
+                bn = cluster.bands[0]
                 cluster.bands = cluster.bands[1:]
 
             if bn in solved_bands and len(cluster.bands) == 0:
@@ -1227,11 +1238,11 @@ class MATERIAL:
         for d1, d2 in self.degenerates:
             # Signaling the numerically degenerate points Ei ~ Ej
             k1 = d1 % self.nks                                              # k point
-            bn1 = d1 // self.nks + self.min_band                            # band
-            # bn1 = d1 // self.nks                                            # band
+            # bn1 = d1 // self.nks + self.min_band                            # band
+            bn1 = d1 // self.nks                                            # band
             k2 = d2 % self.nks                                              # k point
-            bn2 = d2 // self.nks + self.min_band                            # band
-            # bn2 = d2 // self.nks                                            # band
+            # bn2 = d2 // self.nks + self.min_band                            # band
+            bn2 = d2 // self.nks                                            # band
             Bk1 = self.bands_final[k1] == bn1                               # Find in which  band the k-point was attributed
             Bk2 = self.bands_final[k2] == bn2                               # Find in which  band the k-point was attributed
             bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1               # Final band
@@ -1260,7 +1271,7 @@ class MATERIAL:
 
         # Otherwise, the program continues to the next step. Here it finds the degenerate points
         k_basis_rotation : list[Tuple[Kpoint, Kpoint, Band, list[Band]]] = []           # Storage pairs of points that are degenerates by dot product 0.5 < <i|j> < 0.8
-        for bn in range(self.min_band, self.total_bands):
+        for bn in range(self.total_bands):
             # Search these degenerate points on each band
             # Calculating the score of the result
             score = 0
@@ -1407,7 +1418,7 @@ class MATERIAL:
         ###########################################################################
         # Prepare the summary for each band
         ###########################################################################
-        for bn in range(self.min_band, self.min_band+self.nbnd):
+        for bn in range(self.nbnd):
             band_result = signal_report[:, bn]                              # Obtain all k-point' signals for band bn
             report = [np.sum(band_result == s) for s in range(MAX)]         # Set the band report
             report.append(np.round(self.final_score[bn], 4))                # Set the final score
@@ -1527,9 +1538,9 @@ class MATERIAL:
         self.GRAPH = nx.Graph()                                                     # The new Graph
         self.GRAPH.add_nodes_from(np.arange(len(self.vectors)))                     # Set the nodes
 
-        for bn, band in enumerate(bands_signaling[self.min_band: self.max_band+1]):
+        for bn, band in enumerate(bands_signaling):
             # For each band construct the new graph
-            bn += self.min_band                                                                     # Initial band correction
+            # bn += self.min_band                                                                     # Initial band correction
             if self.dimensions == 2 and np.sum(band) > self.nks*0.05:
                 # If there are more than 5% of marked points, the boundaries of 
                 # the problem are considered a problem too.
@@ -1559,8 +1570,10 @@ class MATERIAL:
                             continue
                         kneig = self.matrix[kn]                                                 # Neighbor k-point
                         if not identify_points[kn]:
-                            p = kp + (self.bands_final[k, bn] - self.min_band)*self.nks
-                            pn = kneig + (self.bands_final[kn, bn] - self.min_band)*self.nks
+                            # p = kp + (self.bands_final[k, bn] - self.min_band)*self.nks
+                            p = kp + (self.bands_final[k, bn])*self.nks
+                            # pn = kneig + (self.bands_final[kn, bn] - self.min_band)*self.nks
+                            pn = kneig + (self.bands_final[kn, bn])*self.nks
                             edges.append([p, pn])                                               # Establish an edge between nodes p (k-point) and pn (neighbor)
 
             if self.dimensions == 2:
@@ -1582,8 +1595,10 @@ class MATERIAL:
                                 continue
                             kneig = self.matrix[ikn, jkn]                                               # Neighbor k-point
                             if not identify_points[ikn, jkn]:
-                                p = kp + (self.bands_final[kp, bn] - self.min_band)*self.nks            # The kpoint's node id
-                                pn = kneig + (self.bands_final[kneig, bn] - self.min_band)*self.nks     # The neighbor's node id
+                                # p = kp + (self.bands_final[kp, bn] - self.min_band)*self.nks            # The kpoint's node id
+                                p = kp + (self.bands_final[kp, bn])*self.nks            # The kpoint's node id
+                                # pn = kneig + (self.bands_final[kneig, bn] - self.min_band)*self.nks     # The neighbor's node id
+                                pn = kneig + (self.bands_final[kneig, bn])*self.nks     # The neighbor's node id
                                 edges.append([p, pn])                                                   # Establish an edge between nodes p (k-point) and pn (neighbor)
 
             if self.dimensions == 3:
@@ -1606,8 +1621,10 @@ class MATERIAL:
                                     continue
                                 kneig = self.matrix[ikn, jkn, kkn]                                            # Neighbor k-point
                                 if not identify_points[ikn, jkn, kkn]:
-                                    p = kp + (self.bands_final[kp, bn] - self.min_band)*self.nks             # The kpoint's node id
-                                    pn = kneig + (self.bands_final[kneig, bn] - self.min_band)*self.nks
+                                    # p = kp + (self.bands_final[kp, bn] - self.min_band)*self.nks             # The kpoint's node id
+                                    p = kp + (self.bands_final[kp, bn])*self.nks             # The kpoint's node id
+                                    # pn = kneig + (self.bands_final[kneig, bn] - self.min_band)*self.nks
+                                    pn = kneig + (self.bands_final[kneig, bn])*self.nks
                                     edges.append([p, pn])                                                       # Establish an edge between nodes p (k-point) and pn (neighbor)
             edges = np.array(edges)
             self.GRAPH.add_edges_from(edges)                                                        # Build the identified edges
@@ -1636,7 +1653,8 @@ class MATERIAL:
         self.final_report += '\n\t{:-^30}\n\t{: <30}\n\t{:-^30}\n'.format('', 'Summary:', '')
         self.final_report += p_report
 
-        point2k_bn = lambda p: (p % self.nks, p // self.nks + self.min_band)
+        # point2k_bn = lambda p: (p % self.nks, p // self.nks + self.min_band)
+        point2k_bn = lambda p: (p % self.nks, p // self.nks)
 
         for d1, d2 in problems:
             k1, bn1 = point2k_bn(d1)
@@ -1646,7 +1664,7 @@ class MATERIAL:
             bn1 = np.argmax(Bk1) if np.sum(Bk1) != 0 else bn1               # Final band
             bn2 = np.argmax(Bk2) if np.sum(Bk2) != 0 else bn2               # Final band
         
-            self.final_report += f'\n\t\t\tK-point: {k1} bands: {bn1}, {bn2}' # Report
+            self.final_report += f'\n\t\t\tK-point: {k1} bands: {bn1+self.min_band}, {bn2+self.min_band}' # Report
         
         if len(problems) > 0:
             self.final_report += f'\n\t\t  These points were corrected.'
@@ -1670,7 +1688,7 @@ class MATERIAL:
             n = len(degenerates)
             self.final_report += f'\n\n\t\tNumber of degenerate points: {n}\n'
             for k1, bn1, bn2 in degenerates:
-                self.final_report += f'\n\t\t\t* K-point: {k1} Bands: {bn1}, {bn2}'
+                self.final_report += f'\n\t\t\t* K-point: {k1} Bands: {bn1+self.min_band}, {bn2+self.min_band}'
             self.final_report += f'\n\n\t\t  ' + textwrap.fill(
                 'Degenerate points refer to instances where a point shares the same numerical energy value with another k-point, and the dot product with its neighboring points falls within the range of 0.5 to 0.8. \n\tAs a result, it is necessary for the rotation basis program to be executed for these points.',
                 width=110,
@@ -1687,13 +1705,13 @@ class MATERIAL:
                 self.final_report += '\n\t\t   Points:'
                 i_sort = np.argsort([k for k, _, _ in self.degenerate_final])
                 for k, bn1, bn2 in self.degenerate_final[i_sort]:
-                    self.final_report += f'\n\t\t  * K-point: {k} \tBands: {bn1}, {bn2}'
+                    self.final_report += f'\n\t\t  * K-point: {k} \tBands: {bn1+self.min_band}, {bn2+self.min_band}'
 
         TOL_USABLE = 0.95           # Minimum score to consider a band as usable.
         n_recomended = 0
         max_solved = 0
         
-        for i, _ in enumerate(self.final_score[self.min_band:]):
+        for i, _ in enumerate(self.final_score):
             if np.sum(report_a2[i, NOT_SOLVED]) > 0:
                 break
             max_solved += 1
@@ -1701,27 +1719,27 @@ class MATERIAL:
         self.max_solved = max_solved
 
         n_max = max_solved
-        for i, s in enumerate(self.final_score[self.min_band:]):
+        for i, s in enumerate(self.final_score):
             if s <= TOL_USABLE or i > max_solved or np.sum(report_a2[i, [NOT_SOLVED, MISTAKE]]) > 0:
                 break
             n_recomended += 1
         
         self.completed_bands = []
-        for i, s in enumerate(self.final_score[self.min_band:]):
+        for i, s in enumerate(self.final_score):
             if s <= TOL_USABLE or np.sum(report_a2[i, [NOT_SOLVED, MISTAKE]]) > 0:
                 continue
             self.completed_bands.append(i)
         self.completed_bands = np.array(self.completed_bands)
         
         self.final_report += f'\n\n\n\tThe program has clustered all points for {self.max_solved} bands.'
-        self.final_report += f'\n\n\tYou can use bands from 0 up to {n_recomended - 1}. \n\tThese bands are completed and do not have potential mistakes.'
+        self.final_report += f'\n\n\tYou can use bands from {self.min_band} up to {n_recomended + self.min_band}. \n\tThese bands are completed and do not have potential mistakes.'
 
         if self.max_solved > n_recomended:
             self.final_report += f'\n\tNote that there may be more bands usable but a human verification is required.'
             n_max = n_recomended
 
         self.final_report += f'\n\n\tThe program has clustered without errors {len(self.completed_bands)} bands. \n\tThe information is stored in the `completed_bands.npy` file.'
-        self.final_report += f'\n\t\t  Band: ' + ', '.join([str(bn) for bn in self.completed_bands])
+        self.final_report += f'\n\t\t  Band: ' + ', '.join([str(bn+self.min_band) for bn in self.completed_bands])
 
         if len(degenerates) > 0:
             self.final_report += f'\n\n\tTo use the program basis rotation, you must run the program for the first {n_max} bands.'
@@ -1798,7 +1816,7 @@ class MATERIAL:
             first_max_bands_best_score = np.sum(self.best_score[:max_solved])
             first_max_bands_score = np.sum(self.final_score[:max_solved])
 #TODO: ver best_score e bn
-            for bn, score in enumerate(self.final_score[self.min_band:]):
+            for bn, score in enumerate(self.final_score):
                 best_score = self.best_score[bn]
                 mistake_best = np.sum(self.correct_signalfinal_best[:, bn] == MISTAKE)
                 mistake = np.sum(self.correct_signalfinal[:, bn] == MISTAKE)
@@ -1826,7 +1844,7 @@ class MATERIAL:
             self.logger.info(f'\n\t\t Iteration: {COUNT} - Clustered bands: {solved} - Max clustered bands: {max_solved}')
             self.logger.info('\t\t\t' + tempo(start_time, time.time(), name='iteration'))
                              
-            n_bands = len(self.final_score[self.min_band:])
+            n_bands = len(self.final_score)
             total_solved_flag = first_max_bands_score >= first_max_bands_best_score and total_score > total_best_score and total_not_solved < total_not_solved_best
             total_solved_flag = total_solved_flag or (total_score/n_bands > 0.9 and total_best_score/n_bands < 0.9)
             if total_solved_flag or solved >= max_solved or COUNT == 1:
@@ -2135,7 +2153,7 @@ class COMPONENT:
             else:
                 Ei = energies[bn1, ik1, jk1, kk1] if Ei is None else Ei        
 
-            bands = np.arange(min_band, max_band+1)                         # Bands in analysis
+            bands = np.arange(0, max_band - min_band + 1)                         # Bands in analysis
             min_energy = np.min([np.abs(Ei-energies_candidates(bn))        # The energy difference between Ei and all possibilities
                                     for bn in bands])
             delta_energy = np.abs(Ei-energies_candidates(bn2))             # Actual energy difference
@@ -2191,7 +2209,8 @@ class COMPONENT:
                     # If there are not enough points is used the difference_energy's default
                     return difference_energy(bn1, bn2, iK1, iK2)
                 aux_bands = np.array([self.bands_number[kp] for kp in ks])
-                bands = aux_bands + min_band
+                # bands = aux_bands + min_band
+                bands = aux_bands
                 # Use the existent k-points' indices
                 i = i[exist_ks]
                 Es = energies[bands, i]                                              # Get the ks' energies
@@ -2239,7 +2258,8 @@ class COMPONENT:
                     # If there are not enough points is used the difference_energy's default
                     return difference_energy(bn1, bn2, iK1, iK2)
                 aux_bands = np.array([self.bands_number[kp] for kp in ks])              # Get the ks' bands
-                bands = aux_bands + min_band                                            # Initial band correction
+                # bands = aux_bands + min_band                                            # Initial band correction
+                bands = aux_bands                                                       # Initial band correction
                 # Use the existent k-points' indices
                 i = i[exist_ks]
                 j = j[exist_ks]
@@ -2300,7 +2320,8 @@ class COMPONENT:
                     # If there are not enough points is used the difference_energy's default
                     return difference_energy(bn1, bn2, iK1, iK2)
                 aux_bands = np.array([self.bands_number[kp] for kp in ks])              # Get the ks' bands
-                bands = aux_bands + min_band                                            # Initial band correction
+                # bands = aux_bands + min_band                                            # Initial band correction
+                bands = aux_bands                                                       # Initial band correction
                 # Use the existent k-points' indices
                 i = i[exist_ks]
                 j = j[exist_ks]
