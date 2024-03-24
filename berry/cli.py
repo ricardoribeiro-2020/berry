@@ -190,7 +190,7 @@ berry [package options] script parameter [script options]
                                         help="Number of processes to use (default: 1).")
             cluster_parser.add_argument("-t",  
                                         type=restricted_float, 
-                                        default=0.95, metavar="[0.0-1.0]",  
+                                        default=0.80, metavar="[0.0-1.0]",  
                                         help="Tolerance used for graph construction (default: 0.95).")
             cluster_parser.add_argument("-flush", 
                                         action="store_true", 
