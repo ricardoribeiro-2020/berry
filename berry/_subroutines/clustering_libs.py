@@ -669,7 +669,7 @@ class MATERIAL:
             neigh = neighs.pop(0) if len(neighs) > 0 else None
         return neigh == j if neigh is not None else False
 
-    def make_connections(self, tol:float=0.6) -> None:
+    def make_connections(self, tol:float=0.80) -> None:
         '''
         This function evaluates the connection between each k point,
         and adds an edge to the graph if its connection is greater
@@ -685,6 +685,9 @@ class MATERIAL:
         ###########################################################################
         # Find the edges on the graph
         ###########################################################################
+
+        tol = 1 - 2/np.pi * np.arccos(tol) # Convert the tolerance value to arccos metric
+      
         def connection_component(vectors:np.ndarray) -> list[list[Kpoint]]:
             '''
             Find the possible edges in the graph using the information of dot product.
