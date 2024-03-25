@@ -304,7 +304,7 @@ class Preprocess:
             np.save(fich, self.kvector2)  # Second vector that define volume in k space
             np.save(fich, self.kvector3)  # Third vector that define volume in k space
             
-            np.save(fich, self.wfcut)                  # Cutoff band
+            np.save(fich, int(self.wfcut))                  # Cutoff band
             np.save(fich, int(self.wfcut) + 1)              # Initial band
             np.save(fich, int(self.nbnd) - int(self.wfcut) - 1)  # Number of bands
             np.save(fich, int(self.nbnd) - 1)               # Final band
