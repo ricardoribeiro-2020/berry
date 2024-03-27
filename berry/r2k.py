@@ -22,16 +22,18 @@ def read_wfc_files(banda: int, npr: int) -> None:
     global read_wfc_kp
 
     def read_wfc_kp(kp):
+        b = bandsfinal[kp, banda] + initial_band
+
         if m.noncolin:
-            infile0  = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}-0.wfc"
-            infile1  = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}-1.wfc"
+            infile0  = f"{m.wfcdirectory}/k0{kp}b0{b}-0.wfc"
+            infile1  = f"{m.wfcdirectory}/k0{kp}b0{b}-1.wfc"
             wfct_k0[:, kp] = np.load(infile0)
             wfct_k1[:, kp] = np.load(infile1)
         else:
             if signalfinal[kp, banda] == -1:                                        # if its a signaled wfc, choose corrected
-                infile = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}.wfc1"
+                infile = f"{m.wfcdirectory}/k0{kp}b0{b}.wfc1"
             else:                                                                   # else choose original
-                infile = f"{m.wfcdirectory}/k0{kp}b0{bandsfinal[kp, banda]}.wfc"
+                infile = f"{m.wfcdirectory}/k0{kp}b0{b}.wfc"
 
             wfct_k[:, kp] = np.load(infile)
 
@@ -41,16 +43,27 @@ def read_wfc_files(banda: int, npr: int) -> None:
 
 def calculate_wfcpos(npr: int) -> np.ndarray:
     global calculate_wfcpos_kp
+    if m.dimensions == 2:
+        def calculate_wfcpos_kp(kp):
+            if m.noncolin:
+                wfcpos0[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k0[kp, d.ijltonk[:, :, 0]]
+                wfcpos1[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k1[kp, d.ijltonk[:, :, 0]]
+            else:
+                wfcpos[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k[kp, d.ijltonk[:, :, 0]]
 
-    def calculate_wfcpos_kp(kp):
-        if m.noncolin:
-            wfcpos0[kp] = d_phase[kp, d.ijltonk[:, :, :]] * wfct_k0[kp, d.ijltonk[:, :, :]]
-            wfcpos1[kp] = d_phase[kp, d.ijltonk[:, :, :]] * wfct_k1[kp, d.ijltonk[:, :, :]]
-        else:
-            wfcpos[kp] = d_phase[kp, d.ijltonk[:, :, :]] * wfct_k[kp, d.ijltonk[:, :, :]]
+        with Pool(npr) as pool:
+            pool.map(calculate_wfcpos_kp, range(m.nr))
 
-    with Pool(npr) as pool:
-        pool.map(calculate_wfcpos_kp, range(m.nr))
+    else:    
+        def calculate_wfcpos_kp(kp):
+            if m.noncolin:
+                wfcpos0[kp] = d_phase[kp, d.ijltonk[:, :, :]] * wfct_k0[kp, d.ijltonk[:, :, :]]
+                wfcpos1[kp] = d_phase[kp, d.ijltonk[:, :, :]] * wfct_k1[kp, d.ijltonk[:, :, :]]
+            else:
+                wfcpos[kp] = d_phase[kp, d.ijltonk[:, :, :]] * wfct_k[kp, d.ijltonk[:, :, :]]
+
+        with Pool(npr) as pool:
+            pool.map(calculate_wfcpos_kp, range(m.nr))
 
 
 def calculate_wfcgra(npr: int) -> np.ndarray:
@@ -69,37 +82,41 @@ def calculate_wfcgra(npr: int) -> np.ndarray:
 
 
 def r_to_k(banda: int, npr: int) -> None:
+    b = banda + initial_band # true band
+
     start = time()
     read_wfc_files(banda, npr)
     logger.debug(f"\twfc files read in {time() - start:.2f} seconds")
 
     start = time()
     calculate_wfcpos(npr)
-    logger.debug(f"\twfcpos{banda} calculated in {time() - start:.2f} seconds")
+    logger.debug(f"\twfcpos{b} calculated in {time() - start:.2f} seconds")
 
     start = time()
     calculate_wfcgra(npr)
-    logger.debug(f"\twfcgra{banda} calculated in {time() - start:.2f} seconds")
+    logger.debug(f"\twfcgra{b} calculated in {time() - start:.2f} seconds")
 
     start = time()
     #IDEA: Try saving this files into a folder in different chunks
     if m.noncolin:
-        np.save(os.path.join(m.data_dir, f"wfcpos{banda}-0.npy"), wfcpos0)
-        np.save(os.path.join(m.data_dir, f"wfcpos{banda}-1.npy"), wfcpos1)
-        np.save(os.path.join(m.data_dir, f"wfcgra{banda}-0.npy"), wfcgra0)
-        np.save(os.path.join(m.data_dir, f"wfcgra{banda}-1.npy"), wfcgra1)
+        np.save(os.path.join(m.data_dir, f"wfcpos{b}-0.npy"), wfcpos0)
+        np.save(os.path.join(m.data_dir, f"wfcpos{b}-1.npy"), wfcpos1)
+        np.save(os.path.join(m.data_dir, f"wfcgra{b}-0.npy"), wfcgra0)
+        np.save(os.path.join(m.data_dir, f"wfcgra{b}-1.npy"), wfcgra1)
     else:
-        np.save(os.path.join(m.data_dir, f"wfcpos{banda}.npy"), wfcpos)
-        np.save(os.path.join(m.data_dir, f"wfcgra{banda}.npy"), wfcgra)
+        np.save(os.path.join(m.data_dir, f"wfcpos{b}.npy"), wfcpos)
+        np.save(os.path.join(m.data_dir, f"wfcgra{b}.npy"), wfcgra)
 
-    logger.debug(f"\twfcpos{banda} and wfcgra{banda} saved in {time() - start:.2f} seconds\n")
+    logger.debug(f"\twfcpos{b} and wfcgra{b} saved in {time() - start:.2f} seconds\n")
 
 
 def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "r2k", logger_level: int = logging.INFO, flush: bool = False):
     if m.noncolin:
-        global grad, signalfinal, bandsfinal, wfct_k0, wfct_k1, wfcpos0, wfcpos1, wfcgra0, wfcgra1, logger, d_phase
+        global grad, signalfinal, bandsfinal, wfct_k0, wfct_k1, wfcpos0, wfcpos1, wfcgra0, wfcgra1, logger, d_phase, initial_band
     else:
-        global grad, signalfinal, bandsfinal, wfct_k, wfcpos, wfcgra, logger, d_phase
+        global grad, signalfinal, bandsfinal, wfct_k, wfcpos, wfcgra, logger, d_phase, initial_band
+
+    initial_band = m.initial_band if m.initial_band != "dummy" else 0 # for backward compatibility
 
     logger = log(logger_name, "R2K", level=logger_level, flush=flush)
 
@@ -180,7 +197,7 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     ###########################################################################
     # 4. CALCULATE
     ###########################################################################
-    for banda in range(min_band, max_band + 1):
+    for banda in range(min_band - initial_band, max_band - initial_band + 1):
         r_to_k(banda, npr)
 
     ###########################################################################

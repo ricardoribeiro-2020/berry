@@ -209,12 +209,20 @@ berry [package options] script parameter [script options]
             basis_parser.add_argument("-o", default="basis", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             basis_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if R2K:
-            r2k_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)             , help="Maximum band to consider.")
-            r2k_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
-            r2k_parser.add_argument("-mb", type=int, default=0, metavar=f"[0-{m.nbnd-1}]"      , choices=range(m.nbnd)             , help="Minimum band to consider (default: 0).")
-            r2k_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
-            r2k_parser.add_argument("-o", default="r2k", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-            r2k_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
+            if m.initial_band != "dummy":
+                r2k_parser.add_argument("Mb" , type=int           , metavar=f"Mb ({m.initial_band}-{m.nbnd-1})"   , choices=range(m.initial_band, m.nbnd)             , help="Maximum band to consider.")
+                r2k_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
+                r2k_parser.add_argument("-mb", type=int, default=m.initial_band, metavar=f"[{m.initial_band}-{m.nbnd-1}]"      , choices=range(m.initial_band, m.nbnd)             , help="Minimum band to consider (default: 0).")
+                r2k_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
+                r2k_parser.add_argument("-o", default="r2k", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
+                r2k_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
+            else:
+                r2k_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)             , help="Maximum band to consider.")
+                r2k_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
+                r2k_parser.add_argument("-mb", type=int, default=0, metavar=f"[0-{m.nbnd-1}]"      , choices=range(m.nbnd)             , help="Minimum band to consider (default: 0).")
+                r2k_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
+                r2k_parser.add_argument("-o", default="r2k", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
+                r2k_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if GEOMETRY:
             geometry_parser.add_argument("Mb"   , type=int                , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)                      , help="Maximum band to consider.")
             geometry_parser.add_argument("-np"  , type=int, default=1     , metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1)         , help="Number of processes to use (default: 1).")
