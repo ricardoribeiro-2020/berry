@@ -203,7 +203,10 @@ berry [package options] script parameter [script options]
                                         action="store_true", 
                                         help="Increases output verbosity.")
         if BASIS:
-            basis_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)             , help="Maximum band to consider.")
+            if m.initial_band != "dummy": # for backward compatibility
+                basis_parser.add_argument("Mb" , type=int           , metavar=f"Mb ({m.initial_band}-{m.nbnd-1})"   , choices=range(m.initial_band, m.nbnd)             , help="Maximum band to consider.")
+            else:
+                basis_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)             , help="Maximum band to consider.")
             basis_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
             basis_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             basis_parser.add_argument("-o", default="basis", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
