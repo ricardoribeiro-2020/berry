@@ -43,7 +43,18 @@ def read_wfc_files(banda: int, npr: int) -> None:
 
 def calculate_wfcpos(npr: int) -> np.ndarray:
     global calculate_wfcpos_kp
-    if m.dimensions == 2:
+    if m.dimensions == 1:
+        def calculate_wfcpos_kp(kp):
+            if m.noncolin:
+                wfcpos0[kp] = d_phase[kp, d.ijltonk[:, 0, 0]] * wfct_k0[kp, d.ijltonk[:, 0, 0]]
+                wfcpos1[kp] = d_phase[kp, d.ijltonk[:, 0, 0]] * wfct_k1[kp, d.ijltonk[:, 0, 0]]
+            else:
+                wfcpos[kp] = d_phase[kp, d.ijltonk[:, 0, 0]] * wfct_k[kp, d.ijltonk[:, 0, 0]]
+
+        with Pool(npr) as pool:
+            pool.map(calculate_wfcpos_kp, range(m.nr))
+
+    elif m.dimensions == 2:
         def calculate_wfcpos_kp(kp):
             if m.noncolin:
                 wfcpos0[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k0[kp, d.ijltonk[:, :, 0]]
