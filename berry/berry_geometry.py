@@ -34,11 +34,12 @@ def berry_connection(n_pos: int, n_gra: int):
         Auxiliary function to calculate the Berry connection.
         """
         # Calculation of the Berry connection
-        bcc = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
         if m.noncolin:
+            bcc = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
             for posi in range(m.nr):
                 bcc += 1j * (wfcpos0[posi] * wfcgra0[posi] + wfcpos1[posi] * wfcgra1[posi])
         else:
+            bcc = np.zeros(wfcgra[0].shape, dtype=np.complex128)
             for posi in range(m.nr):
                 bcc += 1j * wfcpos[posi] * wfcgra[posi]
 
@@ -83,8 +84,8 @@ def berry_curvature(idx: int, idx_: int) -> None:
             exit(0)
 
         elif m.dimensions == 2:
-            bcr = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
             if m.noncolin:
+                bcr = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
                 for posi in range(m.nr):
                     bcr += (
                         1j * wfcgra0[posi][1] * wfcgra0_[posi][0]
@@ -93,17 +94,17 @@ def berry_curvature(idx: int, idx_: int) -> None:
                         - 1j * wfcgra1[posi][0] * wfcgra1_[posi][1]
                     )
             else:
-
+                bcr = np.zeros(wfcgra[0].shape, dtype=np.complex128)
                 for posi in range(m.nr):
                     bcr += (
                         1j * wfcgra[posi][0] * wfcgra_[posi][1]
                         - 1j * wfcgra[posi][1] * wfcgra_[posi][0]
                     )
         else:          # 3D case
-            bcr = np.array([np.zeros(wfcgra0[0].shape, dtype=np.complex128),
-                            np.zeros(wfcgra0[0].shape, dtype=np.complex128),
-                            np.zeros(wfcgra0[0].shape, dtype=np.complex128)])
             if m.noncolin:
+                bcr = np.array([np.zeros(wfcgra0[0].shape, dtype=np.complex128),
+                                np.zeros(wfcgra0[0].shape, dtype=np.complex128),
+                                np.zeros(wfcgra0[0].shape, dtype=np.complex128)])
                 for posi in range(m.nr):
                     bcr[0,:] += (
                         1j * wfcgra0[posi][2] * wfcgra0_[posi][1]
@@ -124,6 +125,9 @@ def berry_curvature(idx: int, idx_: int) -> None:
                         - 1j * wfcgra1[posi][0] * wfcgra1_[posi][1]
                     )
             else:
+                bcr = np.array([np.zeros(wfcgra[0].shape, dtype=np.complex128),
+                                np.zeros(wfcgra[0].shape, dtype=np.complex128),
+                                np.zeros(wfcgra[0].shape, dtype=np.complex128)])
                 for posi in range(m.nr):
                     bcr[0,:] += (
                         1j * wfcgra[posi][2] * wfcgra_[posi][1]

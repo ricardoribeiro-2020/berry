@@ -227,9 +227,14 @@ berry [package options] script parameter [script options]
                 r2k_parser.add_argument("-o", default="r2k", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
                 r2k_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if GEOMETRY:
-            geometry_parser.add_argument("Mb"   , type=int                , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)                      , help="Maximum band to consider.")
-            geometry_parser.add_argument("-np"  , type=int, default=1     , metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1)         , help="Number of processes to use (default: 1).")
-            geometry_parser.add_argument("-mb"  , type=int, default=0     , metavar=f"[0-{m.nbnd-1}]"      , choices=range(m.nbnd)                      , help="Minimum band to consider (default: 0).")
+            if m.initial_band != "dummy": # for backward compatibility
+                geometry_parser.add_argument("Mb"   , type=int                , metavar=f"Mb ({m.initial_band}-{m.nbnd-1})"   , choices=range(m.initial_band, m.nbnd)                      , help="Maximum band to consider.")
+                geometry_parser.add_argument("-np"  , type=int, default=1     , metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1)         , help="Number of processes to use (default: 1).")
+                geometry_parser.add_argument("-mb"  , type=int, default=m.initial_band     , metavar=f"[{m.initial_band}-{m.nbnd-1}]"      , choices=range(m.initial_band, m.nbnd)                      , help=f"Minimum band to consider (default: {m.initial_band}).")
+            else:
+                geometry_parser.add_argument("Mb"   , type=int                , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)                      , help="Maximum band to consider.")
+                geometry_parser.add_argument("-np"  , type=int, default=1     , metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1)         , help="Number of processes to use (default: 1).")
+                geometry_parser.add_argument("-mb"  , type=int, default=0     , metavar=f"[0-{m.nbnd-1}]"      , choices=range(m.nbnd)                      , help="Minimum band to consider (default: 0).")
             geometry_parser.add_argument("-prop", type=str, default="both", metavar="",choices=["both", "conn", "curv"], help="Specify which proprety to calculate. Possible choices are 'both', 'conn' and 'curv' (default: both)")
             geometry_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
             geometry_parser.add_argument("-o", default="geometry", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
