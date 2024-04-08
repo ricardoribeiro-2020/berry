@@ -1037,14 +1037,14 @@ class MATERIAL:
             clusters, samples, N_g_nks = communites2clusters(communities)
 
             total_bands_computed = len(self.solved) + len(clusters)
-            if not first_iteration:
+            if not first_iteration or np.abs(10 - len(clusters) * len(samples)) < 10:
                 break
 
             if total_bands_computed == self.nbnd and len(self.solved) >= 0 and N_g_nks == 0:
                 flag_resolution = False
                 break
 
-            if best_iteration is None or np.abs(self.nbnd - total_bands_computed) < best_score and len(self.solved) > max_solved and N_g_nks < N_g_nks_prev:
+            if len(clusters) * len(samples) and (best_iteration is None or np.abs(self.nbnd - total_bands_computed) < best_score and len(self.solved) > max_solved and N_g_nks < N_g_nks_prev):
                 best_iteration = communities
                 best_score = np.abs(self.nbnd - total_bands_computed)
                 max_solved = len(self.solved)
@@ -1528,14 +1528,18 @@ class MATERIAL:
         k_index = self.kpoints_index[ks]                                            # k-points' indeces
 
         ik = k_index[:, 0]
-        indices = [ik]
         if self.dimensions >= 2:
             jk = k_index[:, 1]
-            indices.append(jk)
         if self.dimensions == 3:
             kk = k_index[:, 2]
-            indices.append(kk)
-        bands_signaling[bnds, indices] = 1                                           # Mark the k-points' projection in k-space
+
+        # Mark the k-points' projection in k-space
+        if self.dimensions == 1:
+            bands_signaling[bnds, ik] = 1   
+        elif self.dimensions == 2:
+            bands_signaling[bnds, ik, jk] = 1   
+        elif self.dimensions == 3:
+            bands_signaling[bnds, ik, jk, kk] = 1
 
         mean_fitler = np.ones((3,3))                                                # It is the kernel used to select the problems' boundary
         self.GRAPH = nx.Graph()                                                     # The new Graph
