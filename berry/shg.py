@@ -24,9 +24,9 @@ def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_con
     base = Array(ctypes.c_double, berry_conn_size * 2, lock = False)
     berry_connections = np.frombuffer(base, dtype=np.complex128).reshape(berry_conn_shape)
 
-    for i in range(conduction_band + 1):
-        for j in range(conduction_band + 1):
-            berry_connections[i, j] = np.load(os.path.join(m.geometry_dir, f"berryConn{i}_{j}.npy"))
+    for i in range(initial_band, conduction_band + 1):
+        for j in range(initial_band, conduction_band + 1):
+            berry_connections[i - initial_band, j - initial_band] = np.load(os.path.join(m.geometry_dir, f"berryConn{i}_{j}.npy"))
 
     return berry_connections
 
@@ -34,25 +34,25 @@ def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_con
 def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
     kp = 0
     if m.dimensions == 1:
-        eigen_array = np.zeros((m.nkx, m.nbnd))
+        eigen_array = np.zeros((m.nkx, number_of_bands))
         for i in range(m.nkx):
-            for banda in range(m.nbnd):
+            for banda in range(number_of_bands):
                 eigen_array[i, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
             kp += 1
 
     elif m.dimensions == 2:
-        eigen_array = np.zeros((m.nkx, m.nky, m.nbnd))
+        eigen_array = np.zeros((m.nkx, m.nky, number_of_bands))
         for j in range(m.nky):
             for i in range(m.nkx):
-                for banda in range(m.nbnd):
+                for banda in range(number_of_bands):
                     eigen_array[i, j, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
                 kp += 1
     else:
-        eigen_array = np.zeros((m.nkx, m.nky, m.nkz, m.nbnd))
+        eigen_array = np.zeros((m.nkx, m.nky, m.nkz, number_of_bands))
         for l in range(m.nkz):
             for j in range(m.nky):
                 for i in range(m.nkx):
-                    for banda in range(m.nbnd):
+                    for banda in range(number_of_bands):
                         eigen_array[i, j, l, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
                     kp += 1
 
@@ -102,11 +102,12 @@ def get_fermi_delta_ea_grad_ea(grad: Gradient, eigen_array: np.ndarray, conducti
 
 def calculate_shg(omega: float, broadning: float):
 
+    omega_array = np.full(OMEGA_SHAPE, omega + broadning)                        # in Ry
+
     gamma1 = CONST * delta_ea / (2 * omega_array - delta_ea)                     # factor called dE/g in paper times leading constant
     gamma2 = -fermi / np.square(omega_array - delta_ea)                          # factor f/h^2 in paper (-) to account for change in indices in f and h
     gamma3 = -fermi / (omega_array - delta_ea)                                   # factor f/h in paper (index reference is of h, not f, in equation)
 
-    omega_array = np.full(OMEGA_SHAPE, omega + broadning)                        # in Ry
     if m.dimensions == 1:
         sig = np.full((m.nkx, 1, 1, 1), 0, dtype=np.complex128)
         for s, sprime in product(band_list, repeat=2):                                # runs through index s, s'
@@ -233,10 +234,14 @@ def calculate_shg(omega: float, broadning: float):
 
 
 def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, broadning: complex = 0.01j, logger_name: str = "shg", logger_level: int = logging.INFO, flush: bool = False):
-    global gamma1, gamma2, gamma3, gamma12, gamma13, fermi, delta_ea, grad_dea, band_list, berry_connections, OMEGA_SHAPE, CONST, VK
+    global gamma1, gamma2, gamma3, gamma12, gamma13, fermi, delta_ea, grad_dea, band_list, berry_connections, OMEGA_SHAPE, CONST, VK, initial_band, number_of_bands
     logger = log(logger_name, "SECOND HARMONIC GENERATOR", level=logger_level, flush=flush)
 
     logger.header()
+
+    initial_band = m.initial_band if m.initial_band != "dummy" else 0                # for backward compatibility
+    number_of_bands = m.number_of_bands if m.number_of_bands != "dummy" else m.nbnd  # for backward compatibility
+
 
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
@@ -251,28 +256,29 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
                                                                                 # the 2e comes from having two electrons per band
                                                                                 # another minus comes from the negative charge
 
-    band_list   = list(range(conduction_band + 1))
+    band_list   = list(range(conduction_band + 1 - initial_band))
 
     #TODO: Add docstring with these comments
     # Maximum energy (Ry)
     # Energy step (Ry)
     # energy broading (Ry)
 
+    cb = conduction_band + 1 - initial_band
     if m.dimensions == 1:
-        GAMMA_SHAPE = (m.nkx, conduction_band + 1, conduction_band + 1)
-        OMEGA_SHAPE = (m.nkx, conduction_band + 1, conduction_band + 1)
-        berry_conn_size  = 2 * m.nkx * (conduction_band + 1) ** 2
-        berry_conn_shape = (conduction_band + 1, conduction_band + 1, 2, m.nkx)
+        GAMMA_SHAPE = (m.nkx, cb, cb)
+        OMEGA_SHAPE = (m.nkx, cb, cb)
+        berry_conn_size  = 2 * m.nkx * (cb) ** 2
+        berry_conn_shape = (cb, cb, 2, m.nkx)
     elif m.dimensions == 2:
-        GAMMA_SHAPE = (m.nkx, m.nky, conduction_band + 1, conduction_band + 1)
-        OMEGA_SHAPE = (m.nkx, m.nky, conduction_band + 1, conduction_band + 1)
-        berry_conn_size  = 2 * m.nkx * m.nky * (conduction_band + 1) ** 2
-        berry_conn_shape = (conduction_band + 1, conduction_band + 1, 2, m.nkx, m.nky)
+        GAMMA_SHAPE = (m.nkx, m.nky, cb, cb)
+        OMEGA_SHAPE = (m.nkx, m.nky, cb, cb)
+        berry_conn_size  = 2 * m.nkx * m.nky * (cb) ** 2
+        berry_conn_shape = (cb, cb, 2, m.nkx, m.nky)
     else:
-        GAMMA_SHAPE = (m.nkx, m.nky, m.nkz, conduction_band + 1, conduction_band + 1)
-        OMEGA_SHAPE = (m.nkx, m.nky, m.nkz, conduction_band + 1, conduction_band + 1)
-        berry_conn_size  = 2 * m.nkx * m.nky * m.nkz * (conduction_band + 1) ** 2
-        berry_conn_shape = (conduction_band + 1, conduction_band + 1, 2, m.nkx, m.nky, m.nkz)
+        GAMMA_SHAPE = (m.nkx, m.nky, m.nkz, cb, cb)
+        OMEGA_SHAPE = (m.nkx, m.nky, m.nkz, cb, cb)
+        berry_conn_size  = 2 * m.nkx * m.nky * m.nkz * (cb) ** 2
+        berry_conn_shape = (cb, cb, 2, m.nkx, m.nky, m.nkz)
 
 
     ###########################################################################
@@ -310,7 +316,7 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
     bandsfinal                  = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
     eigen_array                 = correct_eigenvalues(bandsfinal)
     berry_connections           = load_berry_connections(conduction_band, berry_conn_size, berry_conn_shape)
-    fermi, delta_ea, grad_dea   = get_fermi_delta_ea_grad_ea(grad, eigen_array, conduction_band)
+    fermi, delta_ea, grad_dea   = get_fermi_delta_ea_grad_ea(grad, eigen_array, conduction_band - initial_band)
 
     gamma1                      = np.zeros(GAMMA_SHAPE, dtype=np.complex128)
     gamma2                      = np.zeros(GAMMA_SHAPE, dtype=np.complex128)
