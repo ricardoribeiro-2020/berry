@@ -61,7 +61,8 @@ try:
         R2K = 1
     if os.path.exists(os.path.join(m.workdir, "log/r2k.log")):
         GEOMETRY = 1
-    if os.path.exists(os.path.join(m.workdir, "data/geometry/berryConn0_0.npy")):
+    # if os.path.exists(os.path.join(m.workdir, "data/geometry/berryConn0_0.npy")):
+    if os.path.exists(os.path.join(m.workdir, "log/geometry.log")):
         CONDUCTIVITY = 1
         SHG = 1
 except:
@@ -240,7 +241,11 @@ berry [package options] script parameter [script options]
             geometry_parser.add_argument("-o", default="geometry", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
             geometry_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
         if CONDUCTIVITY:
-            conductivity_parser.add_argument("cb" , type=int                        ,metavar=f"cb ({m.vb+1}-{m.nbnd-1})", choices=range(m.vb+1, m.nbnd)     , help="Index of the highest conduction band to consider.")
+            if m.initial_band != "dummy":
+                vb = m.vb if m.vb < m.initial_band else m.initial_band
+                conductivity_parser.add_argument("cb" , type=int                        ,metavar=f"cb ({vb+1}-{m.nbnd-1})", choices=range(m.vb+1, m.nbnd)     , help="Index of the highest conduction band to consider.")
+            else:
+                conductivity_parser.add_argument("cb" , type=int                        ,metavar=f"cb ({m.vb+1}-{m.nbnd-1})", choices=range(m.vb+1, m.nbnd)     , help="Index of the highest conduction band to consider.")
             conductivity_parser.add_argument("-np"       , type=int  , default=1    , metavar=f"[1-{os.cpu_count()}]"   , choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
             conductivity_parser.add_argument("-eM", metavar="", type=float, default=2.5, help="Maximum energy in Ry units (default: 2.5).")
             conductivity_parser.add_argument("-eS", metavar="", type=float, default=0.001, help="Energy step in Ry units (default: 0.001).")

@@ -21,9 +21,9 @@ def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_con
     base = Array(ctypes.c_double, berry_conn_size * 2, lock=False)
     berry_connections = np.frombuffer(base, dtype=np.complex128).reshape(berry_conn_shape)
 
-    for i in range(conduction_band + 1):
-        for j in range(conduction_band + 1):
-            berry_connections[i, j] = np.load(os.path.join(m.geometry_dir, f"berryConn{i}_{j}.npy"))
+    for i in range(initial_band, conduction_band + 1):
+        for j in range(initial_band, conduction_band + 1):
+            berry_connections[i - initial_band, j - initial_band] = np.load(os.path.join(m.geometry_dir, f"berryConn{i}_{j}.npy"))
 
     return berry_connections
 
@@ -31,24 +31,24 @@ def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_con
 def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
     kp = 0
     if m.dimensions == 1:
-        eigen_array = np.zeros((m.nkx, m.nbnd))
+        eigen_array = np.zeros((m.nkx, number_of_bands))
         for i in range(m.nkx):
-            for banda in range(m.nbnd):
+            for banda in range(number_of_bands):
                 eigen_array[i, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
             kp += 1
     elif m.dimensions == 2:
-        eigen_array = np.zeros((m.nkx, m.nky, m.nbnd))
+        eigen_array = np.zeros((m.nkx, m.nky, number_of_bands))
         for j in range(m.nky):
             for i in range(m.nkx):
-                for banda in range(m.nbnd):
+                for banda in range(number_of_bands):
                     eigen_array[i, j, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
                 kp += 1
     else:
-        eigen_array = np.zeros((m.nkx, m.nky, m.nkz, m.nbnd))        
+        eigen_array = np.zeros((m.nkx, m.nky, m.nkz, number_of_bands))        
         for l in range(m.nkz):
             for j in range(m.nky):
                 for i in range(m.nkx):
-                    for banda in range(m.nbnd):
+                    for banda in range(number_of_bands):
                         eigen_array[i, j, l, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
                     kp += 1
 
@@ -142,10 +142,13 @@ def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.nd
 #TODO: ADD assertions to all functions in order to check if the inputs are correct
 #IDEA: Maybe create a type checking decorator (USE pydantic)
 def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, broadning: complex = 0.01j, logger_name: str = "condutivity", logger_level: int = logging.INFO, flush: bool = False):
-    global band_list, berry_connections, OMEGA_SHAPE, CONST, VK
+    global band_list, berry_connections, OMEGA_SHAPE, CONST, VK, initial_band, number_of_bands
     logger = log(logger_name, "CONDUCTIVITY", level=logger_level, flush=flush)
 
     logger.header()
+
+    initial_band = m.initial_band if m.initial_band != "dummy" else 0                # for backward compatibility
+    number_of_bands = m.number_of_bands if m.number_of_bands != "dummy" else m.nbnd  # for backward compatibility
 
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
@@ -158,25 +161,26 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
     else:
         CONST = 4 * 2j / (2 * np.pi) ** m.dimensions                            # = i2e^2/hslash 1/(2pi)^2     in Rydberg units
 
-    band_list   = list(range(conduction_band + 1))
+    band_list   = list(range(conduction_band + 1 - initial_band))
 
     #TODO: add function docstring with these comments
     # Maximum energy (Ry)
     # Energy step (Ry)
     # energy broading (Ry)
 
+    cb = conduction_band + 1 - initial_band
     if m.dimensions == 1:
-        OMEGA_SHAPE = (m.nkx, conduction_band + 1, conduction_band + 1)
-        berry_conn_size  = 2 * m.nkx * (conduction_band + 1) ** 2
-        berry_conn_shape = (conduction_band + 1, conduction_band + 1, 2, m.nkx)
+        OMEGA_SHAPE = (m.nkx, cb, cb)
+        berry_conn_size  = 2 * m.nkx * (cb) ** 2
+        berry_conn_shape = (cb, cb, 2, m.nkx)
     elif m.dimensions == 2:
-        OMEGA_SHAPE = (m.nkx, m.nky, conduction_band + 1, conduction_band + 1)
-        berry_conn_size  = 2 * m.nkx * m.nky * (conduction_band + 1) ** 2
-        berry_conn_shape = (conduction_band + 1, conduction_band + 1, 2, m.nkx, m.nky)
+        OMEGA_SHAPE = (m.nkx, m.nky, cb, cb)
+        berry_conn_size  = 2 * m.nkx * m.nky * (cb) ** 2
+        berry_conn_shape = (cb, cb, 2, m.nkx, m.nky)
     else:
-        OMEGA_SHAPE = (m.nkx, m.nky, m.nkz, conduction_band + 1, conduction_band + 1)
-        berry_conn_size  = 2 * m.nkx * m.nky * m.nkz * (conduction_band + 1) ** 2
-        berry_conn_shape = (conduction_band + 1, conduction_band + 1, 2, m.nkx, m.nky, m.nkz)
+        OMEGA_SHAPE = (m.nkx, m.nky, m.nkz, cb, cb)
+        berry_conn_size  = 2 * m.nkx * m.nky * m.nkz * (cb) ** 2
+        berry_conn_shape = (cb, cb, 2, m.nkx, m.nky, m.nkz)
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
@@ -206,7 +210,7 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
     bandsfinal               = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
     eigen_array              = correct_eigenvalues(bandsfinal)
     berry_connections        = load_berry_connections(conduction_band, berry_conn_size, berry_conn_shape)
-    delta_eigen_array, fermi = get_delta_eigen_array_and_fermi(eigen_array, conduction_band)
+    delta_eigen_array, fermi = get_delta_eigen_array_and_fermi(eigen_array, conduction_band - initial_band)
 
     ###########################################################################
     # 4. CALCULATE THE CONDUCTIVITY
