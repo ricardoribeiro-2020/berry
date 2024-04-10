@@ -1140,9 +1140,15 @@ class MATERIAL:
             # Eliminate the samples that were joined to a cluster
             samples = [samples[arg] for arg in args_sort if arg not in args_list]
 
-            for bn in clusters_completed:
+            new_clusters = []
+            for bn, cluster in enumerate(clusters):
                 # Remove the solved clusters
-                self.solved.append(clusters.pop(bn))
+                if bn not in clusters_completed:
+                    new_clusters.append(cluster)
+                    continue
+                self.solved.append(cluster)
+
+            clusters = new_clusters
 
         self.logger.percent_complete(count[1], count[1], title='Clustering Samples')
         self.logger.info(f'\t\tPhase 2: {len(self.solved)}/{self.nbnd} Solved')
