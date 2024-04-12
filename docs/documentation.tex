@@ -758,7 +758,7 @@ We also have the important relation:
 
 
 
-
+\paragraph{FCC 3D crystal}
 
 
 
@@ -772,6 +772,27 @@ We also have the important relation:
 
  \subsection{The bands to be used}
 
+ It is necessary to specify the set of bands that will be processed.
+ It is important to obtain and look at a normal band diagram of the material before chosing
+ what bands to include.
+ Otherwise, a large ammount of time and computer ressources may be spent uselessly.
+
+ The parameter \verb|nbnd| (mandatory) gives the number of bands to be calculated.
+ This number will be used in the nscf calculation of QE.
+ This also defines the highest band that will be used, that will have a band number of \verb|nbnd|$-1$.
+
+ Ideally, this should be the highest band before a gap in the bands.
+ If it is not, there will be incomplete bands in the final result of the berry calculation,
+ and they will be unusable.
+
+ There is another optional parameter \verb|wfcut| that allows us to exclude some of the lowest energy bands
+ from the berry calculations (not from the QE calculations, of course).
+ It is the number of the highest band to be excluded
+ (band numbering starts at 0 for the lowest band, and goes up to \verb|nbnd|$-1$).
+ So, if \verb|wfcut| is negative, all bands will be included.
+
+ It is important that there is a gap between the excluded bands and the included ones.
+ Otherwise, there will likelly be incomplete (and so useless) bands.
 
 
 
@@ -788,13 +809,7 @@ We also have the important relation:
 
 
 
-
-
-
-
-
-
-
+\newpage
 
 \begin{table}[h]
  \centering
@@ -803,22 +818,22 @@ We also have the important relation:
  \begin{tabularx}{\textwidth}{Xl}
  \textbf{Role of keyword}                     & \textbf{Variable (and defaults)}\\
 \hline
- origin of k-points (3 real numbers)           & k0 \\
- number of k-points in each direction (integer)& nkx, nky, nkz \\
- step of the k-points (real number)            & step \\
- number of bands to be calculated (integer)    & nbnd \\
+ origin of k-points (3 real numbers)           & \verb|k0| \\
+ number of k-points in each direction (integer)& \verb|nkx, nky, nkz| \\
+ step of the k-points (real number)            & \verb|step| \\
+ number of bands to be calculated (integer)    & \verb|nbnd| \\
  \hline
- number of processors                         & npr = 1 \\
- dft directory                                & dftdirectory = 'dft/' \\
- scf file name                                & name\_scf = 'scf.in' \\
- directory where wavefunctions will be saved  & wfcdirectory = 'wfc/' \\
- point in real space where all phases match   & point = 1.178097 \\
- software for DFT                             & program = 'QE' \\
- unique reference of run                      & refname = date and time \\
- First direction in k-space                   & kvector1 = None \\
- Second direction in k-space                  & kvector2 = None \\
- Third direction in k-space                   & kvector3 = None \\
- Last band NOT accounted for                  & wfcut = -1 \\
+ number of processors                         & \verb|npr = 1| \\
+ dft directory                                & \verb|dftdirectory = 'dft/'| \\
+ scf file name                                & \verb|name_scf = 'scf.in'| \\
+ directory where wavefunctions will be saved  & \verb|wfcdirectory = 'wfc/'| \\
+ point in real space where all phases match   & \verb|point = 1.178097| \\
+ software for DFT                             & \verb|program = 'QE'| \\
+ unique reference of run                      & \verb|refname| = date and time \\
+ first direction in k-space                   & \verb|kvector1 = 1.0 0.0 0.0| \\
+ second direction in k-space                  & \verb|kvector2 = 0.0 1.0 0.0| \\
+ third direction in k-space                   & \verb|kvector3 = 0.0 0.0 1.0| \\
+ last band NOT accounted for                  & \verb|wfcut = -1| \\
 
 
 %  DFT prefix  & prefix = '' \\
@@ -1720,6 +1735,7 @@ Also, it is possible to change some of the default behaviour by passing some par
 
 \end{appendices}
 
+\bibliographystyle{plain}
 \begin{thebibliography}{00}
 
 \bibitem{Gradhand_2012}
