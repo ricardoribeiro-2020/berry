@@ -699,7 +699,7 @@ All log files are created in directory \verb|log|.
 
  \paragraph{2D hexagonal material}
 
- Let's consider a material with the folllowing lattice and reciprocal lattice vectors
+ Let's consider a material with the following lattice and reciprocal lattice vectors
  (see figure \ref{fig:2D hexagonal}):
 \medskip
 
@@ -760,15 +760,48 @@ We also have the important relation:
 
 \paragraph{FCC 3D crystal}
 
+ Let's consider a material with the following FCC lattice and reciprocal lattice vectors:
+ \medskip
+
+\begin{tabular}{l|l}
+\centering
+Real & Reciprocal \\[0.1cm]\hline
+$\vec{a}_1 = \dfrac{a}{2}\left( \vec{e}_y + \vec{e}_z\right) $ &
+$\vec{b}_1 = \dfrac{2\pi}{a}\left( -\vec{k}_x + \vec{k}_y  + \vec{k}_z\right) $\\[0.2cm]
+$\vec{a}_2 = \dfrac{a}{2}\left( \vec{e}_x + \vec{e}_z\right) $ &
+$\vec{b}_2 = \dfrac{2\pi}{a}\left( \vec{k}_x - \vec{k}_y + \vec{k}_z\right) $\\[0.2cm]
+$\vec{a}_3 = \dfrac{a}{2}\left( \vec{e}_x + \vec{e}_y\right) $ &
+$\vec{b}_2 = \dfrac{2\pi}{a}\left( \vec{k}_x + \vec{k}_y - \vec{k}_z\right) $\\[0.2cm]
+\hline
+\end{tabular}
+\bigskip
+
+One possible choice of sample is to chose the following three directions in k-space:
+\begin{align*}
+ \hat{k}_1 &= (0,0,1)\\
+ \hat{k}_2 &= \dfrac{1}{\sqrt{2}}(1,-1,0)\\
+ \hat{k}_3 &= \dfrac{1}{\sqrt{2}}(1,1,0)
+\end{align*}
+all with the same size:
+\begin{equation}
+ |\vec{k}_i| = \dfrac{4\pi}{a}
+\end{equation}
+Which means that the number of points sampling in each directions should be the same:
+\begin{equation}
+ n_1 = n_2 = n_3
+\end{equation}
+
+Another way of seeing this is:
+\begin{align*}
+ \vec{k}_1 &= \vec{b}_1 + \vec{b}_2 \\
+ \vec{k}_2 &= \dfrac{1}{2}(\vec{b}_2 - \vec{b}_1) \\
+ \vec{k}_3 &= \dfrac{1}{2}(\vec{b}_1 + \vec{b}_2) + \vec{b}_3
+\end{align*}
 
 
 
 
-
-
-
-
-
+\bigskip
 
  \subsection{The bands to be used}
 
