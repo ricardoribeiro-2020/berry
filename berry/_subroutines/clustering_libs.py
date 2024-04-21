@@ -761,8 +761,15 @@ class MATERIAL:
             self.logger.debug(f'\tProblem:\n\t{d1}: {N1}\n\t{d2}: {N2}\n')
             NKS = self.nks
             if len(N1) > 1 and len(N2) > 1:
-                def n2_index(n1): return np.where(N2 % NKS == n1 % NKS)
-                N = [[n1, N2[n2_index(n1)[0][0]]] for n1 in N1]
+                N = []
+                for n1 in N1:
+                    n2_idx = np.where(N2 % NKS == n1 % NKS)
+                    if len(n2_idx) == 0 and len(n2_idx[0]) == 0:
+                        continue
+                    n2 = N2[n2_idx[0][0]]
+                    N.append([n1, n2])
+                if len(N) == 0:
+                    continue
                 flag = False
             else:
                 if len(N1) == len(N2):
