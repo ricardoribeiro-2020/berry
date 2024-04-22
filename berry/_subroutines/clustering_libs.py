@@ -764,7 +764,7 @@ class MATERIAL:
                 N = []
                 for n1 in N1:
                     n2_idx = np.where(N2 % NKS == n1 % NKS)
-                    if len(n2_idx) == 0 and len(n2_idx[0]) == 0:
+                    if len(n2_idx) == 0 or len(n2_idx[0]) == 0:
                         continue
                     n2 = N2[n2_idx[0][0]]
                     N.append([n1, n2])
