@@ -626,7 +626,8 @@ class MATERIAL:
 
         self.ENERGIES = energies
         # self.nbnd = nbnd-min_band
-        self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
+        # self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
+        self.bands_final, _ = np.meshgrid(bands, np.arange(self.nks))
 
     def get_neigs(self, i: Kpoint) -> list[Kpoint]:
         '''
@@ -1750,10 +1751,12 @@ class MATERIAL:
                 continue
             self.completed_bands.append(i)
         self.completed_bands = np.array(self.completed_bands)
-        
+
+        n_recomended = 1 if n_recomended == 0 else n_recomended
+      
         self.final_report += f'\n\n\n\tThe program has clustered all points for {self.max_solved} bands.'
         self.final_report += f'\n\n\tYou can use bands from {self.min_band} up to {n_recomended + self.min_band - 1}. \n\tThese bands are completed and do not have potential mistakes.'
-
+    
         if self.max_solved > n_recomended:
             self.final_report += f'\n\tNote that there may be more bands usable but a human verification is required.'
             n_max = n_recomended
