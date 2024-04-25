@@ -16,14 +16,14 @@ except:
 
 
 class WfcGenerator:
-    def __init__(self, 
-                 nk_points: Optional[int] = None , 
-                 bands: Optional[int] = None, 
-                 logger_name: str = "genwfc", 
-                 logger_level: int = logging.INFO, 
+    def __init__(self,
+                 nk_points: Optional[int] = None ,
+                 bands: Optional[int] = None,
+                 logger_name: str = "genwfc",
+                 logger_level: int = logging.INFO,
                  flush: bool = False
                 ):
-        
+
         if bands is not None and nk_points is None:
             raise ValueError("To generate a wavefunction for a single band, you must specify the k-point.")
 
@@ -48,7 +48,7 @@ class WfcGenerator:
     def run(self):
         # prints header on the log file
         self.logger.header()
-        
+
         # Logs the parameters for the run
         self._log_run_params(m.initial_band, m.number_of_bands, m.final_band)
 
@@ -116,9 +116,9 @@ class WfcGenerator:
                 .replace(",  ", "+")
                 .replace("(", "")
                 )
-        
 
-        
+
+
 
         if m.noncolin:
             # puts the wavefunctions into a numpy array
@@ -138,7 +138,7 @@ class WfcGenerator:
 
             for i in range(0,2*number_of_bands,2):
                 self.logger.debug(f"\t{nk_point:6d}  {(int(i/2) + initial_band):4d}  {mod_rpoint[int(i/2)]:12.8f}  {deltaphase[int(i/2)]:12.8f}   {not mod_rpoint[int(i/2)] < 1e-5}")
-                
+
                 # Subtract the reference phase for each point
                 psifinal0 += list(psi[i * m.nr : (i + 1) * m.nr] * np.exp(-1j * deltaphase[int(i/2)]))                # first part of spinor, all bands
                 psifinal1 += list(psi[m.nr + i * m.nr : m.nr + (i + 1) * m.nr] * np.exp(-1j * deltaphase[int(i/2)]))  # second part of spinor, all bands
@@ -170,7 +170,7 @@ class WfcGenerator:
             psifinal = []
             for i in range(number_of_bands):
                 self.logger.debug(f"\t{nk_point:6d}  {(i + initial_band):4d}  {mod_rpoint[i]:12.8f}  {deltaphase[i]:12.8f}   {not mod_rpoint[i] < 1e-5}")
-                
+
                 # Subtract the reference phase for each point
                 psifinal += list(psi[i * m.nr : (i + 1) * m.nr] * np.exp(-1j * deltaphase[i]))
             psifinal = np.array(psifinal)
