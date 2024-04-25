@@ -507,8 +507,8 @@ class Preprocess:
         self.nr3 = int(output.find("basis_set").find("fft_smooth").attrib["nr3"])
         self.nr = self.nr1 * self.nr2 * self.nr3
         self.logger.info(f"\t\tnr1: {self.nr1}")
-        self.logger.info(f"\t\tnr2: {self.nr1}")
-        self.logger.info(f"\t\tnr3: {self.nr1}")
+        self.logger.info(f"\t\tnr2: {self.nr2}")
+        self.logger.info(f"\t\tnr3: {self.nr3}")
         self.logger.info(f"\t\tnr: {self.nr}")
         self.ref_point = self.point * self.nr1 * self.nr2
         self.logger.info(f"\n\tPoint where phases match: {int(self.ref_point)}")
