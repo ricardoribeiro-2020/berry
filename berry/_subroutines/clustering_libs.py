@@ -473,7 +473,7 @@ class MATERIAL:
         if self.dimensions == 1:
             BandsEnergy = np.empty((self.nbnd, self.nks), float)
             for bn in range(self.nbnd):
-                BandsEnergy[bn] = self.eigenvalues[:, bands_final[:, bn]]
+                BandsEnergy[bn] = self.eigenvalues[:, bn]
             return BandsEnergy
         
         if self.dimensions == 2:
@@ -1541,8 +1541,11 @@ class MATERIAL:
         bands_signaling = np.zeros((self.total_bands, *self.matrix.shape), int)     # The array used to identify the k-points' projection in k-space
         k_index = self.kpoints_index[ks]                                            # k-points' indeces
 
-        ik = k_index[:, 0]
+        if self.dimensions == 1:
+            ik = k_index
+
         if self.dimensions >= 2:
+            ik = k_index[:, 0]
             jk = k_index[:, 1]
         if self.dimensions == 3:
             kk = k_index[:, 2]
