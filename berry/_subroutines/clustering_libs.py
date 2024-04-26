@@ -473,7 +473,7 @@ class MATERIAL:
         if self.dimensions == 1:
             BandsEnergy = np.empty((self.nbnd, self.nks), float)
             for bn in range(self.nbnd):
-                BandsEnergy[bn] = self.eigenvalues[:, bands_final[:, bn]]
+                BandsEnergy[bn] = self.eigenvalues[:, bn]
             return BandsEnergy
         
         if self.dimensions == 2:
@@ -626,7 +626,8 @@ class MATERIAL:
 
         self.ENERGIES = energies
         # self.nbnd = nbnd-min_band
-        self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
+        # self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
+        self.bands_final, _ = np.meshgrid(bands, np.arange(self.nks))
 
     def get_neigs(self, i: Kpoint) -> list[Kpoint]:
         '''
@@ -761,8 +762,15 @@ class MATERIAL:
             self.logger.debug(f'\tProblem:\n\t{d1}: {N1}\n\t{d2}: {N2}\n')
             NKS = self.nks
             if len(N1) > 1 and len(N2) > 1:
-                def n2_index(n1): return np.where(N2 % NKS == n1 % NKS)
-                N = [[n1, N2[n2_index(n1)[0][0]]] for n1 in N1]
+                N = []
+                for n1 in N1:
+                    n2_idx = np.where(N2 % NKS == n1 % NKS)
+                    if len(n2_idx) == 0 or len(n2_idx[0]) == 0:
+                        continue
+                    n2 = N2[n2_idx[0][0]]
+                    N.append([n1, n2])
+                if len(N) == 0:
+                    continue
                 flag = False
             else:
                 if len(N1) == len(N2):
@@ -1533,8 +1541,11 @@ class MATERIAL:
         bands_signaling = np.zeros((self.total_bands, *self.matrix.shape), int)     # The array used to identify the k-points' projection in k-space
         k_index = self.kpoints_index[ks]                                            # k-points' indeces
 
-        ik = k_index[:, 0]
+        if self.dimensions == 1:
+            ik = k_index
+
         if self.dimensions >= 2:
+            ik = k_index[:, 0]
             jk = k_index[:, 1]
         if self.dimensions == 3:
             kk = k_index[:, 2]
@@ -1743,10 +1754,12 @@ class MATERIAL:
                 continue
             self.completed_bands.append(i)
         self.completed_bands = np.array(self.completed_bands)
-        
+
+        n_recomended = 1 if n_recomended == 0 else n_recomended
+      
         self.final_report += f'\n\n\n\tThe program has clustered all points for {self.max_solved} bands.'
         self.final_report += f'\n\n\tYou can use bands from {self.min_band} up to {n_recomended + self.min_band - 1}. \n\tThese bands are completed and do not have potential mistakes.'
-
+    
         if self.max_solved > n_recomended:
             self.final_report += f'\n\tNote that there may be more bands usable but a human verification is required.'
             n_max = n_recomended

@@ -8,6 +8,9 @@
 \usepackage{caption}
 \usepackage{subcaption}
 \usepackage{setspace}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
 \onehalfspacing
 
 
@@ -83,7 +86,8 @@ With the Bloch wavefunctions, berry can calculate:
 
 It can be used in one, two or three dimension materials, with noncolinear or no-spin calculations.
 
-For the DFT calculations, {\sc Quantum Espresso}\cite{Giannozzi2009,Giannozzi2017} has to be used.
+For the DFT calculations, {\sc Quantum Espresso}\cite{Giannozzi2009,Giannozzi2017} has to be used,
+as of version 2 of the program.
 
 
 
@@ -179,7 +183,6 @@ In appendix \ref{ch:noncolinear}, we explain how to do it.
 \section{Requirements}
 
 This version of \textbf{berry} only supports the DFT package {\sc Quantum Espresso}, version v.6.6 or higher.
-
 So a working {\sc Quantum Espresso} instalation has to be in the system, and must be in the \$PATH.
 
 This version was tested with python 3.10, but likely works with other versions of python3.
@@ -202,7 +205,7 @@ the script \texttt{preprocess} to change the default (see section \nameref{sec:p
  Create an input file (as described in chapter \nameref{ch:workflow}, section \nameref{sec:preprocessing})
  in the working directory.
 
- \newpage
+
 Scheme of working directory:
 \begin{verbatim}
  working_directory|
@@ -239,7 +242,7 @@ The package options are shown in table \ref{tab:package_options}.
 
 \begin{table}[h]
  \centering
- \caption{The package options.}\label{tab:package_options}
+ \caption{The berry package options.}\label{tab:package_options}
 \begin{tabular}[]{lr}
 \hline
   \texttt{-h}, \texttt{--help}     &    Shows this help message and exit \\
@@ -252,7 +255,6 @@ The package options are shown in table \ref{tab:package_options}.
 Chapter \nameref{ch:workflow} explains what each script does,
 what parameters are required and what options they have.
 
-\includepdf[scale=0.8]{figures/berry_flow_chart.pdf}
 
 The flowchart of the previous page explains how \textbf{berry} works.
 
@@ -267,6 +269,20 @@ Once this classification is done, the gradient in reciprocal space of the Bloch 
 of the wavefunctions can be calculated.
 
 After that, Berry connections and curvatures, as well as other calculations can be performed.
+
+\includepdf[scale=0.8]{figures/berry_flow_chart.pdf}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 \chapter{Theoretical background to \emph{berry}}
@@ -555,6 +571,8 @@ where
  which will do the following:
  \begin{enumerate}
   \item Reads file \texttt{inputfile} with the description of the run wanted.
+  \item Creates directories \verb|log| and \verb|data|, and inside \verb|data|
+  creates directories \verb|wfc| and \verb|geometry|.
   \item Runs the scf calculation using {\sc Quantum Espresso}, if it has not ran before.
   \item Generates an nscf input file according to the input file and runs an nscf calculation,
   using {\sc Quantum Espresso}, if it has not ran before.
@@ -571,63 +589,9 @@ The minimum parameters needed are:
  \item step of the k-points (step)
  \item number of bands to be calculated (nbnd)
 \end{itemize}
+ In the following section a detailed explanation of the input file is given.
 
-An example of the minimum input file is shown in figure \ref{code:inputfile}.
-A full list of the parameters that are accepted with the respective defaults (if any)
-is shown in table \ref{tab:variables_preprocessing}.
-There is a unique reference number that is attributed when running \texttt{preprocess},
-that can be changed in the input file, but is not recomendable, because it is too easy to forget
-to change that variable in the input file and attribute the same value for different runs.
-
-\begin{figure}[h]
- \centering
-\begin{verbatim}
-  k0 0.00 0.00 0.00
-  nkx 100
-  nky 100
-  nkz 1
-  step 0.005
-  nbnd 8
-\end{verbatim}
-\caption{Example of input file for \texttt{preprocess}.}
-\label{code:inputfile}
-\end{figure}
-
-For an one dimension material, \verb|nky = nkz = 1|, so the material has to be align with the $x$ axis.
-For a two dimensions material, it has to be in the plane $xy$, so \verb|nkz = 1|.
-This is how the program knows the number of dimensions to be used.
-
-\begin{table}[h]
- \centering
- \caption{List of variables for the input file of \texttt{preprocess}.}
-
- \begin{tabularx}{\textwidth}{Xl}
- \textbf{Role of keyword}                     & \textbf{Variable (and defaults)}\\
-\hline
- origin of k-points (3 real numbers)           & k0 \\
- number of k-points in each direction (integer)& nkx, nky, nkz \\
- step of the k-points (real number)            & step \\
- number of bands to be calculated (integer)    & nbnd \\
- \hline
- number of processors                         & npr = 1 \\
- dft directory                                & dftdirectory = 'dft/' \\
- scf file name                                & name\_scf = 'scf.in' \\
- directory where wavefunctions will be saved  & wfcdirectory = 'wfc/' \\
- point in real space where all phases match   & point = 1.178097 \\
- software for DFT                             & program = 'QE' \\
- Unique reference of run                      & refname = date and time \\
-%  DFT prefix  & prefix = '' \\
-%  DFT output directory & outdir = ''\\
- \hline
-\end{tabularx}
- \label{tab:variables_preprocessing}
-\end{table}
-
-
-
-
-
-The script \texttt{preprocess} creates the files:
+The script \texttt{preprocess} creates the following files in the \verb|data| directory:
 \begin{itemize}
  \item \emph{phase.npy}
  \item \emph{neighbors.npy}
@@ -661,6 +625,261 @@ The options for \texttt{preprocess} are shown in table \ref{tab:options_preproce
   \hline
 \end{tabular}
 \end{table}
+
+All log files are created in directory \verb|log|.
+
+
+
+
+ \section{The input file}
+
+ The input file read by the \texttt{preprocess} script defines several important
+ aspects of the following scripts, and it is important to have it right.
+
+ An example of the minimum input file is shown in figure \ref{code:inputfile}.
+ A full list of the parameters that are accepted with the respective defaults (if any)
+ is shown in table \ref{tab:variables_preprocessing}.
+ There is a unique reference number that is attributed when running \texttt{preprocess} to guarantee consistency,
+ It can be changed in the input file, but is not recomendable,
+ because it is too easy to forget it
+ and attribute the same value for different runs.
+
+\begin{figure}[h]
+ \centering
+\begin{verbatim}
+  k0 0.00 0.00 0.00
+  nkx 100
+  nky 100
+  nkz 1
+  step 0.005
+  nbnd 8
+\end{verbatim}
+\caption{Example of input file for \texttt{preprocess}.}
+\label{code:inputfile}
+\end{figure}
+
+ \subsection{The sampling of the Brillouin Zone}
+
+ In principle, one wants to calculate the bands in the full Brillouin Zone (BZ)
+ for the calculation of the linear and second harmonic condutivity.
+ One can always sample just a part of it, of course.
+
+ For computational reasons, in version 2.0 (as in version 1.0) the sample has to be
+ a continuous line in 1D materials, a rectangle in 2D materials and a parallelepiped in 3D materials.
+ It is in the input file that these are defined.
+
+ The first variable (mandatory) is named \verb|k0| and it is the origin in k-space
+ where the sampling will start.
+ It is a set of three real numbers.
+ Figure \ref{code:inputfile} shows an example, where the $\Gamma$ point is chosen.
+
+ A set of three vectors can be defined indicating the orientation of the sample volume
+ (or two vectors for the orientation in a 2D material).
+ These vectors are optional, and if not included in the input file,
+ the default is that orientation 1 is along the $x$ axis, orientation 2 is along the $y$
+ axis and orientation 3 is along the $z$ axis.
+ The variables that define the three vectors are \verb|kvector1|, \verb|kvector2| and \verb|kvector3|,
+ each taking three real numbers, as the variable \verb|k0|.
+
+ The number of points in each direction that will be calculated are in variables
+ \verb|nkx|, \verb|nky| and \verb|nkz| (mandatory).
+ They should be chosen so that they cover the volume (or line or area) wanted,
+ taking into account the variable \verb|step| (also mandatory).
+
+ For an one dimension material, \verb|nky = nkz = 1|, so the material has to be align with the $x$ axis.
+ For a two dimensions material, it has to be in the plane $xy$, so \verb|nkz = 1|.
+ This is how the program knows the number of dimensions to be used.
+
+ It is strongly suggested that a preliminary scf run is performed to ascertain the correct
+ lattice and reciprocal lattice vectors and dimensions,
+ and so determine the parameters to be used.
+
+ For reference, we show below two possible samplings that for a 2D hexagonal material
+ and a 3D FCC material.
+
+ \paragraph{2D hexagonal material}
+
+ Let's consider a material with the following lattice and reciprocal lattice vectors
+ (see figure \ref{fig:2D hexagonal}):
+\medskip
+
+\begin{tabular}{l|l}
+\centering
+Real & Reciprocal \\[0.1cm]\hline
+$\vec{a}_1 = \dfrac{\sqrt{3}a}{2}\vec{e}_x - \dfrac{a}{2}\vec{e}_y$ &
+$\vec{b}_1 = \dfrac{2\pi}{a\sqrt{3}}\vec{k}_x-\dfrac{2\pi}{a}\vec{k}_y $\\[0.2cm]
+$\vec{a}_2 = \dfrac{\sqrt{3}a}{2}\vec{e}_x + \dfrac{a}{2}\vec{e}_y$ &
+$\vec{b}_2 = \dfrac{2\pi}{a\sqrt{3}}\vec{k}_x + \dfrac{2\pi}{a}\vec{k}_y $\\[0.2cm]
+\hline
+\end{tabular}
+\begin{figure}[h]
+ \centering
+ \includegraphics[scale=0.5,keepaspectratio=true]{figures/real_symmetric1.png}\hspace*{1.5cm}
+ \includegraphics[scale=0.5,keepaspectratio=true]{figures/rec_symmetric1.png}
+ % real_symmetric1.png: 1228x999 px, 300dpi, 10.40x8.46 cm, bb=0 0 295 240
+ \caption{2D hexagonal lattice with the lattice vectors (left)
+ and the corresponding reciprocal space lattice and vectors (right).}
+ \label{fig:2D hexagonal}
+\end{figure}
+
+To sample the area equivalent to the BZ using a rectangle, one can chose the one shown
+in figure \ref{fig:BZ_2D hexagonal}.
+
+\begin{figure}[h]
+ \centering
+ \includegraphics[scale=0.1,keepaspectratio=true]{figures/BZ.png}
+ % BZ.png: 1325x1100 px, 72dpi, 46.74x38.81 cm, bb=0 0 1325 1100
+ \caption{Rectangle with an equivalente area to the BZ for a 2D hexagonal lattice.}
+ \label{fig:BZ_2D hexagonal}
+\end{figure}
+
+It can be seen that the side along $x$ has a size
+\begin{equation}
+ k_x = |\vec{b}_1 + \vec{b}_2| = \dfrac{4\pi}{a\sqrt{3}}
+\end{equation}
+and along the $y$ axis is simply the $y$ component of $\vec{b}_2$:
+\begin{equation}
+ k_y = \dfrac{2\pi}{a}
+\end{equation}
+If we call $\Delta k$ the step (it has to be the same for both directions)
+then we have
+\begin{align*}
+ n_1 &= \dfrac{k_x}{\Delta k} = \dfrac{4\pi}{a\sqrt{3}\Delta k} \\
+ n_2 &= \dfrac{k_y}{\Delta k} = \dfrac{2\pi}{a\Delta k}
+\end{align*}
+$n_1$ and $n_2$ have to be integers, and since we don't want to have
+repeated points in reciprocal space, these numbers have to be rounded
+by truncation.
+
+We also have the important relation:
+\begin{equation}
+ n_1 = \dfrac{2}{\sqrt{3}} n_2
+\end{equation}
+
+
+
+\paragraph{FCC 3D crystal}
+
+ Let's consider a material with the following FCC lattice and reciprocal lattice vectors:
+ \medskip
+
+\begin{tabular}{l|l}
+\centering
+Real & Reciprocal \\[0.1cm]\hline
+$\vec{a}_1 = \dfrac{a}{2}\left( \vec{e}_y + \vec{e}_z\right) $ &
+$\vec{b}_1 = \dfrac{2\pi}{a}\left( -\vec{k}_x + \vec{k}_y  + \vec{k}_z\right) $\\[0.2cm]
+$\vec{a}_2 = \dfrac{a}{2}\left( \vec{e}_x + \vec{e}_z\right) $ &
+$\vec{b}_2 = \dfrac{2\pi}{a}\left( \vec{k}_x - \vec{k}_y + \vec{k}_z\right) $\\[0.2cm]
+$\vec{a}_3 = \dfrac{a}{2}\left( \vec{e}_x + \vec{e}_y\right) $ &
+$\vec{b}_2 = \dfrac{2\pi}{a}\left( \vec{k}_x + \vec{k}_y - \vec{k}_z\right) $\\[0.2cm]
+\hline
+\end{tabular}
+\bigskip
+
+One possible choice of sample is to chose the following three directions in k-space:
+\begin{align*}
+ \hat{k}_1 &= (0,0,1)\\
+ \hat{k}_2 &= \dfrac{1}{\sqrt{2}}(1,-1,0)\\
+ \hat{k}_3 &= \dfrac{1}{\sqrt{2}}(1,1,0)
+\end{align*}
+all with the same size:
+\begin{equation}
+ |\vec{k}_i| = \dfrac{4\pi}{a}
+\end{equation}
+Which means that the number of points sampling in each directions should be the same:
+\begin{equation}
+ n_1 = n_2 = n_3
+\end{equation}
+
+Another way of seeing this is:
+\begin{align*}
+ \vec{k}_1 &= \vec{b}_1 + \vec{b}_2 \\
+ \vec{k}_2 &= \dfrac{1}{2}(\vec{b}_2 - \vec{b}_1) \\
+ \vec{k}_3 &= \dfrac{1}{2}(\vec{b}_1 + \vec{b}_2) + \vec{b}_3
+\end{align*}
+
+
+
+
+\bigskip
+
+ \subsection{The bands to be used}
+
+ It is necessary to specify the set of bands that will be processed.
+ It is important to obtain and look at a normal band diagram of the material before chosing
+ what bands to include.
+ Otherwise, a large ammount of time and computer ressources may be spent uselessly.
+
+ The parameter \verb|nbnd| (mandatory) gives the number of bands to be calculated.
+ This number will be used in the nscf calculation of QE.
+ This also defines the highest band that will be used, that will have a band number of \verb|nbnd|$-1$.
+
+ Ideally, this should be the highest band before a gap in the bands.
+ If it is not, there will be incomplete bands in the final result of the berry calculation,
+ and they will be unusable.
+
+ There is another optional parameter \verb|wfcut| that allows us to exclude some of the lowest energy bands
+ from the berry calculations (not from the QE calculations, of course).
+ It is the number of the highest band to be excluded
+ (band numbering starts at 0 for the lowest band, and goes up to \verb|nbnd|$-1$).
+ So, if \verb|wfcut| is negative, all bands will be included.
+
+ It is important that there is a gap between the excluded bands and the included ones.
+ Otherwise, there will likelly be incomplete (and so useless) bands.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\newpage
+
+\begin{table}[h]
+ \centering
+ \caption{List of variables for the input file of \texttt{preprocess}.}
+
+ \begin{tabularx}{\textwidth}{Xl}
+ \textbf{Role of keyword}                     & \textbf{Variable (and defaults)}\\
+\hline
+ origin of k-points (3 real numbers)           & \verb|k0| \\
+ number of k-points in each direction (integer)& \verb|nkx, nky, nkz| \\
+ step of the k-points (real number)            & \verb|step| \\
+ number of bands to be calculated (integer)    & \verb|nbnd| \\
+ \hline
+ number of processors                         & \verb|npr = 1| \\
+ dft directory                                & \verb|dftdirectory = 'dft/'| \\
+ scf file name                                & \verb|name_scf = 'scf.in'| \\
+ directory where wavefunctions will be saved  & \verb|wfcdirectory = 'wfc/'| \\
+ point in real space where all phases match   & \verb|point = 1.178097| \\
+ software for DFT                             & \verb|program = 'QE'| \\
+ unique reference of run                      & \verb|refname| = date and time \\
+ first direction in k-space                   & \verb|kvector1 = 1.0 0.0 0.0| \\
+ second direction in k-space                  & \verb|kvector2 = 0.0 1.0 0.0| \\
+ third direction in k-space                   & \verb|kvector3 = 0.0 0.0 1.0| \\
+ last band NOT accounted for                  & \verb|wfcut = -1| \\
+
+
+%  DFT prefix  & prefix = '' \\
+%  DFT output directory & outdir = ''\\
+ \hline
+\end{tabularx}
+ \label{tab:variables_preprocessing}
+\end{table}
+
+
+
+
+
 
 
 \section{Extraction of wavefunctions}
@@ -1549,6 +1768,7 @@ Also, it is possible to change some of the default behaviour by passing some par
 
 \end{appendices}
 
+\bibliographystyle{plain}
 \begin{thebibliography}{00}
 
 \bibitem{Gradhand_2012}

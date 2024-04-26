@@ -8,6 +8,7 @@ import time
 import logging
 import platform
 import xml.etree.ElementTree as ET
+import subprocess
 
 import numpy as np
 
@@ -20,30 +21,30 @@ Date = Dict[str, Union[int, str, float]]
 
 # This class initializes a berry run
 class Preprocess:
-    def __init__(self, 
-                 k0: List[float], 
-                 nkx: int, 
-                 nky: int, 
-                 nkz: int, 
-                 step: float, 
-                 nbnd: int, 
-                 logger_name: str = "preprocess", 
-                 logger_level: int = logging.INFO, 
-                 npr: int = 1, 
-                 dft_dir: str = "dft", 
-                 scf: str = "scf.in", 
-                 nscf: str = "", 
-                 wfc_dir: str = "wfc", 
-                 point: float = 1.178097, 
-                 program: str = "QE", 
-                 ref_name: str = now, 
+    def __init__(self,
+                 k0: List[float],
+                 nkx: int,
+                 nky: int,
+                 nkz: int,
+                 step: float,
+                 nbnd: int,
+                 logger_name: str = "preprocess",
+                 logger_level: int = logging.INFO,
+                 npr: int = 1,
+                 dft_dir: str = "dft",
+                 scf: str = "scf.in",
+                 nscf: str = "",
+                 wfc_dir: str = "wfc",
+                 point: float = 1.178097,
+                 program: str = "QE",
+                 ref_name: str = now,
                  kvector1: List[float] = None,
                  kvector2: List[float] = None,
                  kvector3: List[float] = None,
                  wfcut: int = -1,
                  flush: bool = False
                 ):
-        
+
         self.work_dir = os.getcwd() + "/"    # Define working directory
         self.k0 = k0                         # Coordinates of first k-point in reciprocal space
         self.nkx = nkx                       # Number of k-points in the x direction
@@ -55,7 +56,12 @@ class Preprocess:
         else:
             self.wfcut = wfcut               # Cutoff band: bands bellow are not included in the calculation (inclusive)
                                              # wfcut = -1 means all bands are included
-
+        if self.nkz < 1:
+            self.nkz = 1
+        if self.nky < 1:
+            self.nky = 1
+        if self.nkx < 1:
+            self.nkx = 1
         if kvector1 == None:
             self.kvector1 = [1.0,0.0,0.0]
         else:
@@ -72,7 +78,7 @@ class Preprocess:
             self.kvector3 = kvector3         # Third vector for the volume in k-space
 
         self.nbnd = nbnd                     # Number of bands to be included in the calculation
-        self.npr = npr                       # Number of processes to be run
+
         self.dft_dir = dft_dir               # Directory where the DFT files go
         self.scf = scf                       # Name of the scf DFT file to run
         self.nscf = nscf                     # Name of the nscf DFT file to run
@@ -84,6 +90,15 @@ class Preprocess:
         if not os.path.exists("log"):
             os.mkdir("log")                      # Creates log directory
         self.logger = log(logger_name, "PREPROCESS", level=logger_level, flush=flush)
+        # Write header to the log file
+        self.logger.header()
+
+        try:                                 # Tests if mpirun is in the system
+            b = subprocess.check_output("which mpirun", shell=True, text=True)
+            self.npr = npr                   # Number of processes to be run
+        except subprocess.CalledProcessError as e: # if not, runs in a single processor
+            self.npr = 1                     # Number of processes to be run
+            self.logger.info(f"\n\tNumber of processors changed to 1, since no mpirun was found.\n")
 
         # Verification of the vectors that define k-space that will be dealt with
         if self.nkx > 1 and self.nky > 1 and self.nkz > 1:
@@ -92,7 +107,7 @@ class Preprocess:
                 self.logger.info(f"\tVectors 1 and 2 that define the volume in reciprocal space have to be orthogonal.")
                 self.logger.info(f"\tExiting program.")
                 self.logger.footer()
-                exit(0)            
+                exit(0)
             elif self.kvector1[0]*self.kvector3[0] + self.kvector1[1]*self.kvector3[1] + self.kvector1[2]*self.kvector3[2] != 0:
                 self.logger.info(f"\tVectors 1 and 3 that define the volume in reciprocal space have to be orthogonal.")
                 self.logger.info(f"\tExiting program.")
@@ -109,7 +124,7 @@ class Preprocess:
                 self.kvector2 = kvector2/modulus_kvector2
             if self.kvector3[0]**2 + self.kvector3[1]**2 + self.kvector3[2]**2 != 1:
                 modulus_kvector3 = np.sqrt(self.kvector3[0]**2 + self.kvector3[1]**2 + self.kvector3[2]**2)
-                self.kvector3 = kvector3/modulus_kvector3           
+                self.kvector3 = kvector3/modulus_kvector3
         elif self.nkz == 1 and self.nky > 1:
             self.dimensions = 2
             if self.kvector1[0]*self.kvector2[0] + self.kvector1[1]*self.kvector2[1] + self.kvector1[2]*self.kvector2[2] != 0:
@@ -187,12 +202,11 @@ class Preprocess:
                 self.prefix = parser("prefix", self.scf)
             except IndexError:
                 raise ValueError(f"prefix keyword not found in {self.scf}. Make sure your scf file has the 'prefix' keyword set.")
-        
+
         # Full path to xml DFT file, with the data of the run
         self.dft_data_file = os.path.join(self.out_dir, self.prefix + ".xml")
 
-        # Write header to the log file
-        self.logger.header()
+
         self._log_inputs()
         self.logger.info("\tRunning a",self.dimensions,"dimensions material.\n")
 
@@ -263,7 +277,7 @@ class Preprocess:
             np.save(fich, self.data_dir)  # Directory for saving data
             np.save(fich, self.log_dir)  # Directory for the logs
             np.save(fich, self.geometry_dir)  # Directory for the Berry geometries
-        
+
             np.save(fich, self.k0)  # Initial k-point
             np.save(fich, self.nkx)  # Number of k-points in the x direction
             np.save(fich, self.nky)  # Number of k-points in the y direction
@@ -299,11 +313,11 @@ class Preprocess:
             np.save(fich, self.nelec)  # Number of electrons
             np.save(fich, self.wfck2r)  # File for extracting DFT wfc to real space
             np.save(fich, self.vb)  # Valence band number
- 
+
             np.save(fich, self.kvector1)  # First vector that define volume in k space
             np.save(fich, self.kvector2)  # Second vector that define volume in k space
             np.save(fich, self.kvector3)  # Third vector that define volume in k space
-            
+
             np.save(fich, int(self.wfcut))                  # Cutoff band
             np.save(fich, int(self.wfcut) + 1)              # Initial band
             np.save(fich, int(self.nbnd) - int(self.wfcut) - 1)  # Number of bands
@@ -342,10 +356,10 @@ class Preprocess:
     # Creates array with the list of 1st neighbors for a 2D material   TODO: extend to 2nd neighbors and 3D
     def _compute_neighbors(self):
         nk = -1
-        
+
         if self.dimensions == 1:
             neigh = np.full((self.__nks, 2), -1, dtype=np.int64)
-            for i in range(self.nkx):  
+            for i in range(self.nkx):
                 nk += 1
                 if i == 0:
                     n0 = -1
@@ -354,7 +368,7 @@ class Preprocess:
                 if i == self.nkx - 1:
                     n1 = -1
                 else:
-                    n1 = nk + 1 
+                    n1 = nk + 1
                 neigh[nk, :] = [n0,n1]
         elif self.dimensions == 2:
             neigh = np.full((self.__nks, 4), -1, dtype=np.int64)
@@ -472,32 +486,36 @@ class Preprocess:
 
         self.logger.info(f"\n\tDFT {def_program} version {dft_version}.\n")
 
-        self.logger.info(f"\n\tLattice vectors in units of a0 (bohr)")
+        alat = float(output.find("atomic_structure").attrib["alat"])
+        self.logger.info(f"\talat = {alat} bohr")
+
+        self.logger.info(f"\n\tLattice vectors in units of alat")
         self.a1, self.a2, self.a3 = [np.array(list(map(float, it.text.split()))) for it in output.find("atomic_structure").find("cell")]
         self.logger.info("\t\ta1:", self.a1)
         self.logger.info("\t\ta2:", self.a2)
         self.logger.info("\t\ta3:", self.a3)
 
-        self.logger.info(f"\n\tReciprocal lattice vectors in units of 2pi/a0 (2pi/bohr)")
+        self.logger.info(f"\n\tReciprocal lattice vectors in units of 2pi/alat")
         self.b1, self.b2, self.b3 = [np.array(list(map(float, it.text.split()))) for it in output.find("basis_set").find("reciprocal_lattice")]
         self.logger.info("\t\tb1:", self.b1)
         self.logger.info("\t\tb2:", self.b2)
         self.logger.info("\t\tb3:", self.b3)
 
         self.logger.info("\n\tNumber of points in real space in each direction")
-        self.nr1 = int(output.find("basis_set").find("fft_grid").attrib["nr1"])
-        self.nr2 = int(output.find("basis_set").find("fft_grid").attrib["nr2"])
-        self.nr3 = int(output.find("basis_set").find("fft_grid").attrib["nr3"])
+        self.nr1 = int(output.find("basis_set").find("fft_smooth").attrib["nr1"])
+        self.nr2 = int(output.find("basis_set").find("fft_smooth").attrib["nr2"])
+        self.nr3 = int(output.find("basis_set").find("fft_smooth").attrib["nr3"])
         self.nr = self.nr1 * self.nr2 * self.nr3
         self.logger.info(f"\t\tnr1: {self.nr1}")
-        self.logger.info(f"\t\tnr2: {self.nr1}")
-        self.logger.info(f"\t\tnr3: {self.nr1}")
+        self.logger.info(f"\t\tnr2: {self.nr2}")
+        self.logger.info(f"\t\tnr3: {self.nr3}")
         self.logger.info(f"\t\tnr: {self.nr}")
         self.ref_point = self.point * self.nr1 * self.nr2
         self.logger.info(f"\n\tPoint where phases match: {int(self.ref_point)}")
 
         nbnd = int(output.find("band_structure").find("nbnd").text)
         self.logger.info(f"\tNumber of bands in the DFT calculation: {nbnd}")
+
         self.nelec = float(output.find("band_structure").find("nelec").text)
         self.logger.info(f"\tNumber of electrons: {self.nelec}")
         nks = int(output.find("band_structure").find("nks").text)
@@ -510,7 +528,7 @@ class Preprocess:
 
         self.vb = self.nelec - 1 if self.non_colinear or self.lsda else (self.nelec / 2) - 1
         if self.vb - int(self.vb) != 0:
-            self.logger.warning(f"The system is a metal!")  # TODO: add supoort for metals
+            self.logger.info(f"\tAttention: The system is a metal!")  # TODO: add supoort for metals
         self.vb = int(self.vb)
         self.logger.info(f"\tValence band is: {self.vb}\n")
 
@@ -541,7 +559,7 @@ class Preprocess:
         if re.search("nosym", nscf_content):
             nscf_content = re.sub("nosym.*", f"nosym = .true.", nscf_content)
         else:
-            nscf_content = re.sub("SYSTEM", f"SYSTEM\n                       nosym = .true.", nscf_content) 
+            nscf_content = re.sub("SYSTEM", f"SYSTEM\n                       nosym = .true.", nscf_content)
 
         # Replace kpoints with self.nscf_kpoints
         nscf_content += f"\n{self.__nks}\n{self.nscf_kpoints}"
@@ -583,7 +601,7 @@ class Preprocess:
         self.logger.info("\n\tInputs:")
         self.logger.info(f"\tUnique reference name: {self.ref_name}")
         self.logger.info(f"\tStarting k-point of the mesh: {self.k0}")
-        self.logger.info(f"\tNumber of k-points in the mesh: {self.nkx}x{self.nky}x{self.nkz}")
+        self.logger.info(f"\tNumber of k-points in the mesh: {self.nkx} x {self.nky} x {self.nkz}")
         self.logger.info(f"\tStep of the mesh: {self.step}")
         self.logger.info(f"\tFirst direction vector for k-points: {self.kvector1}")
         if self.dimensions == 2 or self.dimensions == 3:
