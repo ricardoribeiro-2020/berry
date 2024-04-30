@@ -779,7 +779,10 @@ class MATERIAL:
                     Ns = [N1, N2]
                     N_1 = Ns[np.argmin([len(N1), len(N2)])]
                     N_2 = Ns[np.argmax([len(N1), len(N2)])]
-                    n2_index = np.where(N_2 % NKS == N_1[0] % NKS)[0][0]
+                    n2_idx = np.where(N_2 % NKS == N_1[0] % NKS)
+                    if len(n2_idx) == 0 or len(n2_idx[0]) == 0:
+                        continue
+                    n2_index = n2_idx[0][0]
                     N = [[N_1[0], N_2[n2_index]]] \
                         + [[n] for n in N_2 if n != N_2[n2_index]]
                     flag = True
