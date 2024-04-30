@@ -21,7 +21,7 @@ except:
 def berry_connection(n_pos: int, n_gra: int):
     """
     Calculates the Berry connection.
-    """ 
+    """
     if m.noncolin:
         wfcpos0 = np.load(os.path.join(m.data_dir, f"wfcpos{n_pos}-0.npy"), mmap_mode="r").conj()
         wfcpos1 = np.load(os.path.join(m.data_dir, f"wfcpos{n_pos}-1.npy"), mmap_mode="r").conj()
@@ -41,7 +41,7 @@ def berry_connection(n_pos: int, n_gra: int):
             return bcc / m.nr
     else:
         wfcpos = np.load(os.path.join(m.data_dir, f"wfcpos{n_pos}.npy"), mmap_mode="r").conj()
-    
+
         @numba_njit
         def aux_connection() -> np.ndarray:
             """
@@ -80,14 +80,9 @@ def berry_curvature(idx: int, idx_: int) -> None:
         def aux_curvature() -> np.ndarray:
             """
             Auxiliary function to calculate the Berry curvature.
-            Attention: this is valid for 2D materials. 
-            An expression for 2D Berry curvature is used.
+            Attention: this is valid for 2D and 3D materials.
             """
-            if m.dimensions == 1:
-                logger.error("\tOne dimension not implemented!")
-                exit(0)
-
-            elif m.dimensions == 2:
+            if m.dimensions == 2:          # 2D case
                 bcr = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
                 for posi in range(m.nr):
                     bcr += (
@@ -96,7 +91,7 @@ def berry_curvature(idx: int, idx_: int) -> None:
                         + 1j * wfcgra1[posi][1] * wfcgra1_[posi][0]
                         - 1j * wfcgra1[posi][0] * wfcgra1_[posi][1]
                     )
-            else:          # 3D case
+            elif m.dimensions == 3:          # 3D case
                 bcr = np.array([np.zeros(wfcgra0[0].shape, dtype=np.complex128),
                                 np.zeros(wfcgra0[0].shape, dtype=np.complex128),
                                 np.zeros(wfcgra0[0].shape, dtype=np.complex128)])
@@ -133,21 +128,16 @@ def berry_curvature(idx: int, idx_: int) -> None:
         def aux_curvature() -> np.ndarray:
             """
             Auxiliary function to calculate the Berry curvature.
-            Attention: this is valid for 2D materials. 
-            An expression for 2D Berry curvature is used.
+            Attention: this is valid for 2D and 3D materials.
             """
-            if m.dimensions == 1:
-                logger.error("\tOne dimension not implemented!")
-                exit(0)
-
-            elif m.dimensions == 2:
+            if m.dimensions == 2:          # 2D case
                 bcr = np.zeros(wfcgra[0].shape, dtype=np.complex128)
                 for posi in range(m.nr):
                     bcr += (
                         1j * wfcgra[posi][0] * wfcgra_[posi][1]
                         - 1j * wfcgra[posi][1] * wfcgra_[posi][0]
                     )
-            else:          # 3D case
+            elif m.dimensions == 3:          # 3D case
                 bcr = np.array([np.zeros(wfcgra[0].shape, dtype=np.complex128),
                                 np.zeros(wfcgra[0].shape, dtype=np.complex128),
                                 np.zeros(wfcgra[0].shape, dtype=np.complex128)])
@@ -170,6 +160,7 @@ def berry_curvature(idx: int, idx_: int) -> None:
             return bcr / m.nr
 
     start = time()
+
     bcr = aux_curvature()
     logger.info(f"\tberry_curvature{idx}_{idx_} calculated in {time() - start:.2f} seconds")
 
@@ -180,14 +171,14 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
         global wfcgra0, wfcgra1, logger
     else:
         global wfcgra, logger
-    
+
     logger = log(logger_name, "BERRY GEOMETRY", level=logger_level, flush=flush)
-    
+
     logger.header()
-    
+
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
-    ########################################################################### 
+    ###########################################################################
     if m.dimensions == 1:
         GRA_SIZE  = m.nr * m.dimensions * m.nkx
         GRA_SHAPE = (m.nr, m.dimensions , m.nkx)
@@ -200,13 +191,13 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
-    ########################################################################### 
+    ###########################################################################
     logger.info(f"\tUnique reference of run: {m.refname}")
     logger.info(f"\tProperties to calculate: {prop}")
     logger.info(f"\tMinimum band: {min_band}")
     logger.info(f"\tMaximum band: {max_band}")
     logger.info(f"\tNumber of processes: {npr}\n")
-    logger.info(f"\n\t{m.dimensions} dimensions calculation.")
+    logger.info(f"\t{m.dimensions} dimensions calculation.\n")
 
     ###########################################################################
     # 3. CREATE ALL THE ARRAYS
@@ -242,25 +233,27 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
                 with Pool(npr) as pool:
                     pool.starmap(berry_connection, work_load)
     logger.info()
+    if m.dimensions == 1:
+        logger.info(f"\tBerry curvature is not defined for 1D materials.")
+    else:
+        if prop == "both" or prop == "curvature":
+            if m.noncolin:
+                for idx in range(min_band, max_band + 1):
+                    wfcgra0 = np.load(os.path.join(m.data_dir, f"wfcgra{idx}-0.npy"))
+                    wfcgra1 = np.load(os.path.join(m.data_dir, f"wfcgra{idx}-1.npy"))
 
-    if prop == "both" or prop == "curvature":
-        if m.noncolin:
-            for idx in range(min_band, max_band + 1):
-                wfcgra0 = np.load(os.path.join(m.data_dir, f"wfcgra{idx}-0.npy"))
-                wfcgra1 = np.load(os.path.join(m.data_dir, f"wfcgra{idx}-1.npy"))
+                    work_load = ((idx, idx_) for idx_ in range(min_band, max_band + 1))
 
-                work_load = ((idx, idx_) for idx_ in range(min_band, max_band + 1))
+                    with Pool(npr) as pool:
+                        pool.starmap(berry_curvature, work_load)
+            else:
+                for idx in range(min_band, max_band + 1):
+                    wfcgra = np.load(os.path.join(m.data_dir, f"wfcgra{idx}.npy"))
 
-                with Pool(npr) as pool:
-                    pool.starmap(berry_curvature, work_load)
-        else:
-            for idx in range(min_band, max_band + 1):
-                wfcgra = np.load(os.path.join(m.data_dir, f"wfcgra{idx}.npy"))
+                    work_load = ((idx, idx_) for idx_ in range(min_band, max_band + 1))
 
-                work_load = ((idx, idx_) for idx_ in range(min_band, max_band + 1))
-
-                with Pool(npr) as pool:
-                    pool.starmap(berry_curvature, work_load)
+                    with Pool(npr) as pool:
+                        pool.starmap(berry_curvature, work_load)
 
     ###########################################################################
     # Finished
