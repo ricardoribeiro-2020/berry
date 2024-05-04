@@ -626,8 +626,8 @@ class MATERIAL:
 
         self.ENERGIES = energies
         # self.nbnd = nbnd-min_band
-        # self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
-        self.bands_final, _ = np.meshgrid(bands, np.arange(self.nks))
+        self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
+        # self.bands_final, _ = np.meshgrid(bands, np.arange(self.nks))
 
     def get_neigs(self, i: Kpoint) -> list[Kpoint]:
         '''
@@ -1568,7 +1568,7 @@ class MATERIAL:
         for bn, band in enumerate(bands_signaling):
             # For each band construct the new graph
             # bn += self.min_band                                                                     # Initial band correction
-            if self.dimensions == 2 and np.sum(band) > self.nks*0.05:
+            if self.dimensions == 2 and np.sum(band) > self.nks*0.20:
                 # If there are more than 5% of marked points, the boundaries of 
                 # the problem are considered a problem too.
                 identify_points = correlate(band, mean_fitler, output=None,
@@ -1901,6 +1901,9 @@ class MATERIAL:
         
         # The best result is maintained
         self.bands_final = np.copy(self.best_bands_final)
+        bands_final, _ = np.meshgrid(np.arange(0, self.total_bands), np.arange(self.nks))
+        self.bands_final[self.bands_final == -1] = bands_final[self.bands_final == -1]
+        
         self.final_score = np.copy(self.best_score)
         self.degenerate_final = np.copy(self.degenerate_best)      
         self.signal_final = np.copy(self.best_signal_final)  
