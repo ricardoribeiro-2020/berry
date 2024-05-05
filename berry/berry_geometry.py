@@ -68,11 +68,6 @@ def berry_curvature(idx: int, idx_: int) -> None:
     """
     Calculates the Berry curvature.
     """
-    if m.dimensions == 1:
-        logger.error("\tOne dimension not implemented!")
-        exit(0)
-
-
     if m.noncolin:
         if idx == idx_:
             wfcgra0_ = wfcgra0.conj()
@@ -87,20 +82,7 @@ def berry_curvature(idx: int, idx_: int) -> None:
             Auxiliary function to calculate the Berry curvature.
             Attention: this is valid for 2D and 3D materials.
             """
-<<<<<<< HEAD
-<<<<<<< HEAD
- 
-            if m.dimensions == 2:
-=======
-            if m.dimensions == 1:
-                logger.error("\tOne dimension not implemented!")
-                exit(0)
-
-            elif m.dimensions == 2:
->>>>>>> 080808fe2f56fa1e439c5716151c06d48ce9494c
-=======
             if m.dimensions == 2:          # 2D case
->>>>>>> cdac39057486b8fef460fad7877f9e2f4ff07ba4
                 bcr = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
                 for posi in range(m.nr):
                     bcr += (
@@ -148,20 +130,7 @@ def berry_curvature(idx: int, idx_: int) -> None:
             Auxiliary function to calculate the Berry curvature.
             Attention: this is valid for 2D and 3D materials.
             """
-<<<<<<< HEAD
-<<<<<<< HEAD
-
-            if m.dimensions == 2:
-=======
-            if m.dimensions == 1:
-                logger.error("\tOne dimension not implemented!")
-                exit(0)
-
-            elif m.dimensions == 2:
->>>>>>> 080808fe2f56fa1e439c5716151c06d48ce9494c
-=======
             if m.dimensions == 2:          # 2D case
->>>>>>> cdac39057486b8fef460fad7877f9e2f4ff07ba4
                 bcr = np.zeros(wfcgra[0].shape, dtype=np.complex128)
                 for posi in range(m.nr):
                     bcr += (
@@ -186,10 +155,6 @@ def berry_curvature(idx: int, idx_: int) -> None:
                         - 1j * wfcgra[posi][0] * wfcgra_[posi][1]
                     )
 
-<<<<<<< HEAD
-                    
-=======
->>>>>>> 080808fe2f56fa1e439c5716151c06d48ce9494c
             ##  we are assuming that normalization is \sum |\psi|^2 = 1
             ##  if not, needs division by m.nr
             return bcr / m.nr
