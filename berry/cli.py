@@ -193,6 +193,10 @@ berry [package options] script parameter [script options]
                                         type=restricted_float, 
                                         default=0.80, metavar="[0.0-1.0]",  
                                         help="Tolerance used for graph construction (default: 0.95).")
+            cluster_parser.add_argument("-s",  
+                                        type=restricted_float, 
+                                        default=0.1, metavar="[0.0-1.0]",  
+                                        help="Step used for update each iteration (default: 0.1).")
             cluster_parser.add_argument("-flush", 
                                         action="store_true", 
                                         help="Flushes output into stdout.")
@@ -435,6 +439,7 @@ def clustering_cli(args: argparse.Namespace):
     args_dict["max_band"] = args.Mb
     args_dict["min_band"] = args.mb
     args_dict["tol"] = args.t
+    args_dict["step"] = args.s
     args_dict["flush"] = args.flush
 
     run_clustering(**args_dict)
