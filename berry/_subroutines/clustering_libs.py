@@ -1778,7 +1778,7 @@ class MATERIAL:
 
         return self.final_report
 
-    def solve(self, step: float=0.1, min_alpha: float=0) -> None:
+    def solve(self, step: float=0.1, alpha : float=0.5, min_alpha: float=0) -> None:
         '''
         This method is the main algorithm which iterates between solutions
         trying to find the best result for the material.
@@ -1795,7 +1795,7 @@ class MATERIAL:
         # Initial preparation of data structures
         # The previous and best result are stored
         ###########################################################################
-        ALPHA = 0.5   # The initial alpha is 0.5. 0.5*<i|j> + 0.5*f(E)
+        ALPHA = alpha   # The initial alpha is 0.5. 0.5*<i|j> + 0.5*f(E)
         COUNT = 0     # Counter iteration
         bands_final_flag = True
         self.final_report = ''
