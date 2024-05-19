@@ -197,6 +197,10 @@ berry [package options] script parameter [script options]
                                         type=restricted_float, 
                                         default=0.1, metavar="[0.0-1.0]",  
                                         help="Step used for update each iteration (default: 0.1).")
+            cluster_parser.add_argument("-a",
+                                        type=restricted_float, 
+                                        default=0.5, metavar="[0.0-1.0]",  
+                                        help="Alpha used for the first iteration (default: 0.5).")
             cluster_parser.add_argument("-flush", 
                                         action="store_true", 
                                         help="Flushes output into stdout.")
@@ -440,6 +444,7 @@ def clustering_cli(args: argparse.Namespace):
     args_dict["min_band"] = args.mb
     args_dict["tol"] = args.t
     args_dict["step"] = args.s
+    args_dict["alpha"] = args.a
     args_dict["flush"] = args.flush
 
     run_clustering(**args_dict)
