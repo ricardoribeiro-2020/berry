@@ -50,8 +50,27 @@ def _bands_numbers(nkx: int, nky: int, valuesarray: np.ndarray) -> str:
 
     return out
 
+def _float_numbers1(nkx: int, valuesarray: np.ndarray , precision: int) -> str:
+    """Outputs the valuesarray float numbers with the precision number of decimal places."""
+    nk = -1
+    SEP = " "
+    out = "\n\t|  x ->"
+    lin = ""
+    out += "\n"
+    for _ in range(nkx):
+        val = "{0:.{1}f}".format(valuesarray[nk], precision)
+        nk = nk + 1
+        if valuesarray[nk] < 0:
+            lin += SEP + str(val)
+        elif 0 <= valuesarray[nk] < 10:
+            lin += SEP + SEP + str(val)
+        elif 9 < valuesarray[nk] < 100:
+            lin += SEP + str(val)
+    out += lin
 
-def _float_numbers(nkx: int, nky: int, valuesarray: np.ndarray , precision: int) -> str:
+    return out
+
+def _float_numbers2(nkx: int, nky: int, valuesarray: np.ndarray , precision: int) -> str:
     """Outputs the valuesarray float numbers with the precision number of decimal places."""
     nk = -1
     SEP = " "
@@ -69,5 +88,27 @@ def _float_numbers(nkx: int, nky: int, valuesarray: np.ndarray , precision: int)
             elif 9 < valuesarray[nk] < 100:
                 lin += SEP + str(val)
         out += lin
+
+    return out
+
+def _float_numbers3(nkx: int, nky: int, nkz: int, valuesarray: np.ndarray , precision: int) -> str:
+    """Outputs the valuesarray float numbers with the precision number of decimal places."""
+    nk = -1
+    SEP = " "
+    out = "\n\t| y  x ->"
+    for _ in range(nkz):
+        for _ in range(nky):
+            lin = ""
+            out += "\n"
+            for _ in range(nkx):
+                val = "{0:.{1}f}".format(valuesarray[nk], precision)
+                nk = nk + 1
+                if valuesarray[nk] < 0:
+                    lin += SEP + str(val)
+                elif 0 <= valuesarray[nk] < 10:
+                    lin += SEP + SEP + str(val)
+                elif 9 < valuesarray[nk] < 100:
+                    lin += SEP + str(val)
+            out += lin
 
     return out

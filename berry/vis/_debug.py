@@ -2,7 +2,7 @@ from colorama import Fore, Back, Style
 
 import numpy as np
 
-from berry._subroutines.write_k_points import _float_numbers
+from berry._subroutines.write_k_points import _float_numbers1, _float_numbers2, _float_numbers3
 import berry._subroutines.loadmeta as m
 import berry._subroutines.loaddata as d
 
@@ -13,33 +13,21 @@ def log_data():
     print("#"*100)
     print("# DATA OF THE SYSTEM")
     print("#"*100)
-    print(f"\tVersion of berry where data was created            {m.version}\n")
-          
-    print(f"\n\tInitial k-point                                  {m.k0}")
+    print(f"\tVersion of berry where data was created            {m.version}")
+    print(f"\tUnique reference for the run                       {m.refname}\n")
+
+    print(f"\tNumber of dimensions                               {m.dimensions}\n")
+    
+    print(f"\tInitial k-point                                    {m.k0}")
     print(f"\tNumber of k-points in the x direction              {m.nkx}")
     print(f"\tNumber of k-points in the y direction              {m.nky}")
     print(f"\tNumber of k-points in the z direction              {m.nkz}")
     print(f"\tTotal number of k-points                           {m.nks}")
     print(f"\tStep between k-points                              {m.step}\n")
 
-    print(f"\tNumber of processors for the run                   {m.npr}")
-
-    print(f"\tWorking directory                                  {m.workdir}")
-    print(f"\tDirectory for the logs                             {m.log_dir}")
-    print(f"\tDirectory for saving data                          {m.data_dir}")
-    print(f"\tDirectory for the wfc files                        {m.wfcdirectory}")
-    print(f"\tDirectory for the Berry geometries                 {m.geometry_dir}")
-
-    print(f"\tDFT software to be used                            {m.program}")
-    print(f"\tPrefix of the DFT QE calculations                  {m.prefix}")
-    print(f"\tDirectory of DFT files                             {m.dftdirectory}")
-    print(f"\tName of scf file (without suffix)                  {m.name_scf}")
-    print(f"\tName of nscf file (without suffix)                 {m.name_nscf}")
-
-    print(f"\tDirectory for DFT saved files                      {m.outdir}")
-    print(f"\tPath to DFT file with data of the run              {m.dftdatafile}")
-    
-    print(f"\tFile for extracting DFT wfc to real space          {m.wfck2r}\n")
+    print(f"\tFirst vector that define volume in k space         {m.kvector1}")
+    print(f"\tSecond vector that define volume in k space        {m.kvector2}")
+    print(f"\tThird vector that define volume in k space         {m.kvector3}")
 
     print(f"\tFirst lattice vector in real space                 {m.a1}")
     print(f"\tSecond lattice vector in real space                {m.a2}")
@@ -59,8 +47,29 @@ def log_data():
     print(f"\tValence band number                                {m.vb}")
     print(f"\tNoncolinear calculation                            {m.noncolin}")
     print(f"\tSpin polarized calculation                         {m.lsda}\n")
-    
 
+    print(f"\t Valence band number                               {m.vb}")
+    print(f"\tCutoff band                                        {m.wfcut}")
+    print(f"\tInitial band                                       {m.initial_band}")
+    print(f"\tFinal band                                         {m.final_band}\n")
+
+    print(f"\tNumber of processors for the run                   {m.npr}")
+    print(f"\tWorking directory                                  {m.workdir}")
+    print(f"\tDirectory for the logs                             {m.log_dir}")
+    print(f"\tDirectory for saving data                          {m.data_dir}")
+    print(f"\tDirectory for the wfc files                        {m.wfcdirectory}")
+    print(f"\tDirectory for the Berry geometries                 {m.geometry_dir}")
+
+    print(f"\tDFT software to be used                            {m.program}")
+    print(f"\tPrefix of the DFT QE calculations                  {m.prefix}")
+    print(f"\tDirectory of DFT files                             {m.dftdirectory}")
+    print(f"\tName of scf file (without suffix)                  {m.name_scf}")
+    print(f"\tName of nscf file (without suffix)                 {m.name_nscf}")
+
+    print(f"\tDirectory for DFT saved files                      {m.outdir}")
+    print(f"\tPath to DFT file with data of the run              {m.dftdatafile}")
+    
+    print(f"\tFile for extracting DFT wfc to real space          {m.wfck2r}\n")
     
     
 
@@ -233,7 +242,12 @@ def log_eigen(band: int, acc: int):
     print("#"*100)
     print("# EIGENVALUES")
     print("#"*100)
-    print(_float_numbers(m.nkx, m.nky, d.eigenvalues[:, band], acc))
+    if m.dimensions == 1:
+        print(_float_numbers1(m.nkx, d.eigenvalues[:, band], acc))
+    elif m.dimensions == 2:
+        print(_float_numbers2(m.nkx, m.nky, d.eigenvalues[:, band], acc))
+    elif m.dimensions == 3:
+        print(_float_numbers3(m.nkx, m.nky, m.nkz, d.eigenvalues[:, band], acc))
 
 
 def log_neighbors():
