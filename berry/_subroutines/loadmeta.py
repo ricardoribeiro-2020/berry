@@ -2,7 +2,7 @@
 
 """
 
-import numpy as np
+import numpy as np # type: ignore
 
 with open("data/datafile.npy", "rb") as fich:
     version = str(np.load(fich))  # Version of berry where data was created
@@ -42,7 +42,7 @@ with open("data/datafile.npy", "rb") as fich:
     nr2 = int(np.load(fich))   # Number of points of wfc in real space y direction
     nr3 = int(np.load(fich))   # Number of points of wfc in real space z direction
     nr = int(np.load(fich))    # Total number of points of wfc in real space
-    nbnd = int(np.load(fich))  # Number of bands
+    nbnd = int(np.load(fich))  # Number of bands in DFT calculations
   
     noncolin = bool(np.load(fich)) # If the calculation is noncolinear
     lsda = bool(np.load(fich))     # Spin polarized calculation
@@ -56,5 +56,5 @@ with open("data/datafile.npy", "rb") as fich:
 
     wfcut = int(np.load(fich))           # Cutoff band
     initial_band = int(np.load(fich))    # Initial band
-    number_of_bands = int(np.load(fich)) # Number of bands
+    number_of_bands = int(np.load(fich)) # Number of bands to be used in berry
     final_band = int(np.load(fich))      # Final band

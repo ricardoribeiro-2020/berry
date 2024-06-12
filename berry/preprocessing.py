@@ -10,7 +10,7 @@ import platform
 import xml.etree.ElementTree as ET
 import subprocess
 
-import numpy as np
+import numpy as np # type: ignore
 
 from berry import log, __version__
 from berry._subroutines.parserQE import parser
@@ -38,9 +38,9 @@ class Preprocess:
                  point: float = 1.178097,
                  program: str = "QE",
                  ref_name: str = now,
-                 kvector1: List[float] = None,
-                 kvector2: List[float] = None,
-                 kvector3: List[float] = None,
+                 kvector1: List[float] = None, # type: ignore
+                 kvector2: List[float] = None, # type: ignore
+                 kvector3: List[float] = None, # type: ignore
                  wfcut: int = -1,
                  flush: bool = False
                 ):
@@ -306,7 +306,7 @@ class Preprocess:
             np.save(fich, self.nr2)  # Number of points of wfc in real space y direction
             np.save(fich, self.nr3)  # Number of points of wfc in real space z direction
             np.save(fich, self.nr)  # Total number of points of wfc in real space
-            np.save(fich, self.nbnd)  # Number of bands
+            np.save(fich, self.nbnd)  # Number of bands in DFT calculations
 
             np.save(fich, self.non_colinear)  # If the calculation is noncolinear
             np.save(fich, self.lsda)  # Spin polarized calculation
@@ -320,7 +320,7 @@ class Preprocess:
 
             np.save(fich, int(self.wfcut))                  # Cutoff band
             np.save(fich, int(self.wfcut) + 1)              # Initial band
-            np.save(fich, int(self.nbnd) - int(self.wfcut) - 1)  # Number of bands
+            np.save(fich, int(self.nbnd) - int(self.wfcut) - 1)  # Number of bands to be used in berry
             np.save(fich, int(self.nbnd) - 1)               # Final band
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility

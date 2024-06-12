@@ -4,7 +4,7 @@ import os
 import re
 import sys
 import logging
-import argparse, argcomplete
+import argparse, argcomplete # type: ignore
 
 from berry import __version__
 
@@ -213,67 +213,234 @@ berry [package options] script parameter [script options]
                                         help="Increases output verbosity.")
         if BASIS:
             if m.initial_band != "dummy": # for backward compatibility
-                basis_parser.add_argument("Mb" , type=int           , metavar=f"Mb ({m.initial_band}-{m.nbnd-1})"   , choices=range(m.initial_band, m.nbnd)             , help="Maximum band to consider.")
+                basis_parser.add_argument("Mb" , 
+                                          type=int           , 
+                                          metavar=f"Mb ({m.initial_band}-{m.nbnd-1})"   , 
+                                          choices=range(m.initial_band, m.nbnd)             , 
+                                          help="Maximum band to consider.")
             else:
-                basis_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)             , help="Maximum band to consider.")
-            basis_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
-            basis_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
-            basis_parser.add_argument("-o", default="basis", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-            basis_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
+                basis_parser.add_argument("Mb" , 
+                                          type=int           , 
+                                          metavar=f"Mb (0-{m.nbnd-1})"   , 
+                                          choices=range(m.nbnd)             , 
+                                          help="Maximum band to consider.")
+            basis_parser.add_argument("-np", 
+                                      type=int, 
+                                      default=1, 
+                                      metavar=f"[1-{os.cpu_count()}]", 
+                                      choices=range(1, os.cpu_count()+1), 
+                                      help="Number of processes to use (default: 1).")
+            basis_parser.add_argument("-flush", 
+                                      action="store_true", 
+                                      help="Flushes output into stdout.")
+            basis_parser.add_argument("-o", 
+                                      default="basis", 
+                                      type=str, 
+                                      metavar="file_path", 
+                                      help="Name of output log file. Extension will be .log regardless of user input.")
+            basis_parser.add_argument("-v"        , 
+                                      action="store_true", 
+                                      help="Increases output verbosity.")
         if R2K:
             if m.initial_band != "dummy":
-                r2k_parser.add_argument("Mb" , type=int           , metavar=f"Mb ({m.initial_band}-{m.nbnd-1})"   , choices=range(m.initial_band, m.nbnd)             , help="Maximum band to consider.")
-                r2k_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
-                r2k_parser.add_argument("-mb", type=int, default=m.initial_band, metavar=f"[{m.initial_band}-{m.nbnd-1}]"      , choices=range(m.initial_band, m.nbnd)             , help="Minimum band to consider (default: 0).")
-                r2k_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
-                r2k_parser.add_argument("-o", default="r2k", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-                r2k_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
+                r2k_parser.add_argument("Mb" , 
+                                        type=int           , 
+                                        metavar=f"Mb ({m.initial_band}-{m.nbnd-1})"   , 
+                                        choices=range(m.initial_band, m.nbnd)             , 
+                                        help="Maximum band to consider.")
+                r2k_parser.add_argument("-np", 
+                                        type=int, 
+                                        default=1, 
+                                        metavar=f"[1-{os.cpu_count()}]", 
+                                        choices=range(1, os.cpu_count()+1), 
+                                        help="Number of processes to use (default: 1).")
+                r2k_parser.add_argument("-mb", 
+                                        type=int, 
+                                        default=m.initial_band,
+                                          metavar=f"[{m.initial_band}-{m.nbnd-1}]"      , 
+                                          choices=range(m.initial_band, m.nbnd)             , 
+                                          help="Minimum band to consider (default: 0).")
+                r2k_parser.add_argument("-flush", 
+                                        action="store_true", 
+                                        help="Flushes output into stdout.")
+                r2k_parser.add_argument("-o", 
+                                        default="r2k", 
+                                        type=str, 
+                                        metavar="file_path", 
+                                        help="Name of output log file. Extension will be .log regardless of user input.")
+                r2k_parser.add_argument("-v"        , 
+                                        action="store_true", 
+                                        help="Increases output verbosity.")
             else:
-                r2k_parser.add_argument("Mb" , type=int           , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)             , help="Maximum band to consider.")
-                r2k_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
-                r2k_parser.add_argument("-mb", type=int, default=0, metavar=f"[0-{m.nbnd-1}]"      , choices=range(m.nbnd)             , help="Minimum band to consider (default: 0).")
-                r2k_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
-                r2k_parser.add_argument("-o", default="r2k", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-                r2k_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
+                r2k_parser.add_argument("Mb" , 
+                                        type=int           , 
+                                        metavar=f"Mb (0-{m.nbnd-1})"   , 
+                                        choices=range(m.nbnd)             , 
+                                        help="Maximum band to consider.")
+                r2k_parser.add_argument("-np", 
+                                        type=int, 
+                                        default=1, 
+                                        metavar=f"[1-{os.cpu_count()}]", 
+                                        choices=range(1, os.cpu_count()+1), 
+                                        help="Number of processes to use (default: 1).")
+                r2k_parser.add_argument("-mb", 
+                                        type=int, 
+                                        default=0, 
+                                        metavar=f"[0-{m.nbnd-1}]"      , 
+                                        choices=range(m.nbnd)             , 
+                                        help="Minimum band to consider (default: 0).")
+                r2k_parser.add_argument("-flush", 
+                                        action="store_true", 
+                                        help="Flushes output into stdout.")
+                r2k_parser.add_argument("-o", 
+                                        default="r2k", 
+                                        type=str, 
+                                        metavar="file_path", 
+                                        help="Name of output log file. Extension will be .log regardless of user input.")
+                r2k_parser.add_argument("-v"        , 
+                                        action="store_true", 
+                                        help="Increases output verbosity.")
         if GEOMETRY:
             if m.initial_band != "dummy": # for backward compatibility
-                geometry_parser.add_argument("Mb"   , type=int                , metavar=f"Mb ({m.initial_band}-{m.nbnd-1})"   , choices=range(m.initial_band, m.nbnd)                      , help="Maximum band to consider.")
-                geometry_parser.add_argument("-np"  , type=int, default=1     , metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1)         , help="Number of processes to use (default: 1).")
-                geometry_parser.add_argument("-mb"  , type=int, default=m.initial_band     , metavar=f"[{m.initial_band}-{m.nbnd-1}]"      , choices=range(m.initial_band, m.nbnd)                      , help=f"Minimum band to consider (default: {m.initial_band}).")
+                geometry_parser.add_argument("Mb"   , 
+                                             type=int                , 
+                                             metavar=f"Mb ({m.initial_band}-{m.nbnd-1})"   , 
+                                             choices=range(m.initial_band, m.nbnd)                      , 
+                                             help="Maximum band to consider.")
+                geometry_parser.add_argument("-np"  , 
+                                             type=int, default=1     , 
+                                             metavar=f"[1-{os.cpu_count()}]", 
+                                             choices=range(1, os.cpu_count()+1)         , 
+                                             help="Number of processes to use (default: 1).")
+                geometry_parser.add_argument("-mb"  , 
+                                             type=int, 
+                                             default=m.initial_band     , 
+                                             metavar=f"[{m.initial_band}-{m.nbnd-1}]"      , 
+                                             choices=range(m.initial_band, m.nbnd)                      , help=f"Minimum band to consider (default: {m.initial_band}).")
             else:
-                geometry_parser.add_argument("Mb"   , type=int                , metavar=f"Mb (0-{m.nbnd-1})"   , choices=range(m.nbnd)                      , help="Maximum band to consider.")
-                geometry_parser.add_argument("-np"  , type=int, default=1     , metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1)         , help="Number of processes to use (default: 1).")
-                geometry_parser.add_argument("-mb"  , type=int, default=0     , metavar=f"[0-{m.nbnd-1}]"      , choices=range(m.nbnd)                      , help="Minimum band to consider (default: 0).")
-            geometry_parser.add_argument("-prop", type=str, default="both", metavar="",choices=["both", "conn", "curv"], help="Specify which proprety to calculate. Possible choices are 'both', 'conn' and 'curv' (default: both)")
-            geometry_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
-            geometry_parser.add_argument("-o", default="geometry", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-            geometry_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
+                geometry_parser.add_argument("Mb"   , 
+                                             type=int                , 
+                                             metavar=f"Mb (0-{m.nbnd-1})"   , 
+                                             choices=range(m.nbnd)                      , 
+                                             help="Maximum band to consider.")
+                geometry_parser.add_argument("-np"  , 
+                                             type=int, default=1     , 
+                                             metavar=f"[1-{os.cpu_count()}]", 
+                                             choices=range(1, os.cpu_count()+1)         , 
+                                             help="Number of processes to use (default: 1).")
+                geometry_parser.add_argument("-mb"  , 
+                                             type=int, 
+                                             default=0     , 
+                                             metavar=f"[0-{m.nbnd-1}]"      , 
+                                             choices=range(m.nbnd)                      , 
+                                             help="Minimum band to consider (default: 0).")
+            geometry_parser.add_argument("-prop", 
+                                         type=str, 
+                                         default="both", 
+                                         metavar="",
+                                         choices=["both", "conn", "curv"], 
+                                         help="Specify which proprety to calculate. Possible choices are 'both', 'conn' and 'curv' (default: both)")
+            geometry_parser.add_argument("-flush", 
+                                         action="store_true", 
+                                         help="Flushes output into stdout.")
+            geometry_parser.add_argument("-o", 
+                                         default="geometry", 
+                                         type=str, metavar="file_path", 
+                                         help="Name of output log file. Extension will be .log regardless of user input.")
+            geometry_parser.add_argument("-v"        , 
+                                         action="store_true", 
+                                         help="Increases output verbosity.")
         if CONDUCTIVITY:
             if m.initial_band != "dummy":
                 vb = m.vb if m.vb < m.initial_band else m.initial_band
-                conductivity_parser.add_argument("cb" , type=int                        ,metavar=f"cb ({vb+1}-{m.nbnd-1})", choices=range(m.vb+1, m.nbnd)     , help="Index of the highest conduction band to consider.")
+                conductivity_parser.add_argument("cb" , 
+                                                 type=int ,
+                                                 metavar=f"cb ({vb+1}-{m.nbnd-1})",
+                                                 choices=range(m.vb+1, m.nbnd)     , 
+                                                 help="Index of the highest conduction band to consider.")
             else:
-                conductivity_parser.add_argument("cb" , type=int                        ,metavar=f"cb ({m.vb+1}-{m.nbnd-1})", choices=range(m.vb+1, m.nbnd)     , help="Index of the highest conduction band to consider.")
-            conductivity_parser.add_argument("-np"       , type=int  , default=1    , metavar=f"[1-{os.cpu_count()}]"   , choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1).")
-            conductivity_parser.add_argument("-eM", metavar="", type=float, default=2.5, help="Maximum energy in Ry units (default: 2.5).")
-            conductivity_parser.add_argument("-eS", metavar="", type=float, default=0.001, help="Energy step in Ry units (default: 0.001).")
-            conductivity_parser.add_argument("-brd", metavar="", type=float, default=0.01j, help="Energy broading in Ry units (default: 0.01).")
-            conductivity_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
-            conductivity_parser.add_argument("-o", default="conductivity", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-            conductivity_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
+                conductivity_parser.add_argument("cb" , 
+                                                 type=int ,
+                                                 metavar=f"cb ({m.vb+1}-{m.nbnd-1})", 
+                                                 choices=range(m.vb+1, m.nbnd)     , 
+                                                 help="Index of the highest conduction band to consider.")
+            conductivity_parser.add_argument("-np"       , 
+                                             type=int  , 
+                                             default=1    , 
+                                             metavar=f"[1-{os.cpu_count()}]"   , 
+                                             choices=range(1, os.cpu_count()+1), 
+                                             help="Number of processes to use (default: 1).")
+            conductivity_parser.add_argument("-eM", 
+                                             metavar="", 
+                                             type=float, 
+                                             default=2.5, 
+                                             help="Maximum energy in Ry units (default: 2.5).")
+            conductivity_parser.add_argument("-eS", 
+                                             metavar="", 
+                                             type=float, 
+                                             default=0.001, 
+                                             help="Energy step in Ry units (default: 0.001).")
+            conductivity_parser.add_argument("-brd", 
+                                             metavar="", 
+                                             type=float, 
+                                             default=0.01j, 
+                                             help="Energy broading in Ry units (default: 0.01).")
+            conductivity_parser.add_argument("-flush", 
+                                             action="store_true", 
+                                             help="Flushes output into stdout.")
+            conductivity_parser.add_argument("-o", 
+                                             default="conductivity", 
+                                             type=str, 
+                                             metavar="file_path", 
+                                             help="Name of output log file. Extension will be .log regardless of user input.")
+            conductivity_parser.add_argument("-v"        , 
+                                             action="store_true", 
+                                             help="Increases output verbosity.")
         if SHG:
             if m.initial_band != "dummy":
                 vb = m.vb if m.vb < m.initial_band else m.initial_band
-                shg_parser.add_argument("cb" , type=int,metavar=f"cb ({vb+1}-{m.nbnd-1})", choices=range(m.vb+1, m.nbnd), help="Index of the highest conduction band to consider.")
+                shg_parser.add_argument("cb" , 
+                                        type=int,
+                                        metavar=f"cb ({vb+1}-{m.nbnd-1})", 
+                                        choices=range(m.vb+1, m.nbnd), 
+                                        help="Index of the highest conduction band to consider.")
             else:
-                shg_parser.add_argument("cb" , type=int,metavar=f"cb ({m.vb+1}-{m.nbnd-1})", choices=range(m.vb+1, m.nbnd), help="Index of the highest conduction band to consider.")
-            shg_parser.add_argument("-np", type=int, default=1, metavar=f"[1-{os.cpu_count()}]", choices=range(1, os.cpu_count()+1), help="Number of processes to use (default: 1)")
-            shg_parser.add_argument("-eM", metavar="", type=float, default=2.5, help="Maximum energy in Ry units (default: 2.5).")
-            shg_parser.add_argument("-eS", metavar="", type=float, default=0.001, help="Energy step in Ry units (default: 0.001).")
-            shg_parser.add_argument("-brd", metavar="", type=float, default=0.01j, help="Energy broading in Ry units (default: 0.01).")
-            shg_parser.add_argument("-flush", action="store_true", help="Flushes output into stdout.")
-            shg_parser.add_argument("-o", default="shg", type=str, metavar="file_path", help="Name of output log file. Extension will be .log regardless of user input.")
-            shg_parser.add_argument("-v"        , action="store_true", help="Increases output verbosity.")
+                shg_parser.add_argument("cb" , 
+                                        type=int,metavar=f"cb ({m.vb+1}-{m.nbnd-1})", 
+                                        choices=range(m.vb+1, m.nbnd), 
+                                        help="Index of the highest conduction band to consider.")
+            shg_parser.add_argument("-np", 
+                                    type=int, 
+                                    default=1, 
+                                    metavar=f"[1-{os.cpu_count()}]", 
+                                    choices=range(1, os.cpu_count()+1), 
+                                    help="Number of processes to use (default: 1)")
+            shg_parser.add_argument("-eM", 
+                                    metavar="", 
+                                    type=float, 
+                                    default=2.5, 
+                                    help="Maximum energy in Ry units (default: 2.5).")
+            shg_parser.add_argument("-eS", 
+                                    metavar="", 
+                                    type=float, 
+                                    default=0.001, 
+                                    help="Energy step in Ry units (default: 0.001).")
+            shg_parser.add_argument("-brd", 
+                                    metavar="", 
+                                    type=float, 
+                                    default=0.01j, 
+                                    help="Energy broading in Ry units (default: 0.01).")
+            shg_parser.add_argument("-flush",
+                                     action="store_true", 
+                                     help="Flushes output into stdout.")
+            shg_parser.add_argument("-o", 
+                                    default="shg", 
+                                    type=str, 
+                                    metavar="file_path", 
+                                    help="Name of output log file. Extension will be .log regardless of user input.")
+            shg_parser.add_argument("-v"        , 
+                                    action="store_true", 
+                                    help="Increases output verbosity.")
     except NameError as err:
         #TODO: Should we display a helpfull message indicating that the user should run the missing berry programs?
         pass

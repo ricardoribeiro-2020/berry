@@ -1,7 +1,7 @@
 """ This program reads data from the files where it was saved
 
 """
-import numpy as np
+import numpy as np # type: ignore
 
 # Read eigenvalues from file   eigenvalues = np.array(nks,nbnd)
 try:
