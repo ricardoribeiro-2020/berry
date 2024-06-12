@@ -549,6 +549,13 @@ def shg_cli(args: argparse.Namespace):
 
     run_shg(**args_dict)
 
+
+
+
+
+
+
+
 #TODO: Make the entire process of adding new commands more automatic
 #IDEA: Maybe using a global dict of commands with a tree structure will be a good idea to easily implement the same cli structure
 ##################################################################################################

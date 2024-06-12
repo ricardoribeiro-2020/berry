@@ -242,6 +242,8 @@ def log_eigen(band: int, acc: int):
     print("#"*100)
     print("# EIGENVALUES")
     print("#"*100)
+    if acc == 0:
+        acc = 4
     if m.dimensions == 1:
         print(_float_numbers1(m.nkx, d.eigenvalues[:, band], acc))
     elif m.dimensions == 2:
