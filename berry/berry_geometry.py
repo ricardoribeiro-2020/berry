@@ -166,7 +166,7 @@ def berry_curvature(idx: int, idx_: int) -> None:
 
     np.save(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx_}.npy"), bcr)
 
-def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curvature", "connection", "both"] = "both", logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
+def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curv", "conn", "both"] = "both", logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
     if m.noncolin:
         global wfcgra0, wfcgra1, logger
     else:
@@ -214,7 +214,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
     ###########################################################################
     # 4. CALCULATE BERRY GEOMETRY
     ###########################################################################
-    if prop == "both" or prop == "connection":
+    if prop == "both" or prop == "conn":
         if m.noncolin:
             for idx in range(min_band, max_band + 1):
                 wfcgra0 = np.load(os.path.join(m.data_dir, f"wfcgra{idx}-0.npy"))
@@ -236,7 +236,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
     if m.dimensions == 1:
         logger.info(f"\tBerry curvature is not defined for 1D materials.")
     else:
-        if prop == "both" or prop == "curvature":
+        if prop == "both" or prop == "curv":
             if m.noncolin:
                 for idx in range(min_band, max_band + 1):
                     wfcgra0 = np.load(os.path.join(m.data_dir, f"wfcgra{idx}-0.npy"))
