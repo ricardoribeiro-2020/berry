@@ -98,8 +98,8 @@ def corrected(args):
                 for i in range(nkx):
                     count = count + 1
                     zarray[i, j] = eigenvalues[count, bandsfinal[count, banda]]
-
-            ax.plot_wireframe(xarray, yarray, zarray, color=cores[banda])
+            colorband = np.mod(banda,20)
+            ax.plot_wireframe(xarray, yarray, zarray, color=cores[colorband])
 
     # Para desenhar no mathematica!
     #
@@ -220,7 +220,8 @@ def machine(args):
                     count = count + 1
                     zarray[i, j] = eigenvalues[count, banda]
 
-            ax.plot_wireframe(xarray, yarray, zarray, color=cores[banda])
+            colorband = np.mod(banda,20)
+            ax.plot_wireframe(xarray, yarray, zarray, color=cores[colorband])
 
     # Para desenhar no mathematica!
     #
