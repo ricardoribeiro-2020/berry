@@ -2,11 +2,11 @@ from multiprocessing import Array, Pool
 from typing import Tuple, Sequence
 from itertools import product
 
-import os
+import os, sys
 import ctypes
 import logging
 
-import numpy as np
+import numpy as np # type: ignore
 
 from berry import log
 
@@ -70,23 +70,22 @@ def get_delta_eigen_array_and_fermi(eigen_array: np.ndarray, conduction_band: in
         for sprime in band_list:
             if m.dimensions == 1:
                 delta_eigen_array[:, s, sprime] = eigen_array[:, s] - eigen_array[:, sprime]
-                if s <= m.vb < sprime:
+                if s <= m.vb - initial_band < sprime:
                     fermi[:, s, sprime] = 1
-                elif sprime <= m.vb < s:
+                elif sprime <= m.vb - initial_band < s:
                     fermi[:, s, sprime] = -1
             elif m.dimensions == 2:
                 delta_eigen_array[:, :, s, sprime] = eigen_array[:, :, s] - eigen_array[:, :, sprime]
-                if s <= m.vb < sprime:
+                if s <= m.vb - initial_band < sprime:
                     fermi[:, :, s, sprime] = 1
-                elif sprime <= m.vb < s:
+                elif sprime <= m.vb - initial_band < s:
                     fermi[:, :, s, sprime] = -1
             else:
                 delta_eigen_array[:, :, :, s, sprime] = eigen_array[:, :, :, s] - eigen_array[:, :, :, sprime]
-                if s <= m.vb < sprime:
+                if s <= m.vb - initial_band < sprime:
                     fermi[:, :, :, s, sprime] = 1
-                elif sprime <= m.vb < s:
+                elif sprime <= m.vb - initial_band < s:
                     fermi[:, :, :, s, sprime] = -1
-
     return delta_eigen_array, fermi
 
 def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.ndarray, broadning: complex) -> Tuple[float, np.ndarray]:
@@ -144,6 +143,7 @@ def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.nd
 def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, broadning: complex = 0.01j, logger_name: str = "condutivity", logger_level: int = logging.INFO, flush: bool = False):
     global band_list, berry_connections, OMEGA_SHAPE, CONST, VK, initial_band, number_of_bands
     logger = log(logger_name, "CONDUCTIVITY", level=logger_level, flush=flush)
+    # conduction_band is the number of the highest conduction band to consider.
 
     logger.header()
 

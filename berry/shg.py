@@ -69,9 +69,9 @@ def get_fermi_delta_ea_grad_ea(grad: Gradient, eigen_array: np.ndarray, conducti
         for s, sprime in product(band_list, repeat=2):
             delta_ea[:, s, sprime] = eigen_array[:, s] - eigen_array[:, sprime]
             grad_dea[:, :, s, sprime] = grad(delta_ea[:, s, sprime])
-            if s <= m.vb < sprime:
+            if s <= m.vb - initial_band < sprime:
                 fermi[:, s, sprime] = 1
-            elif sprime <= m.vb < s:
+            elif sprime <= m.vb - initial_band < s:
                 fermi[:, s, sprime] = -1    
     elif m.dimensions == 2:
         grad_dea = np.zeros((2, m.nkx, m.nky, conduction_band + 1, conduction_band + 1), dtype=np.complex128)
@@ -81,9 +81,9 @@ def get_fermi_delta_ea_grad_ea(grad: Gradient, eigen_array: np.ndarray, conducti
         for s, sprime in product(band_list, repeat=2):
             delta_ea[:, :, s, sprime] = eigen_array[:, :, s] - eigen_array[:, :, sprime]
             grad_dea[:, :, :, s, sprime] = grad(delta_ea[:, :, s, sprime])
-            if s <= m.vb < sprime:
+            if s <= m.vb - initial_band < sprime:
                 fermi[:, :, s, sprime] = 1
-            elif sprime <= m.vb < s:
+            elif sprime <= m.vb - initial_band < s:
                 fermi[:, :, s, sprime] = -1
     else:
         grad_dea = np.zeros((3, m.nkx, m.nky, m.nkz, conduction_band + 1, conduction_band + 1), dtype=np.complex128)
@@ -93,9 +93,9 @@ def get_fermi_delta_ea_grad_ea(grad: Gradient, eigen_array: np.ndarray, conducti
         for s, sprime in product(band_list, repeat=2):
             delta_ea[:, :, :, s, sprime] = eigen_array[:, :, :, s] - eigen_array[:, :, :, sprime]
             grad_dea[:, :, :, :, s, sprime] = grad(delta_ea[:, :, :, s, sprime])
-            if s <= m.vb < sprime:
+            if s <= m.vb - initial_band < sprime:
                 fermi[:, :, :, s, sprime] = 1
-            elif sprime <= m.vb < s:
+            elif sprime <= m.vb - initial_band < s:
                 fermi[:, :, :, s, sprime] = -1
 
     return fermi, delta_ea, grad_dea
