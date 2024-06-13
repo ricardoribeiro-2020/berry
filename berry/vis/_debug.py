@@ -75,13 +75,19 @@ def log_data():
 
 
 def log_dot1():
+
+    initial_band = m.initial_band if m.initial_band != "dummy" else 0
+
     print("#"*100)
     print("# DOT PRODUCT OF THE WAVEFUNCTIONS (option 1)")
     print("#"*100)
     print(f"\n\tDirectory where the wfc are: {m.wfcdirectory}")
     print(f"\tNumber of k-points in each direction: {m.nkx}, {m.nky}, {m.nkz}")
     print(f"\tTotal number of k-points: {m.nks}")
-    print(f"\tNumber of bands: {m.nbnd}\n")
+    print(f"\tInitial band: {initial_band}")
+    print(f"\tFinal band: {m.nbnd-1}")
+    print(f"\tNumber of bands: {m.nbnd-initial_band}\n")
+
 
     try:
         connections = np.load(m.data_dir+"/dp.npy")
@@ -94,9 +100,9 @@ def log_dot1():
         for j in range(4):
             neighbor = d.neighbors[nk, j]
             print(f"\t{nk=}; {neighbor=}")
-            for band in range(m.nbnd):
+            for band in range(m.nbnd-initial_band):
                 line = "  "
-                for band1 in range(m.nbnd):
+                for band1 in range(m.nbnd-initial_band):
                     if connections[nk, j, band, band1] > 0.1:
                         line = (
                             line
