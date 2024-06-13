@@ -753,32 +753,47 @@ def berry_vis_cli():
     argcomplete.autocomplete(parser)
 
     try:
-        debug_dot2_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to consider.")
-
-        debug_eigen_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to consider.")
-        debug_eigen_parser.add_argument("-acc", type=int, default=0, help="Precision of the eigenvalues.")
-
-        bcc_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to visualize.")
-        bcc_parser.add_argument("grad", type=int, metavar=f"grad (0-{m.nbnd-1})", choices=range(m.nbnd), help="Gradient to visualize.")
-        bcc_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
-    
-        bcr_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to visualize.")
-        bcr_parser.add_argument("grad", type=int, metavar=f"grad (0-{m.nbnd-1})", choices=range(m.nbnd), help="Gradient to visualize.")
-        bcr_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
-        
         if m.initial_band != "dummy":
+            debug_dot2_parser.add_argument("band", type=int, metavar=f"band ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Band to consider.")
+
+            debug_eigen_parser.add_argument("band", type=int, metavar=f"band ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Band to consider.")
+            debug_eigen_parser.add_argument("-acc", type=int, default=0, help="Precision of the eigenvalues.")
+
+            bcc_parser.add_argument("band", type=int, metavar=f"band ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Band to visualize.")
+            bcc_parser.add_argument("grad", type=int, metavar=f"grad ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Gradient to visualize.")
+            bcc_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
+    
+            bcr_parser.add_argument("band", type=int, metavar=f"band ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Band to visualize.")
+            bcr_parser.add_argument("grad", type=int, metavar=f"grad ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Gradient to visualize.")
+            bcr_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
+        
             wave_corrected_parser.add_argument("Mb", type=int, metavar=f"Mb ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Maximum band to consider")
             wave_corrected_parser.add_argument("-mb", type=int, default=m.initial_band, metavar=f"({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help=f"Minimum band to consider (default: {m.initial_band})")
-        else:
+        
+            wave_machine_parser.add_argument("Mb", type=int, metavar=f"Mb ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Maximum band to consider")
+            wave_machine_parser.add_argument("-mb", type=int, default=m.initial_band, metavar=f"({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help=f"Minimum band to consider (default: {m.initial_band})")
+
+        else: # for older versions
+            debug_dot2_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to consider.")
+
+            debug_eigen_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to consider.")
+            debug_eigen_parser.add_argument("-acc", type=int, default=0, help="Precision of the eigenvalues.")
+
+            bcc_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to visualize.")
+            bcc_parser.add_argument("grad", type=int, metavar=f"grad (0-{m.nbnd-1})", choices=range(m.nbnd), help="Gradient to visualize.")
+            bcc_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
+    
+            bcr_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to visualize.")
+            bcr_parser.add_argument("grad", type=int, metavar=f"grad (0-{m.nbnd-1})", choices=range(m.nbnd), help="Gradient to visualize.")
+            bcr_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
+        
             wave_corrected_parser.add_argument("Mb", type=int, metavar=f"Mb (0-{m.nbnd-1})", choices=range(m.nbnd), help="Maximum band to consider")
             wave_corrected_parser.add_argument("-mb", type=int, default=0, metavar=f"(0-{m.nbnd-1})", choices=range(m.nbnd), help="Minimum band to consider (default: 0)")
         
-        if m.initial_band != "dummy":
-            wave_machine_parser.add_argument("Mb", type=int, metavar=f"Mb ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Maximum band to consider")
-            wave_machine_parser.add_argument("-mb", type=int, default=m.initial_band, metavar=f"({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help=f"Minimum band to consider (default: {m.initial_band})")
-        else:
             wave_machine_parser.add_argument("Mb", type=int, metavar=f"Mb (0-{m.nbnd-1})", choices=range(m.nbnd), help="Maximum band to consider")
             wave_machine_parser.add_argument("-mb", type=int, default=0, metavar=f"(0-{m.nbnd-1})", choices=range(m.nbnd), help="Minimum band to consider (default: 0)")
+
+
 
     except NameError:
         print(f"berry-vis cannot display any output because no berry calculations can be found in the directory: {os.getcwd()}")
