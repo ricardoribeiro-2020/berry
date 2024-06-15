@@ -75,14 +75,14 @@ def berry_curvature(idx: int, idx_: int) -> None:
         else:
             wfcgra0_ = np.load(os.path.join(m.data_dir, f"wfcgra{idx_}-0.npy"), mmap_mode="r").conj()
             wfcgra1_ = np.load(os.path.join(m.data_dir, f"wfcgra{idx_}-1.npy"), mmap_mode="r").conj()
-
-        @numba_njit
-        def aux_curvature() -> np.ndarray:
-            """
-            Auxiliary function to calculate the Berry curvature.
-            Attention: this is valid for 2D and 3D materials.
-            """
-            if m.dimensions == 2:          # 2D case
+        
+        if m.dimensions == 2:                # 2D case
+            @numba_njit
+            def aux_curvature() -> np.ndarray:
+                """
+                Auxiliary function to calculate the Berry curvature.
+                Attention: this is valid for 2D and 3D materials.
+                """
                 bcr = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
                 for posi in range(m.nr):
                     bcr += (
@@ -91,77 +91,100 @@ def berry_curvature(idx: int, idx_: int) -> None:
                         + 1j * wfcgra1[posi][1] * wfcgra1_[posi][0]
                         - 1j * wfcgra1[posi][0] * wfcgra1_[posi][1]
                     )
-            elif m.dimensions == 3:          # 3D case
-                bcr = np.array([np.zeros(wfcgra0[0].shape, dtype=np.complex128),
-                                np.zeros(wfcgra0[0].shape, dtype=np.complex128),
-                                np.zeros(wfcgra0[0].shape, dtype=np.complex128)])
+
+                ##  we are assuming that normalization is \sum |\psi|^2 = 1
+                ##  if not, needs division by m.nr
+                return bcr / m.nr
+            
+        else:                                # 3D case
+            @numba_njit
+            def aux_curvature():
+                """
+                Auxiliary function to calculate the Berry curvature.
+                Attention: this is valid for 2D and 3D materials.
+                """ 
+                bcr0 = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
+                bcr1 = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
+                bcr2 = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
                 for posi in range(m.nr):
-                    bcr[0,:] += (
+                    bcr0 += (
                         1j * wfcgra0[posi][2] * wfcgra0_[posi][1]
                         - 1j * wfcgra0[posi][1] * wfcgra0_[posi][2]
                         + 1j * wfcgra1[posi][2] * wfcgra1_[posi][1]
                         - 1j * wfcgra1[posi][1] * wfcgra1_[posi][2]
                     )
-                    bcr[1,:] += (
+                    bcr1 += (
                         1j * wfcgra0[posi][0] * wfcgra0_[posi][2]
                         - 1j * wfcgra0[posi][2] * wfcgra0_[posi][0]
                         + 1j * wfcgra1[posi][0] * wfcgra1_[posi][2]
                         - 1j * wfcgra1[posi][2] * wfcgra1_[posi][0]
                     )
-                    bcr[2,:] += (
+                    bcr2 += (
                         1j * wfcgra0[posi][1] * wfcgra0_[posi][0]
                         - 1j * wfcgra0[posi][0] * wfcgra0_[posi][1]
                         + 1j * wfcgra1[posi][1] * wfcgra1_[posi][0]
                         - 1j * wfcgra1[posi][0] * wfcgra1_[posi][1]
                     )
-
-            ##  we are assuming that normalization is \sum |\psi|^2 = 1
-            ##  if not, needs division by m.nr
-            return bcr / m.nr
+    
+                ##  we are assuming that normalization is \sum |\psi|^2 = 1
+                ##  if not, needs division by m.nr
+                return bcr0 / m.nr,  bcr1 / m.nr, bcr2 / m.nr
     else:
         if idx == idx_:
             wfcgra_ = wfcgra.conj()
         else:
             wfcgra_ = np.load(os.path.join(m.data_dir, f"wfcgra{idx_}.npy"), mmap_mode="r").conj()
 
-        @numba_njit
-        def aux_curvature() -> np.ndarray:
-            """
-            Auxiliary function to calculate the Berry curvature.
-            Attention: this is valid for 2D and 3D materials.
-            """
-            if m.dimensions == 2:          # 2D case
+        if m.dimensions == 2:                # 2D case
+            @numba_njit
+            def aux_curvature() -> np.ndarray:
+                """
+                Auxiliary function to calculate the Berry curvature.
+                Attention: this is valid for 2D and 3D materials.
+                """
+
                 bcr = np.zeros(wfcgra[0].shape, dtype=np.complex128)
                 for posi in range(m.nr):
                     bcr += (
                         1j * wfcgra[posi][0] * wfcgra_[posi][1]
                         - 1j * wfcgra[posi][1] * wfcgra_[posi][0]
                     )
-            elif m.dimensions == 3:          # 3D case
-                bcr = np.array([np.zeros(wfcgra[0].shape, dtype=np.complex128),
-                                np.zeros(wfcgra[0].shape, dtype=np.complex128),
-                                np.zeros(wfcgra[0].shape, dtype=np.complex128)])
+            
+                ##  we are assuming that normalization is \sum |\psi|^2 = 1
+                ##  if not, needs division by m.nr
+                return bcr
+            
+        else:                                # 3D case
+            @numba_njit
+            def aux_curvature():
+                """
+                Auxiliary function to calculate the Berry curvature.
+                Attention: this is valid for 2D and 3D materials.
+                """
+                bcr0 = np.zeros(wfcgra[0].shape, dtype=np.complex128)
+                bcr1 = np.zeros(wfcgra[0].shape, dtype=np.complex128)
+                bcr2 = np.zeros(wfcgra[0].shape, dtype=np.complex128)
                 for posi in range(m.nr):
-                    bcr[0,:] += (
+                    bcr0 += (
                         1j * wfcgra[posi][2] * wfcgra_[posi][1]
                         - 1j * wfcgra[posi][1] * wfcgra_[posi][2]
                     )
-                    bcr[1,:] += (
+                    bcr1 += (
                         1j * wfcgra[posi][0] * wfcgra_[posi][2]
                         - 1j * wfcgra[posi][2] * wfcgra_[posi][0]
                     )
-                    bcr[2,:] += (
+                    bcr2 += (
                         1j * wfcgra[posi][1] * wfcgra_[posi][0]
                         - 1j * wfcgra[posi][0] * wfcgra_[posi][1]
                     )
 
-            ##  we are assuming that normalization is \sum |\psi|^2 = 1
-            ##  if not, needs division by m.nr
-            return bcr / m.nr
+                ##  we are assuming that normalization is \sum |\psi|^2 = 1
+                ##  if not, needs division by m.nr
+                return bcr0 / m.nr,  bcr1 / m.nr, bcr2 / m.nr
 
     start = time()
 
-    bcr = aux_curvature()
+    bcr = aux_curvature() if m.dimensions == 2 else np.array(aux_curvature())
     logger.info(f"\tberry_curvature{idx}_{idx_} calculated in {time() - start:.2f} seconds")
 
     np.save(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx_}.npy"), bcr)
