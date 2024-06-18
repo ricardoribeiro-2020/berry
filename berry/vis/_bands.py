@@ -64,42 +64,25 @@ def corrected(args):
     f.close()
     print(" bandsfinal loaded")
 
-    if m.dimensions == 1:
-        xarray = np.zeros(nkx)
-        yarray = np.zeros(nkx)
-        count = -1
+    xarray = np.zeros((nkx, nky))
+    yarray = np.zeros((nkx, nky))
+    zarray = np.zeros((nkx, nky))
+    count = -1
+    for j in range(nky):
         for i in range(nkx):
             count = count + 1
-            xarray[i] = kpoints[count,0]
-        for banda in range(startband, endband + 1):
-            count = -1
-            for i in range(nkx):
-                count = count + 1            
-                yarray[i] = eigenvalues[count, bandsfinal[count, banda]]
-            plt.plot(xarray,yarray)
+            xarray[i, j] = kpoints[count, 0]
+            yarray[i, j] = kpoints[count, 1]
 
-
-
-    elif m.dimensions == 2:
-        xarray = np.zeros((nkx, nky))
-        yarray = np.zeros((nkx, nky))
-        zarray = np.zeros((nkx, nky))
+    ax = fig.add_subplot(projection='3d')
+    for banda in range(startband, endband + 1):
         count = -1
         for j in range(nky):
             for i in range(nkx):
                 count = count + 1
-                xarray[i, j] = kpoints[count, 0]
-                yarray[i, j] = kpoints[count, 1]
+                zarray[i, j] = eigenvalues[count, bandsfinal[count, banda]]
 
-        ax = fig.add_subplot(projection='3d')
-        for banda in range(startband, endband + 1):
-            count = -1
-            for j in range(nky):
-                for i in range(nkx):
-                    count = count + 1
-                    zarray[i, j] = eigenvalues[count, bandsfinal[count, banda]]
-            colorband = np.mod(banda,20)
-            ax.plot_wireframe(xarray, yarray, zarray, color=cores[colorband])
+        ax.plot_wireframe(xarray, yarray, zarray, color=cores[banda])
 
     # Para desenhar no mathematica!
     #
@@ -184,44 +167,26 @@ def machine(args):
     kpoints = d.kpoints
     print(" K-points loaded")
 
-    if m.dimensions == 1:
-        xarray = np.zeros(nkx)
-        yarray = np.zeros(nkx)
-        count = -1
+
+    xarray = np.zeros((nkx, nky))
+    yarray = np.zeros((nkx, nky))
+    zarray = np.zeros((nkx, nky))
+    count = -1
+    for j in range(nky):
         for i in range(nkx):
             count = count + 1
-            xarray[i] = kpoints[count,0]
-        for banda in range(startband, endband + 1):
-            count = -1
-            for i in range(nkx):
-                count = count + 1            
-                yarray[i] = eigenvalues[count, banda]
-            plt.plot(xarray,yarray)
+            xarray[i, j] = kpoints[count, 0]
+            yarray[i, j] = kpoints[count, 1]
 
-
-
-    elif m.dimensions == 2:
-
-        xarray = np.zeros((nkx, nky))
-        yarray = np.zeros((nkx, nky))
-        zarray = np.zeros((nkx, nky))
+    ax = fig.add_subplot(projection='3d')
+    for banda in range(startband, endband + 1):
         count = -1
         for j in range(nky):
             for i in range(nkx):
                 count = count + 1
-                xarray[i, j] = kpoints[count, 0]
-                yarray[i, j] = kpoints[count, 1]
+                zarray[i, j] = eigenvalues[count, banda]
 
-        ax = fig.add_subplot(projection='3d')
-        for banda in range(startband, endband + 1):
-            count = -1
-            for j in range(nky):
-                for i in range(nkx):
-                    count = count + 1
-                    zarray[i, j] = eigenvalues[count, banda]
-
-            colorband = np.mod(banda,20)
-            ax.plot_wireframe(xarray, yarray, zarray, color=cores[colorband])
+        ax.plot_wireframe(xarray, yarray, zarray, color=cores[banda])
 
     # Para desenhar no mathematica!
     #
@@ -255,8 +220,8 @@ def machine(args):
 
     footer(tempo(starttime, endtime))
 
-def wave(args):
-    if args.wave_vis == "corrected":
+def bands(args):
+    if args.bands_vis == "corrected":
         corrected(args)
-    elif args.wave_vis == "machine":
+    elif args.bands_vis == "machine":
         machine(args)
