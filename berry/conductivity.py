@@ -30,18 +30,19 @@ def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_con
 
 def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
     kp = 0
+    eigenvalues = d.eigenvalues[:,m.initial_band:] # initial band correction
     if m.dimensions == 1:
         eigen_array = np.zeros((m.nkx, number_of_bands))
         for i in range(m.nkx):
             for banda in range(number_of_bands):
-                eigen_array[i, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
+                eigen_array[i, banda] = eigenvalues[kp, bandsfinal[kp, banda]]
             kp += 1
     elif m.dimensions == 2:
         eigen_array = np.zeros((m.nkx, m.nky, number_of_bands))
         for j in range(m.nky):
             for i in range(m.nkx):
                 for banda in range(number_of_bands):
-                    eigen_array[i, j, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
+                    eigen_array[i, j, banda] = eigenvalues[kp, bandsfinal[kp, banda]]
                 kp += 1
     else:
         eigen_array = np.zeros((m.nkx, m.nky, m.nkz, number_of_bands))        
@@ -49,7 +50,7 @@ def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
             for j in range(m.nky):
                 for i in range(m.nkx):
                     for banda in range(number_of_bands):
-                        eigen_array[i, j, l, banda] = d.eigenvalues[kp, bandsfinal[kp, banda]]
+                        eigen_array[i, j, l, banda] = eigenvalues[kp, bandsfinal[kp, banda]]
                     kp += 1
 
 
