@@ -141,7 +141,7 @@ def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.nd
 
 #TODO: ADD assertions to all functions in order to check if the inputs are correct
 #IDEA: Maybe create a type checking decorator (USE pydantic)
-def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, broadning: complex = 0.01j, logger_name: str = "condutivity", logger_level: int = logging.INFO, flush: bool = False):
+def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, brd: float = 0.01, logger_name: str = "condutivity", logger_level: int = logging.INFO, flush: bool = False):
     global band_list, berry_connections, OMEGA_SHAPE, CONST, VK, initial_band, number_of_bands
     logger = log(logger_name, "CONDUCTIVITY", level=logger_level, flush=flush)
     # conduction_band is the number of the highest conduction band to consider.
@@ -150,7 +150,7 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
 
     initial_band = m.initial_band if m.initial_band != "dummy" else 0                # for backward compatibility
     number_of_bands = m.number_of_bands if m.number_of_bands != "dummy" else m.nbnd  # for backward compatibility
-
+    broadning = brd*1j
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
     ########################################################################### 

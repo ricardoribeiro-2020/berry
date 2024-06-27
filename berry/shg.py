@@ -234,7 +234,7 @@ def calculate_shg(omega: float, broadning: float):
         return (omega, np.sum(np.sum(np.sum(sig, axis=0), axis=0), axis=0) * VK)
 
 
-def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, broadning: complex = 0.01j, logger_name: str = "shg", logger_level: int = logging.INFO, flush: bool = False):
+def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, brd: float = 0.01, logger_name: str = "shg", logger_level: int = logging.INFO, flush: bool = False):
     global gamma1, gamma2, gamma3, gamma12, gamma13, fermi, delta_ea, grad_dea, band_list, berry_connections, OMEGA_SHAPE, CONST, VK, initial_band, number_of_bands
     logger = log(logger_name, "SECOND HARMONIC GENERATOR", level=logger_level, flush=flush)
 
@@ -242,7 +242,7 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
 
     initial_band = m.initial_band if m.initial_band != "dummy" else 0                # for backward compatibility
     number_of_bands = m.number_of_bands if m.number_of_bands != "dummy" else m.nbnd  # for backward compatibility
-
+    broadning = brd*1j
 
     ###########################################################################
     # 1. DEFINING THE CONSTANTS

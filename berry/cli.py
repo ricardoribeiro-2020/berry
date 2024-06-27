@@ -383,7 +383,7 @@ berry [package options] script parameter [script options]
             conductivity_parser.add_argument("-brd", 
                                              metavar="", 
                                              type=float, 
-                                             default=0.01j, 
+                                             default=0.01, 
                                              help="Energy broading in Ry units (default: 0.01).")
             conductivity_parser.add_argument("-flush", 
                                              action="store_true", 
@@ -428,7 +428,7 @@ berry [package options] script parameter [script options]
             shg_parser.add_argument("-brd", 
                                     metavar="", 
                                     type=float, 
-                                    default=0.01j, 
+                                    default=0.01, 
                                     help="Energy broading in Ry units (default: 0.01).")
             shg_parser.add_argument("-flush",
                                      action="store_true", 
@@ -689,7 +689,7 @@ def conductivity_cli(args: argparse.Namespace):
     args_dict["conduction_band"] = args.cb
     args_dict["energy_max"] = args.eM
     args_dict["energy_step"] = args.eS
-    args_dict["broadning"] = args.brd
+    args_dict["brd"] = args.brd
     args_dict["flush"] = args.flush
 
     run_conductivity(**args_dict)
@@ -711,7 +711,7 @@ def shg_cli(args: argparse.Namespace):
     args_dict["conduction_band"] = args.cb
     args_dict["energy_max"] = args.eM
     args_dict["energy_step"] = args.eS
-    args_dict["broadning"] = args.brd
+    args_dict["brd"] = args.brd
     args_dict["flush"] = args.flush
 
     run_shg(**args_dict)
