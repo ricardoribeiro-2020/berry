@@ -1,3 +1,4 @@
+from tkinter import NO
 from typing import Dict, Union, List, Tuple
 from multiprocessing import Pool
 from itertools import product
@@ -42,7 +43,11 @@ class Preprocess:
                  kvector2: List[float] = None, # type: ignore
                  kvector3: List[float] = None, # type: ignore
                  wfcut: int = -1,
-                 flush: bool = False
+                 flush: bool = False,
+                 z1: float = None,
+                 Deltaz: float = None,
+                 y1: float = None,
+                 Deltay: float = None
                 ):
 
         self.work_dir = os.getcwd() + "/"    # Define working directory
@@ -51,6 +56,11 @@ class Preprocess:
         self.nky = nky                       # Number of k-points in the y direction
         self.nkz = nkz                       # Number of k-points in the z direction
         self.step = step                     # Distance between k-points
+        self.z1 = z1                         # Cut in real space, direction z
+        self.y1 = y1                         # Cut in real space, direction y
+        self.Deltaz = Deltaz                 # Size of cut, direction z
+        self.Deltay = Deltay                 # Size of cut, direction y
+
         if int(wfcut) < 0:
             self.wfcut = -1
         else:
@@ -322,10 +332,10 @@ class Preprocess:
             np.save(fich, int(self.wfcut) + 1)              # Initial band
             np.save(fich, int(self.nbnd) - int(self.wfcut) - 1)  # Number of bands to be used in berry
             np.save(fich, int(self.nbnd) - 1)               # Final band
-            np.save(fich, "dummy")  # Saving space for future values and compatibility
-            np.save(fich, "dummy")  # Saving space for future values and compatibility
-            np.save(fich, "dummy")  # Saving space for future values and compatibility
-            np.save(fich, "dummy")  # Saving space for future values and compatibility
+            np.save(fich, float(self.z1))                   # Cut in real space, direction z
+            np.save(fich, float(self.Deltaz))               # Size of cut, direction z
+            np.save(fich, float(self.y1))                   # Cut in real space, direction y
+            np.save(fich, float(self.Deltay))               # Size of cut, direction y
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility

@@ -4,6 +4,7 @@ import os
 import logging
 import subprocess
 
+from berry._subroutines.loadmeta import Deltay, Deltaz
 import numpy as np
 
 from berry import log
@@ -101,6 +102,30 @@ class WfcGenerator:
         self.logger.info(f"\tTotal number of bands to be used: {number_of_bands}\n")
 
         self.logger.info(f"\tPoint choosen for sincronizing phases:  {m.rpoint}\n")
+
+        if m.z1 != None and (m.dimensions == 2 or m.dimensions == 1):
+            zcut = True
+            z1 = m.z1
+            if m.z1 + m. Deltaz > m.a3:
+                splitz = True
+                z2 = m.z1 + m.Deltaz - m.a3
+            else:
+                splitz = False
+                z2 = m.z1 + m.Deltaz
+        else:
+            zcut = False
+        if m.y1 != None and m.dimensions == 1:
+            ycut = True
+            y1 = m.y1
+            if m.y1 + m.Deltay > m.a2:
+                splity = True
+                y2 = m.y1 + m.Deltay - m.a2
+            else:
+                splity = False
+                y2 = m.y1 + m.Deltay
+        else:
+            ycut = False
+
 
     def _wfck2r(self, nk_point: int, initial_band: int, final_band: int, number_of_bands: int):
         # Set the command to run
