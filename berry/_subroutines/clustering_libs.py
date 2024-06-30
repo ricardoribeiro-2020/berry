@@ -670,7 +670,7 @@ class MATERIAL:
             neigh = neighs.pop(0) if len(neighs) > 0 else None
         return neigh == j if neigh is not None else False
 
-    def make_connections(self, tol:float=0.80) -> None:
+    def make_connections(self, tol:float=0.80, not_first_iteration:bool=False) -> None:
         '''
         This function evaluates the connection between each k point,
         and adds an edge to the graph if its connection is greater
@@ -686,7 +686,7 @@ class MATERIAL:
         ###########################################################################
         # Find the edges on the graph
         ###########################################################################
-
+        self.tol = tol
         tol = 1 - 2/np.pi * np.arccos(tol) # Convert the tolerance value to arccos metric
       
         def connection_component(vectors:np.ndarray) -> list[list[Kpoint]]:
@@ -732,6 +732,11 @@ class MATERIAL:
         edges = self.parallelize('Computing Edges', connection_component, range(len(self.vectors)))
         # Establish the edges on the graph from edges array
         self.GRAPH.add_weighted_edges_from(edges)
+
+
+        if not_first_iteration:
+            return
+
 
         ###########################################################################
         # Solve problems that a degenerate point may cause
@@ -951,7 +956,7 @@ class MATERIAL:
             self.logger.percent_complete(per_actual, N, title=process_name)
         return result
 
-    def get_components(self, alpha: float=0.5, first_iteration=False) -> None:
+    def get_components(self, alpha: float=0.5, compute_communities=False) -> None:
         '''
         The make_connections function constructs the graph, in which
         it can detect components well constructed.
@@ -986,8 +991,8 @@ class MATERIAL:
 
         N_g_nks_prev = self.nbnd
 
-        def communites2clusters(communities: list[list[Kpoint]]) -> list[COMPONENT]:
-            self.components = [COMPONENT(self.GRAPH.subgraph(c),
+        def communites2clusters(communities) -> list[COMPONENT]:
+            self.components = [COMPONENT(c,
                                         self.kpoints_index,
                                         self.matrix,
                                         self.dimensions)
@@ -1011,7 +1016,7 @@ class MATERIAL:
                     #  If the number of nodes inside the component equals the total number of k points, the cluster is considered solved
                     self.solved.append(component)
                     continue
-
+                    
                 component.calculate_pointsMatrix()  # Computes the projection into k-space
                 component.calc_boundary()           # Undersample the points by representative points identification
                 if len(clusters) == 0:
@@ -1039,16 +1044,27 @@ class MATERIAL:
             return clusters, samples, N_g_nks
 
         while flag_resolution:
-            if first_iteration:
+            if compute_communities:
                 self.logger.info(f'\n\t\tResolution: {resolution:.2f}, Iteration: {iteration + 1}')
                 communities = nx.community.louvain_communities(self.GRAPH, resolution=resolution, weight='weight')
             else:
                 communities = nx.connected_components(self.GRAPH) 
 
-            clusters, samples, N_g_nks = communites2clusters(communities)
+            sub_graphs = []
+            for c in communities:
+                sub_graph = self.GRAPH.subgraph(c)
+                if sub_graph.number_of_nodes() <= self.nks * 1.3:
+                    sub_graphs.append(sub_graph)
+                    continue
+                new_communities = nx.community.louvain_communities(sub_graph, resolution=resolution, weight='weight')
+                for new_c in new_communities:
+                    sub_graphs.append(sub_graph.subgraph(new_c))
+
+
+            clusters, samples, N_g_nks = communites2clusters(sub_graphs)
 
             total_bands_computed = len(self.solved) + len(clusters)
-            if not first_iteration or np.abs(10 - len(clusters) * len(samples)) < 10:
+            if not compute_communities or np.abs(10 - len(clusters) * len(samples)) < 10:
                 break
 
             if total_bands_computed == self.nbnd and len(self.solved) >= 0 and N_g_nks == 0:
@@ -1056,15 +1072,15 @@ class MATERIAL:
                 break
 
             if len(clusters) * len(samples) and (best_iteration is None or np.abs(self.nbnd - total_bands_computed) < best_score and len(self.solved) > max_solved and N_g_nks < N_g_nks_prev):
-                best_iteration = communities
+                best_iteration = sub_graphs
                 best_score = np.abs(self.nbnd - total_bands_computed)
                 max_solved = len(self.solved)
 
             iteration += 1
             if iteration == max_iter:
-                communities = best_iteration
+                sub_graphs = best_iteration
                 self.logger.info(f'\n\t\tBest Iteration:')
-                clusters, samples, N_g_nks = communites2clusters(communities)
+                clusters, samples, N_g_nks = communites2clusters(sub_graphs)
                 break
 
             if total_bands_computed > self.nbnd:
@@ -1184,11 +1200,16 @@ class MATERIAL:
             # bn = solved.bands[0] + self.min_band                                    # Select the most repeated band and apply the initial band correction
             bn = solved.bands[0]                                                    # Select the most repeated band and apply the initial band correction
             solved.bands = solved.bands[1:]                                         # Update the bands array
-            while bn in solved_bands:
+            while bn in solved_bands and len(solved.bands) > 0:
                 # If the band to be solved is already solved, the next most repeated band is selected
                 # bn = solved.bands[0] + self.min_band                                # initial band correction
                 bn = solved.bands[0]                                                # initial band correction
                 solved.bands = solved.bands[1:]                                     # Update the bands array
+            
+            if bn in solved_bands and len(solved.bands) == 0:
+                # If the cluster does not belong to any band is ignored
+                break
+
             solved_bands.append(bn)                                                 # Append the solved band
             # self.bands_final[solved.k_points, bn] = bands + self.min_band           # Update the resultant bands' attribution array
             self.bands_final[solved.k_points, bn] = bands                           # Update the resultant bands' attribution array
@@ -1489,6 +1510,8 @@ class MATERIAL:
         ###########################################################################
         # Set up the necessary data structures
         ###########################################################################
+
+
         self.correct_signalfinal = np.copy(self.signal_final)                           # New array to store the corrected signal
         self.correct_signalfinal[self.signal_final == CORRECT] = CORRECT-1              # Change the CORRECT signal to CORRECT - 1
 
@@ -1510,7 +1533,7 @@ class MATERIAL:
                                             self.matrix, self.signal_final, 
                                             self.bands_final, self.eigenvalues)         # Obtain the new signal
             
-            if last and self.final_score[bn] > 0.99 and signal == MISTAKE:
+            if last and self.final_score[bn] > 0.96 and signal == MISTAKE:
                 signal = OTHER
 
             self.correct_signalfinal[k, bn] = signal                                    # Store this new signal
@@ -1528,7 +1551,7 @@ class MATERIAL:
         if last:
             for k, bn in zip(k_error, bn_error):
                 signal = self.correct_signalfinal[k, bn]                                       # The k-point's signal
-                if self.final_score[bn] > 0.99 and signal == MISTAKE:
+                if self.final_score[bn] > 0.96 and signal == MISTAKE:
                     self.correct_signalfinal[k, bn] = OTHER
                     self.signal_final[k, bn] = POTENTIAL_CORRECT
 
@@ -1564,20 +1587,21 @@ class MATERIAL:
         mean_fitler = np.ones((3,3))                                                # It is the kernel used to select the problems' boundary
         self.GRAPH = nx.Graph()                                                     # The new Graph
         self.GRAPH.add_nodes_from(np.arange(len(self.vectors)))                     # Set the nodes
-
+        edges = []
         for bn, band in enumerate(bands_signaling):
             # For each band construct the new graph
             # bn += self.min_band                                                                     # Initial band correction
-            if self.dimensions == 2 and np.sum(band) > self.nks*0.20:
+            #if self.dimensions == 2 and np.sum(band) > self.nks*0.20:
                 # If there are more than 5% of marked points, the boundaries of 
                 # the problem are considered a problem too.
-                identify_points = correlate(band, mean_fitler, output=None,
-                                            mode='reflect', cval=0.0, origin=0) > 0                 # The mean kernel is applied
-            else:
+            #    identify_points = correlate(band, mean_fitler, output=None,
+            #                                mode='reflect', cval=0.0, origin=0) > 0                 # The mean kernel is applied
+            #else:
                 # Otherwise, just the marked points are considered
-                identify_points = band > 0
-            edges = []
-
+            #    identify_points = band > 0
+        
+            identify_points = band > 0          # The marked points are considered
+        
             if self.dimensions == 1:
                 directions = np.array([1])                                                  # Auxiliary array with the directions to evaluate the edges' existence
                 # If the problem is 1D, the graph is built by the neighbors
@@ -1653,9 +1677,30 @@ class MATERIAL:
                                     # pn = kneig + (self.bands_final[kneig, bn] - self.min_band)*self.nks
                                     pn = kneig + (self.bands_final[kneig, bn])*self.nks
                                     edges.append([p, pn])                                                       # Establish an edge between nodes p (k-point) and pn (neighbor)
+
+        self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)                       # Save the currect result
+
+        total_not_solved = np.sum(self.correct_signalfinal == NOT_SOLVED) + np.sum(self.correct_signalfinal == MISTAKE)
+        self.logger.info('Total not solved: ' + str(total_not_solved))
+        if total_not_solved > 1000:
+            print('Creating the graph')
+            self.make_connections(self.tol, not_first_iteration=True)
+            self.repeat_communities = True
+            self.alpha = self.init_alpha
+            self.tol *= 0.95
+            for edge in edges:
+                # For each edge, the graph is built
+                p, pn = edge
+                if self.GRAPH.has_edge(p, pn):
+                    # If the edge already exists, the weight is updated
+                    self.GRAPH[p][pn]['weight'] += 1                    # This value can be updated later
+                else:
+                    # Otherwise, the edge is created
+                    self.GRAPH.add_edge(p, pn, weight=1)
+        else:
+            self.repeat_communities = False
             edges = np.array(edges)
             self.GRAPH.add_edges_from(edges)                                                        # Build the identified edges
-            self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)                       # Save the currect result
             # self.correct_signalfinal[k_ot, bn_ot] = CORRECT-1                                       # Signaling as CORRECT the repeated k-points
 
     def report(self):
@@ -1795,7 +1840,9 @@ class MATERIAL:
         # Initial preparation of data structures
         # The previous and best result are stored
         ###########################################################################
-        ALPHA = alpha   # The initial alpha is 0.5. 0.5*<i|j> + 0.5*f(E)
+        self.step = step
+        self.alpha = alpha # The initial alpha is 0.5. 0.5*<i|j> + 0.5*f(E)
+        self.init_alpha = alpha
         COUNT = 0     # Counter iteration
         bands_final_flag = True
         self.final_report = ''
@@ -1809,15 +1856,17 @@ class MATERIAL:
         self.degenerate_best = None
         max_solved = 0  # The maximum number of solved bands
 
+        self.repeat_communities = False
+
         ###########################################################################
         # Algorithm
         ###########################################################################
-        while bands_final_flag and ALPHA >= min_alpha:
+        while bands_final_flag and self.alpha >= min_alpha:
             COUNT += 1
             start_time = time.time()
             self.logger.info()
-            self.logger.info(f'\n\n\t* Iteration: {COUNT} - Clustering samples for Alpha: {ALPHA:.4f}')
-            self.get_components(alpha=ALPHA, first_iteration=COUNT == 1)                    # Obtain components from a Graph
+            self.logger.info(f'\n\n\t* Iteration: {COUNT} - Clustering samples for Alpha: {self.alpha:.4f}')
+            self.get_components(alpha=self.alpha, compute_communities= COUNT == 1 or self.repeat_communities)                    # Obtain components from a Graph
 
             self.logger.info('\n\t\tCalculating output')        
             self.obtain_output()                            # Compute the result
@@ -1897,7 +1946,7 @@ class MATERIAL:
                 self.logger.info(f'\n\t\t\tBest result: {max_solved} bands')
                 self.print_report(self.correct_signalfinal, f'Validation Report: Best Iteration')     # Print result
 
-            ALPHA -= step
+            self.alpha -= step
         
         # The best result is maintained
         self.bands_final = np.copy(self.best_bands_final)
