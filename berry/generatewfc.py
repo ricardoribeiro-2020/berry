@@ -103,10 +103,10 @@ class WfcGenerator:
 
         self.logger.info(f"\tPoint choosen for sincronizing phases:  {m.rpoint}\n")
 
-        if m.z1 != None and (m.dimensions == 2 or m.dimensions == 1):
+        if m.Deltaz != 0 and (m.dimensions == 2 or m.dimensions == 1):
             zcut = True
             z1 = m.z1
-            if m.z1 + m. Deltaz > m.a3:
+            if m.z1 + m.Deltaz > m.a3:
                 splitz = True
                 z2 = m.z1 + m.Deltaz - m.a3
             else:
@@ -114,7 +114,7 @@ class WfcGenerator:
                 z2 = m.z1 + m.Deltaz
         else:
             zcut = False
-        if m.y1 != None and m.dimensions == 1:
+        if m.Deltay != 0 and m.dimensions == 1:
             ycut = True
             y1 = m.y1
             if m.y1 + m.Deltay > m.a2:

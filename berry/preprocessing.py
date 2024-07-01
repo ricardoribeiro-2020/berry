@@ -44,10 +44,10 @@ class Preprocess:
                  kvector3: List[float] = None, # type: ignore
                  wfcut: int = -1,
                  flush: bool = False,
-                 z1: float = None,
-                 Deltaz: float = None,
-                 y1: float = None,
-                 Deltay: float = None
+                 z1: float = 0,
+                 Deltaz: float = 0,
+                 y1: float = 0,
+                 Deltay: float = 0
                 ):
 
         self.work_dir = os.getcwd() + "/"    # Define working directory
@@ -328,14 +328,14 @@ class Preprocess:
             np.save(fich, self.kvector2)  # Second vector that define volume in k space
             np.save(fich, self.kvector3)  # Third vector that define volume in k space
 
-            np.save(fich, int(self.wfcut))                  # Cutoff band
-            np.save(fich, int(self.wfcut) + 1)              # Initial band
+            np.save(fich, int(self.wfcut))                       # Cutoff band
+            np.save(fich, int(self.wfcut) + 1)                   # Initial band
             np.save(fich, int(self.nbnd) - int(self.wfcut) - 1)  # Number of bands to be used in berry
-            np.save(fich, int(self.nbnd) - 1)               # Final band
-            np.save(fich, float(self.z1))                   # Cut in real space, direction z
-            np.save(fich, float(self.Deltaz))               # Size of cut, direction z
-            np.save(fich, float(self.y1))                   # Cut in real space, direction y
-            np.save(fich, float(self.Deltay))               # Size of cut, direction y
+            np.save(fich, int(self.nbnd) - 1)                    # Final band
+            np.save(fich, float(self.z1))                        # Cut in real space, direction z
+            np.save(fich, float(self.Deltaz))                    # Size of cut, direction z
+            np.save(fich, float(self.y1))                        # Cut in real space, direction y
+            np.save(fich, float(self.Deltay))                    # Size of cut, direction y
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility
             np.save(fich, "dummy")  # Saving space for future values and compatibility
