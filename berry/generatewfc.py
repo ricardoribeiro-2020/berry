@@ -167,6 +167,7 @@ class WfcGenerator:
                 # Subtract the reference phase for each point
                 psifinal0 += list(psi[i * m.nr : (i + 1) * m.nr] * np.exp(-1j * deltaphase[int(i/2)]))                # first part of spinor, all bands
                 psifinal1 += list(psi[m.nr + i * m.nr : m.nr + (i + 1) * m.nr] * np.exp(-1j * deltaphase[int(i/2)]))  # second part of spinor, all bands
+# Include here cuts to zero on arrays psifinal0 and psifinal1
 
             outfiles0 = map(lambda band: os.path.join(m.wfcdirectory, f"k0{nk_point}b0{band+initial_band}-0.wfc"), range(number_of_bands))
             outfiles1 = map(lambda band: os.path.join(m.wfcdirectory, f"k0{nk_point}b0{band+initial_band}-1.wfc"), range(number_of_bands))
@@ -199,6 +200,7 @@ class WfcGenerator:
                 # Subtract the reference phase for each point
                 psifinal += list(psi[i * m.nr : (i + 1) * m.nr] * np.exp(-1j * deltaphase[i]))
             psifinal = np.array(psifinal)
+# Include here cuts to zero on array psifinal
 
             outfiles = map(lambda band: os.path.join(m.wfcdirectory, f"k0{nk_point}b0{band+initial_band}.wfc"), range(number_of_bands))
             for i, outfile in enumerate(outfiles):
