@@ -4,7 +4,6 @@ import os
 import logging
 import subprocess
 
-from berry._subroutines.loadmeta import Deltay, Deltaz
 import numpy as np
 
 from berry import log
@@ -14,6 +13,54 @@ try:
     import berry._subroutines.loaddata as d
 except:
     pass
+
+
+
+def plot_psi(psi, x): # just for debugging
+    import matplotlib.pyplot as plt
+    cores = [
+        "black",
+        "blue",
+        "green",
+        "red",
+        "grey",
+        "brown",
+        "violet",
+        "seagreen",
+        "dimgray",
+        "darkorange",
+        "royalblue",
+        "darkviolet",
+        "maroon",
+        "yellowgreen",
+        "peru",
+        "steelblue",
+        "crimson",
+        "silver",
+        "magenta",
+        "yellow",
+    ]
+    fig = plt.figure(figsize=(6, 6))
+    xarray = np.zeros((m.nr2, m.nr3))
+    yarray = np.zeros((m.nr2, m.nr3))
+    zarray = np.zeros((m.nr2, m.nr3))
+    count = -1
+    for j in range(m.nr3):
+        for i in range(m.nr2):
+            count = count + 1
+            xarray[i, j] = d.r[x + count*m.nr1, 1]
+            yarray[i, j] = d.r[x + count*m.nr1, 2]
+
+    ax = fig.add_subplot(projection='3d')
+    for banda in range(0, m.nbnd):
+        count = -1
+        for j in range(m.nr3):
+            for i in range(m.nr2):
+                count = count + 1
+                zarray[i, j] = banda*3 + psi[x + count*m.nr1 + banda*m.nr]
+        colorband = np.mod(banda,20)
+        ax.plot_wireframe(xarray, yarray, zarray, color=cores[colorband])
+    plt.show()
 
 
 class WfcGenerator:
@@ -62,6 +109,8 @@ class WfcGenerator:
             self.logger.info("\tNonrelativistic calculation, will use wfck2r.x")
 
 
+        self.cut = self._cut()
+
         # Set which k-points and bands will use (for debugging)
         if isinstance(self.nk_points, range):
             self.logger.info("\n\tWill run for all k-points and bands")
@@ -104,27 +153,85 @@ class WfcGenerator:
         self.logger.info(f"\tPoint choosen for sincronizing phases:  {m.rpoint}\n")
 
         if m.Deltaz != 0 and (m.dimensions == 2 or m.dimensions == 1):
-            zcut = True
-            z1 = m.z1
-            if m.z1 + m.Deltaz > m.a3:
-                splitz = True
-                z2 = m.z1 + m.Deltaz - m.a3
+            self.zcut = True
+            self.z1 = m.z1
+            if m.z1 + m.Deltaz > m.a3[2]:
+                self.splitz = True
+                self.z2 = m.z1 + m.Deltaz - m.a3[2]
             else:
-                splitz = False
-                z2 = m.z1 + m.Deltaz
+                self.splitz = False
+                self.z2 = m.z1 + m.Deltaz
         else:
-            zcut = False
+            self.zcut = False
         if m.Deltay != 0 and m.dimensions == 1:
-            ycut = True
-            y1 = m.y1
-            if m.y1 + m.Deltay > m.a2:
-                splity = True
-                y2 = m.y1 + m.Deltay - m.a2
+            self.ycut = True
+            self.y1 = m.y1
+            if m.y1 + m.Deltay > m.a2[1]:
+                self.splity = True
+                self.y2 = m.y1 + m.Deltay - m.a2[1]
             else:
-                splity = False
-                y2 = m.y1 + m.Deltay
+                self.splity = False
+                self.y2 = m.y1 + m.Deltay
         else:
-            ycut = False
+            self.ycut = False
+
+    def _cut(self):  # selection of the cut on the psi
+        if self.zcut and self.ycut:
+            if self.splitz and self.splity:
+                def cut(psi):
+                    for i in range(len(psi)):
+                        if self.y1 < d.r[i % m.nr,1] or self.y2 > d.r[i % m.nr,1] or self.z1 < d.r[i % m.nr,2] or self.z2 > d.r[i % m.nr,2]:
+                            psi[i] = 0
+                    return psi
+                
+            elif self.splitz:
+                def cut(psi):
+                    for i in range(len(psi)):
+                        if (self.y1 < d.r[i % m.nr,1] and self.y2 > d.r[i % m.nr,1]) or self.z1 < d.r[i % m.nr,2] or self.z2 > d.r[i % m.nr,2]:
+                            psi[i] = 0
+                    return psi
+                
+            elif self.splity:
+                def cut(psi):
+                    for i in range(len(psi)):
+                        if self.y1 < d.r[i % m.nr,1] or self.y2 > d.r[i % m.nr,1] or (self.z1 < d.r[i % m.nr,2] and self.z2 > d.r[i % m.nr,2]):
+                            psi[i] = 0
+                    return psi
+            else:
+                def cut(psi):
+                    for i in range(len(psi)):
+                        if (self.y1 < d.r[i % m.nr,1] and self.y2 > d.r[i % m.nr,1]) or (self.z1 < d.r[i % m.nr,2] and self.z2 > d.r[i % m.nr,2]):
+                            psi[i] = 0
+                    return psi
+        elif self.zcut:
+            if self.splitz:
+                def cut(psi):
+                    for i in range(len(psi)):
+                        if self.z1 < d.r[i % m.nr,2] or self.z2 > d.r[i % m.nr,2]:
+                            psi[i] = 0
+                    return psi
+            else:
+                def cut(psi):
+                    for i in range(len(psi)):
+                        if self.z1 < d.r[i % m.nr,2] and self.z2 > d.r[i % m.nr,2]:
+                            psi[i] = 0
+                    return psi
+        elif self.ycut:
+            if self.splity:
+                def cut(psi):
+                    for i in range(len(psi)):
+                        if self.y1 < d.r[i % m.nr,1] or self.y2 > d.r[i % m.nr,1]:
+                            psi[i] = 0
+                    return psi
+            else:
+                def cut(psi):
+                    for i in range(len(psi)):
+                        if self.y1 < d.r[i % m.nr,1] and self.y2 > d.r[i % m.nr,1]:
+                            psi[i] = 0
+                    return psi
+        else:
+            cut = None
+        return cut
 
 
     def _wfck2r(self, nk_point: int, initial_band: int, final_band: int, number_of_bands: int):
@@ -167,7 +274,11 @@ class WfcGenerator:
                 # Subtract the reference phase for each point
                 psifinal0 += list(psi[i * m.nr : (i + 1) * m.nr] * np.exp(-1j * deltaphase[int(i/2)]))                # first part of spinor, all bands
                 psifinal1 += list(psi[m.nr + i * m.nr : m.nr + (i + 1) * m.nr] * np.exp(-1j * deltaphase[int(i/2)]))  # second part of spinor, all bands
-# Include here cuts to zero on arrays psifinal0 and psifinal1
+            if self.cut is not None:
+                psifinal0 = self.cut(psifinal0)
+                psifinal1 = self.cut(psifinal1)
+            # plot_psi(psifinal0, 1) # for debugging
+            # plot_psi(psifinal1, 1) # for debugging
 
             outfiles0 = map(lambda band: os.path.join(m.wfcdirectory, f"k0{nk_point}b0{band+initial_band}-0.wfc"), range(number_of_bands))
             outfiles1 = map(lambda band: os.path.join(m.wfcdirectory, f"k0{nk_point}b0{band+initial_band}-1.wfc"), range(number_of_bands))
@@ -199,9 +310,12 @@ class WfcGenerator:
 
                 # Subtract the reference phase for each point
                 psifinal += list(psi[i * m.nr : (i + 1) * m.nr] * np.exp(-1j * deltaphase[i]))
+            if self.cut is not None:
+                psifinal = self.cut(psifinal)
             psifinal = np.array(psifinal)
-# Include here cuts to zero on array psifinal
 
+            psifinal = self.cut(psifinal)
+            # plot_psi(psifinal, 1) # for debugging
             outfiles = map(lambda band: os.path.join(m.wfcdirectory, f"k0{nk_point}b0{band+initial_band}.wfc"), range(number_of_bands))
             for i, outfile in enumerate(outfiles):
                 with open(outfile, "wb") as fich:

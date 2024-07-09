@@ -548,7 +548,15 @@ def preprocessing_cli(args: argparse.Namespace):
         if ii[0] == "kvector3":
             args_dict["kvector3"] = [float(ii[1]), float(ii[2]), float(ii[3])]   
         if ii[0] == "wfcut":
-            args_dict["wfcut"] = ii[1]         
+            args_dict["wfcut"] = ii[1]
+        if ii[0] == "y1":
+            args_dict["y1"] = float(ii[1])                 
+        if ii[0] == "deltay":
+            args_dict["Deltay"] = float(ii[1])              
+        if ii[0] == "z1":
+            args_dict["z1"] = float(ii[1])      
+        if ii[0] == "deltaz":
+            args_dict["Deltaz"] = float(ii[1])              
 
     args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
     args_dict["logger_name"] = args.o
