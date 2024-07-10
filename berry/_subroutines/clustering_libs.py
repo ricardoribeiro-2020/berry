@@ -1682,12 +1682,12 @@ class MATERIAL:
 
         total_not_solved = np.sum(self.correct_signalfinal == NOT_SOLVED) + np.sum(self.correct_signalfinal == MISTAKE)
         self.logger.info('Total not solved: ' + str(total_not_solved))
-        if total_not_solved > 1000:
+        if self.tol > 0.1 and total_not_solved > 1000:
             print('Creating the graph')
             self.make_connections(self.tol, not_first_iteration=True)
             self.repeat_communities = True
             self.alpha = self.init_alpha
-            self.tol *= 0.95
+            self.tol *= 0.90
             for edge in edges:
                 # For each edge, the graph is built
                 p, pn = edge
