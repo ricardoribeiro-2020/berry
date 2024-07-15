@@ -314,7 +314,6 @@ class WfcGenerator:
                 psifinal = self.cut(psifinal)
             psifinal = np.array(psifinal)
 
-            psifinal = self.cut(psifinal)
             # plot_psi(psifinal, 1) # for debugging
             outfiles = map(lambda band: os.path.join(m.wfcdirectory, f"k0{nk_point}b0{band+initial_band}.wfc"), range(number_of_bands))
             for i, outfile in enumerate(outfiles):
