@@ -155,7 +155,7 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
     # 1. DEFINING THE CONSTANTS
     ########################################################################### 
     RY    = 13.6056923                                                          # Conversion factor from Ry to eV
-    VK    = (m.step / 2 * np.pi) ** m.dimensions                                # element of volume in k-space in units of bohr^-1
+    VK    = (m.step / (2 * np.pi)) ** m.dimensions                                # element of volume in k-space in units of bohr^-1
     # the '4' comes from spin degeneracy, that is summed in s and s'
     if m.noncolin:
         CONST = 2j / (2 * np.pi) ** m.dimensions
