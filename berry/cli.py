@@ -124,7 +124,7 @@ berry [package options] script parameter [script options]
                                                          description="Calculates the Berry connections and curvatures.")
         if CONDUCTIVITY:
             conductivity_parser = main_sub_parser.add_parser("conductivity", 
-                                                             help="Calculates the optical linear conductivity of the system..", 
+                                                             help="Calculates the optical linear conductivity of the system.", 
                                                              description="Calculates the optical linear conductivity of the system.")
         if SHG:
             shg_parser = main_sub_parser.add_parser("shg", 
@@ -358,12 +358,24 @@ berry [package options] script parameter [script options]
                                                  metavar=f"cb ({vb+1}-{m.nbnd-1})",
                                                  choices=range(m.vb+1, m.nbnd)     , 
                                                  help="Index of the highest conduction band to consider.")
+                conductivity_parser.add_argument("-mb",
+                                                 metavar=f"[{m.initial_band}-{m.nbnd-1}]",
+                                                 type=int,
+                                                 choices=range(m.initial_band, m.nbnd),
+                                                 default=m.initial_band,
+                                                 help=f"Minimum band to consider (default: {m.initial_band}).")
             else:
                 conductivity_parser.add_argument("cb" , 
                                                  type=int ,
                                                  metavar=f"cb ({m.vb+1}-{m.nbnd-1})", 
                                                  choices=range(m.vb+1, m.nbnd)     , 
                                                  help="Index of the highest conduction band to consider.")
+                conductivity_parser.add_argument("-mb",
+                                                 metavar=f"[0-{m.nbnd-1}]",
+                                                 type=int,
+                                                 choices=range(m.nbnd),
+                                                 default=0,
+                                                 help="Minimum band to consider (default: 0).")
             conductivity_parser.add_argument("-np"       , 
                                              type=int  , 
                                              default=1    , 
@@ -404,11 +416,24 @@ berry [package options] script parameter [script options]
                                         metavar=f"cb ({vb+1}-{m.nbnd-1})", 
                                         choices=range(m.vb+1, m.nbnd), 
                                         help="Index of the highest conduction band to consider.")
+                shg_parser.add_argument("-mb",
+                                        metavar=f"[{m.initial_band}-{m.nbnd-1}]",
+                                        type=int,
+                                        choices=range(m.initial_band, m.nbnd),
+                                        default=m.initial_band,
+                                        help=f"Minimum band to consider (default: {m.initial_band}).")
+ 
             else:
                 shg_parser.add_argument("cb" , 
                                         type=int,metavar=f"cb ({m.vb+1}-{m.nbnd-1})", 
                                         choices=range(m.vb+1, m.nbnd), 
                                         help="Index of the highest conduction band to consider.")
+                shg_parser.add_argument("-mb",
+                                        metavar=f"[0-{m.nbnd-1}]",
+                                        type=int,
+                                        choices=range(m.nbnd),
+                                        default=0,
+                                        help="Minimum band to consider (default: 0).")
             shg_parser.add_argument("-np", 
                                     type=int, 
                                     default=1, 
@@ -695,6 +720,7 @@ def conductivity_cli(args: argparse.Namespace):
     args_dict["logger_name"] = args.o
     args_dict["npr"] = args.np
     args_dict["conduction_band"] = args.cb
+    args_dict["min_band"] = args.mb
     args_dict["energy_max"] = args.eM
     args_dict["energy_step"] = args.eS
     args_dict["brd"] = args.brd
@@ -717,6 +743,7 @@ def shg_cli(args: argparse.Namespace):
     args_dict["logger_name"] = args.o
     args_dict["npr"] = args.np
     args_dict["conduction_band"] = args.cb
+    args_dict["min_band"] = args.mb
     args_dict["energy_max"] = args.eM
     args_dict["energy_step"] = args.eS
     args_dict["brd"] = args.brd

@@ -33,7 +33,7 @@ def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_con
 
 def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
     kp = 0
-    eigenvalues = d.eigenvalues[:,initial_band:] # initial band correction
+    eigenvalues = d.eigenvalues[:, m.initial_band:] # initial band correction
     if m.dimensions == 1:
         eigen_array = np.zeros((m.nkx, number_of_bands))
         for i in range(m.nkx):
@@ -234,14 +234,19 @@ def calculate_shg(omega: float, broadning: float):
         return (omega, np.sum(np.sum(np.sum(sig, axis=0), axis=0), axis=0) * VK)
 
 
-def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, brd: float = 0.01, logger_name: str = "shg", logger_level: int = logging.INFO, flush: bool = False):
+def run_shg(conduction_band: int, min_band: int = 0, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, brd: float = 0.01, logger_name: str = "shg", logger_level: int = logging.INFO, flush: bool = False):
     global gamma1, gamma2, gamma3, gamma12, gamma13, fermi, delta_ea, grad_dea, band_list, berry_connections, OMEGA_SHAPE, CONST, VK, initial_band, number_of_bands
     logger = log(logger_name, "SECOND HARMONIC GENERATOR", level=logger_level, flush=flush)
 
     logger.header()
 
-    initial_band = m.initial_band if m.initial_band != "dummy" else 0                # for backward compatibility
-    number_of_bands = m.number_of_bands if m.number_of_bands != "dummy" else m.nbnd  # for backward compatibility
+    if min_band > conduction_band:
+        logger.info("Error: Minimum band greater than conduction band!")
+        logger.footer()
+        exit(1)
+
+    initial_band = min_band
+    number_of_bands = conduction_band - initial_band + 1
     broadning = brd*1j
 
     ###########################################################################
@@ -258,6 +263,7 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
                                                                                 # another minus comes from the negative charge
 
     band_list   = list(range(conduction_band + 1 - initial_band))
+    band_info   = list(range(initial_band, conduction_band + 1))
 
     #TODO: Add docstring with these comments
     # Maximum energy (Ry)
@@ -287,7 +293,7 @@ def run_shg(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_
     ###########################################################################
     logger.info(f"\tUsing {npr} processes")
     
-    logger.info(f"\n\tList of bands: {band_list}")
+    logger.info(f"\n\tList of bands: {band_info}")
     logger.info(f"\tNumber of k-points in each direction: {m.nkx} {m.nky} {m.nkz}")
     logger.info(f"\tNumber of bands: {m.nbnd}")
     logger.info(f"\tk-points step, dk {m.step}")                                      # Defines the step for gradient calculation dk

@@ -30,7 +30,7 @@ def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_con
 
 def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
     kp = 0
-    eigenvalues = d.eigenvalues[:,m.initial_band:] # initial band correction
+    eigenvalues = d.eigenvalues[:, m.initial_band:] # initial band correction
     if m.dimensions == 1:
         eigen_array = np.zeros((m.nkx, number_of_bands))
         for i in range(m.nkx):
@@ -141,15 +141,20 @@ def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.nd
 
 #TODO: ADD assertions to all functions in order to check if the inputs are correct
 #IDEA: Maybe create a type checking decorator (USE pydantic)
-def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5, energy_step: float = 0.001, brd: float = 0.01, logger_name: str = "condutivity", logger_level: int = logging.INFO, flush: bool = False):
+def run_conductivity(conduction_band: int, npr: int = 1, min_band: int = 0, energy_max: float = 2.5, energy_step: float = 0.001, brd: float = 0.01, logger_name: str = "condutivity", logger_level: int = logging.INFO, flush: bool = False):
     global band_list, berry_connections, OMEGA_SHAPE, CONST, VK, initial_band, number_of_bands
     logger = log(logger_name, "CONDUCTIVITY", level=logger_level, flush=flush)
     # conduction_band is the number of the highest conduction band to consider.
 
     logger.header()
 
-    initial_band = m.initial_band if m.initial_band != "dummy" else 0                # for backward compatibility
-    number_of_bands = m.number_of_bands if m.number_of_bands != "dummy" else m.nbnd  # for backward compatibility
+    initial_band = min_band
+
+    if initial_band > conduction_band:
+        logger.info(f"Error: Minimum band greater than conduction band!")
+        logger.footer()
+        exit(1)
+    number_of_bands = conduction_band - initial_band + 1
     broadning = brd*1j
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
@@ -163,6 +168,7 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
         CONST = 4 * 2j / (2 * np.pi) ** m.dimensions                            # = i2e^2/hslash 1/(2pi)^2     in Rydberg units
 
     band_list   = list(range(conduction_band + 1 - initial_band))
+    band_info   = list(range(initial_band, conduction_band + 1))
 
     #TODO: add function docstring with these comments
     # Maximum energy (Ry)
@@ -188,7 +194,7 @@ def run_conductivity(conduction_band: int, npr: int = 1, energy_max: float = 2.5
     ########################################################################### 
     logger.info(f"\tUsing {npr} processes")
 
-    logger.info(f"\n\tList of bands: {band_list}")
+    logger.info(f"\n\tList of bands: {band_info}")
     logger.info(f"\tNumber of k-points in each direction: {m.nkx} {m.nky} {m.nkz}")
     logger.info(f"\tNumber of bands: {m.nbnd}")
     logger.info(f"\tk-points step, dk {m.step}")                                    # Defines the step for gradient calculation dk
