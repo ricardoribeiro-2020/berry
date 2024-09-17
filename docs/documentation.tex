@@ -834,31 +834,31 @@ Another way of seeing this is:
 
  When performing 1D and 2D calculations, the wavefunctions provided by the DFT don't fill the whole
  supercell.
- There are regions in the supercell where the wavefunctions should be 0, but on reality 
+ There are regions in the supercell where the wavefunctions should be zero, but actually
  there is some noise.
  Knowing this, it should be possible to remove part of the supercell, saving computational
  resources and without compromising the results.
 
  In order to do this, the parameters \verb|z1| and \verb|deltaz| and/or \verb|y1| and \verb|deltay| 
- are needed to be present on the input file.
+  must be included in the input file.
  \verb|z1| and \verb|y1| are used to define the initial limit of the region to be removed, and 
- should have a value between 0 and a3 and a2, respectively.
+ should have a value between 0 and $a_3$ and $a_2$, respectively.
  Then \verb|deltaz| and \verb|deltay| define the width of the region to be removed, and should have 
- a value between 0 and a3 and a2, respectively. The default values are 0, meaning that won't remove 
- any volume.
- The final limit, \verb|z2| and \verb|y2| is then calculated, by one of the following expressions:
+ a value between 0 and $a_3$ and $a_2$, respectively.
+ The default values are 0, meaning no volume is removed.
+ The final limit, \verb|z2| and \verb|y2| is then calculated by one of the following expressions:
  
 \[
-z2=
+z_2=
 \begin{cases}
-z_1+\Delta z, & \text{if } z_1 \leq a_3 \\
+z_1+\Delta z, & \text{if } z_1+\Delta z \leq a_3 \\
 z_1+\Delta z-a_3, & otherwise
 \end{cases}
 \]
 \[
-y2=
+y_2=
 \begin{cases}
-y_1+\Delta y, & \text{if } y_1 \leq a_2 \\
+y_1+\Delta y, & \text{if } y_1+\Delta y \leq a_2 \\
 y_1+\Delta y-a_2, & otherwise
 \end{cases}
 \]
@@ -870,13 +870,13 @@ y_1+\Delta y-a_2, & otherwise
     \centering
     \begin{subfigure}{.5\textwidth}
         \centering
-        \includegraphics[width=.5\linewidth]{cnt_center_cut.png} 
+        \includegraphics[width=.5\linewidth]{figures/cnt_vcut_center.png}
         \label{fig:vcutcenter}
         \caption{}
     \end{subfigure}%
     \begin{subfigure}{.5\textwidth}
         \centering
-        \includegraphics[width=.5\linewidth]{cnt_center_cut.png} 
+        \includegraphics[width=.5\linewidth]{figures/cnt_vcut_center.png}
         \label{fig:vcutsides}
         \caption{}
     \end{subfigure}
@@ -1556,7 +1556,7 @@ A component is a sub-graph (i.e., a smaller graph $g$ belonging to a bigger one 
         \caption{}
         \label{fig:Cb}
     \end{subfigure}
-    \caption{Figure \ref{fig:Ca} represents a general graph $G(V, E)$ where the vertices $V$ are the gray circles, and the edges $E$ are the line that connects them. Figure \ref{fig:Cb} shows the $G$'s components. Each component is identified with a different color.}
+    \caption{Figure }%\ref{fig:Ca} represents a general graph $G(V, E)$ where the vertices $V$ are the gray circles, and the edges $E$ are the line that connects them. Figure \ref{fig:Cb} shows the $G$'s components. Each component is identified with a different color.}
     \label{fig:components}
 \end{figure}
 
