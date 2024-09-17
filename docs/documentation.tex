@@ -327,7 +327,7 @@ Electrons in a crystal can be described by the solutions to time independent Sch
 \begin{equation}\label{eq:Schrodinger}
  H_{\pmb{k}}\psi_{\pmb{k},s}(\pmb{r}) = E_{\pmb{k},s}\psi_{\pmb{k},s}(\pmb{r})
 \end{equation}
-where $H_{\pmb{k}}$ is the hamiltonean of the system, which has the periodicity of the crystal lattice,
+where $H_{\pmb{k}}$ is the hamiltonian of the system, which has the periodicity of the crystal lattice,
 and is a function of the momentum $\pmb{k}$.
 For each $\pmb{k}$ we have an equation \ref{eq:Schrodinger} that gives a (infinite) set of solutions,
 which are labeled by the letter $s$.
@@ -808,7 +808,7 @@ Another way of seeing this is:
  It is necessary to specify the set of bands that will be processed.
  It is important to obtain and look at a normal band diagram of the material before chosing
  what bands to include.
- Otherwise, a large ammount of time and computer ressources may be spent uselessly.
+ Otherwise, a large amount of time and computer resources may be spent uselessly.
 
  The parameter \verb|nbnd| (mandatory) gives the number of bands to be calculated.
  This number will be used in the nscf calculation of QE.
@@ -825,10 +825,65 @@ Another way of seeing this is:
  So, if \verb|wfcut| is negative, all bands will be included.
 
  It is important that there is a gap between the excluded bands and the included ones.
- Otherwise, there will likelly be incomplete (and so useless) bands.
+ Otherwise, there will likely be incomplete (and so useless) bands.
 
 
+\bigskip
 
+ \subsection{Removing volume from the supercell}
+
+ When performing 1D and 2D calculations, the wavefunctions provided by the DFT don't fill the whole
+ supercell.
+ There are regions in the supercell where the wavefunctions should be 0, but on reality 
+ there is some noise.
+ Knowing this, it should be possible to remove part of the supercell, saving computational
+ resources and without compromising the results.
+
+ In order to do this, the parameters \verb|z1| and \verb|deltaz| and/or \verb|y1| and \verb|deltay| 
+ are needed to be present on the input file.
+ \verb|z1| and \verb|y1| are used to define the initial limit of the region to be removed, and 
+ should have a value between 0 and a3 and a2, respectively.
+ Then \verb|deltaz| and \verb|deltay| define the width of the region to be removed, and should have 
+ a value between 0 and a3 and a2, respectively. The default values are 0, meaning that won't remove 
+ any volume.
+ The final limit, \verb|z2| and \verb|y2| is then calculated, by one of the following expressions:
+ 
+\[
+z2=
+\begin{cases}
+z_1+\Delta z, & \text{if } z_1 \leq a_3 \\
+z_1+\Delta z-a_3, & otherwise
+\end{cases}
+\]
+\[
+y2=
+\begin{cases}
+y_1+\Delta y, & \text{if } y_1 \leq a_2 \\
+y_1+\Delta y-a_2, & otherwise
+\end{cases}
+\]
+
+ Each of the cases will remove volume from the supercell either from the middle (see figure 
+ \ref{fig:vcutcenter}) or from its the sides (see figure \ref{fig:vcutsides}).
+
+\begin{figure}[h]
+    \centering
+    \begin{subfigure}{.5\textwidth}
+        \centering
+        \includegraphics[width=.5\linewidth]{cnt_center_cut.png} 
+        \label{fig:vcutcenter}
+        \caption{}
+    \end{subfigure}%
+    \begin{subfigure}{.5\textwidth}
+        \centering
+        \includegraphics[width=.5\linewidth]{cnt_center_cut.png} 
+        \label{fig:vcutsides}
+        \caption{}
+    \end{subfigure}
+    \caption{When \(y_1 \leq a_2\), the region removed is located on the center of the supercell
+    (figure \ref{fig:vcutcenter}). Otherwise, the region removed will be splitted into two sides (figure \ref{fig:vcutsides}).}
+    \label{fig:vcut}
+\end{figure}
 
 
 
