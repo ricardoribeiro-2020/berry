@@ -70,6 +70,17 @@ def berry_connection(n_pos: int, n_gra: int):
     np.save(os.path.join(m.geometry_dir, f"berryConn{n_pos}_{n_gra}.npy"), bcc)
 
 
+def chern_number(curv) -> None:
+    chern = 0
+    if m.dimensions == 2:
+        chern = np.sum(curv) * (np.linalg.norm(m.b1) / m.nkx) * (np.linalg.norm(m.b2) / m.nky) / (2 * np.pi)
+    else:  # 3D 
+        chern = (np.sum(curv[0]) * np.linalg.norm(m.b1) / m.nkx
+               + np.sum(curv[1]) * np.linalg.norm(m.b2) / m.nky
+               + np.sum(curv[2]) * np.linalg.norm(m.b3) / m.nkz) / (2 * np.pi)
+
+    return chern
+
 def berry_curvature(idx: int, idx_: int) -> None:
     """
     Calculates the Berry curvature.
@@ -201,11 +212,15 @@ def berry_curvature(idx: int, idx_: int) -> None:
 
     np.save(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx_}.npy"), bcr)
 
-def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curv", "conn", "both"] = "both", logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
+    if idx == idx_:
+        chern_num[idx] = chern_number(bcr)
+    
+
+def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curv", "conn", "both", "chern"] = "both", logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
     if m.noncolin:
-        global wfcgra0, wfcgra1, logger
+        global wfcgra0, wfcgra1, chern_num, logger
     else:
-        global wfcgra, logger
+        global wfcgra, chern_num, logger
 
     logger = log(logger_name, "BERRY GEOMETRY", level=logger_level, flush=flush)
 
@@ -223,6 +238,8 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
     else:
         GRA_SIZE  = m.nr * m.dimensions * m.nkx * m.nky * m.nkz
         GRA_SHAPE = (m.nr, m.dimensions, m.nkx, m.nky, m.nkz)
+
+    chern_num = np.zeros((max_band + 1), dtype=np.complex128)
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
@@ -289,6 +306,16 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
 
                     with Pool(npr) as pool:
                         pool.starmap(berry_curvature, work_load)
+            np.save(os.path.join(m.geometry_dir, "chern_number.npy"), chern_num)
+            logger.info(f"\tchern_number.npy saved")
+
+        if prop == "chern":
+            for idx in range(min_band, max_band + 1):
+                curv = np.load(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx}.npy"))
+                chern_num[idx] = chern_number(curv)   
+            np.save(os.path.join(m.geometry_dir, "chern_number.npy"), chern_num)
+            logger.info(f"\tchern_number.npy saved")
+
 
     ###########################################################################
     # Finished
