@@ -175,7 +175,7 @@ def berry_curvature(idx: int, idx_: int) -> None:
             
                 ##  we are assuming that normalization is \sum |\psi|^2 = 1
                 ##  if not, needs division by m.nr
-                return bcr
+                return bcr / m.nr
             
         else:                                # 3D case
             @numba_njit
