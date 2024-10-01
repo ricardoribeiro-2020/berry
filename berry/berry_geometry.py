@@ -70,10 +70,10 @@ def berry_connection(n_pos: int, n_gra: int):
     np.save(os.path.join(m.geometry_dir, f"berryConn{n_pos}_{n_gra}.npy"), bcc)
 
 
-def chern_number(curv) -> None:
+def chern_number(curv) -> np.complex128:
     chern = 0
     if m.dimensions == 2:
-        chern = np.sum(curv) * (np.linalg.norm(m.b1) / m.nkx) * (np.linalg.norm(m.b2) / m.nky) / (2 * np.pi)
+        chern = np.sum(curv[0]) * (np.linalg.norm(m.b1) / m.nkx) * (np.linalg.norm(m.b2) / m.nky) / (2 * np.pi)
     else:  # 3D 
         chern = (np.sum(curv[0]) * np.linalg.norm(m.b1) / m.nkx
                + np.sum(curv[1]) * np.linalg.norm(m.b2) / m.nky
@@ -211,12 +211,9 @@ def berry_curvature(idx: int, idx_: int) -> None:
     logger.info(f"\tberry_curvature{idx}_{idx_} calculated in {time() - start:.2f} seconds")
 
     np.save(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx_}.npy"), bcr)
-
-    if idx == idx_:
-        chern_num[idx] = chern_number(bcr)
     
 
-def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curv", "conn", "both", "chern"] = "both", logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
+def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curv", "conn", "both", "chern"] = "both", digits: int = 0,logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
     if m.noncolin:
         global wfcgra0, wfcgra1, chern_num, logger
     else:
@@ -306,15 +303,19 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
 
                     with Pool(npr) as pool:
                         pool.starmap(berry_curvature, work_load)
-            np.save(os.path.join(m.geometry_dir, "chern_number.npy"), chern_num)
-            logger.info(f"\tchern_number.npy saved")
 
         if prop == "chern":
             for idx in range(min_band, max_band + 1):
                 curv = np.load(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx}.npy"))
-                chern_num[idx] = chern_number(curv)   
+                chern_num[idx] = chern_number(curv)
+
+            # save the chern number
+            chern_num = np.abs(np.round(np.real(chern_num), decimals=digits))
             np.save(os.path.join(m.geometry_dir, "chern_number.npy"), chern_num)
             logger.info(f"\tchern_number.npy saved")
+            logger.info(f"\n{'Band:' : >13} Chern Number")
+            for ind, val in enumerate(chern_num):
+                logger.info(f"{f'{ind}:' : >13} {val}")
 
 
     ###########################################################################

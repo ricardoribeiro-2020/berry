@@ -340,6 +340,12 @@ berry [package options] script parameter [script options]
                                          metavar="",
                                          choices=["both", "conn", "curv", "chern"], 
                                          help="Specify which proprety to calculate. Possible choices are 'both', 'conn' and 'curv' (default: both)")
+            geometry_parser.add_argument("-d", 
+                                         type=int, 
+                                         default=1,
+                                         metavar="", 
+                                         help="Number of decimal places to save chern number with (default: 0)")
+
             geometry_parser.add_argument("-flush", 
                                          action="store_true", 
                                          help="Flushes output into stdout.")
@@ -701,6 +707,7 @@ def berry_props_cli(args: argparse.Namespace):
     args_dict["min_band"] = args.mb
     args_dict["max_band"] = args.Mb
     args_dict["prop"] = args.prop
+    args_dict["digits"] = args.d
     args_dict["flush"] = args.flush
 
     run_berry_geometry(**args_dict)
