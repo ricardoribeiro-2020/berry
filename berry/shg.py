@@ -20,7 +20,7 @@ except:
     pass
 
 
-def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_conn_shape: Tuple[int]) -> np.ndarray:
+def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_conn_shape: Tuple[int], initial_band: int) -> np.ndarray:
     base = Array(ctypes.c_double, berry_conn_size * 2, lock = False)
     berry_connections = np.frombuffer(base, dtype=np.complex128).reshape(berry_conn_shape)
 
@@ -274,18 +274,18 @@ def run_shg(conduction_band: int, min_band: int = 0, npr: int = 1, energy_max: f
     if m.dimensions == 1:
         GAMMA_SHAPE = (m.nkx, cb, cb)
         OMEGA_SHAPE = (m.nkx, cb, cb)
-        berry_conn_size  = 2 * m.nkx * (cb) ** 2
-        berry_conn_shape = (cb, cb, 2, m.nkx)
+        berry_conn_size  = m.dimensions * m.nkx * (cb) ** 2
+        berry_conn_shape = (cb, cb, m.dimensions, m.nkx)
     elif m.dimensions == 2:
         GAMMA_SHAPE = (m.nkx, m.nky, cb, cb)
         OMEGA_SHAPE = (m.nkx, m.nky, cb, cb)
-        berry_conn_size  = 2 * m.nkx * m.nky * (cb) ** 2
-        berry_conn_shape = (cb, cb, 2, m.nkx, m.nky)
+        berry_conn_size  = m.dimensions * m.nkx * m.nky * (cb) ** 2
+        berry_conn_shape = (cb, cb, m.dimensions, m.nkx, m.nky)
     else:
         GAMMA_SHAPE = (m.nkx, m.nky, m.nkz, cb, cb)
         OMEGA_SHAPE = (m.nkx, m.nky, m.nkz, cb, cb)
-        berry_conn_size  = 2 * m.nkx * m.nky * m.nkz * (cb) ** 2
-        berry_conn_shape = (cb, cb, 2, m.nkx, m.nky, m.nkz)
+        berry_conn_size  = m.dimensions * m.nkx * m.nky * m.nkz * (cb) ** 2
+        berry_conn_shape = (cb, cb, m.dimensions, m.nkx, m.nky, m.nkz)
 
 
     ###########################################################################
@@ -322,7 +322,7 @@ def run_shg(conduction_band: int, min_band: int = 0, npr: int = 1, energy_max: f
 
     bandsfinal                  = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
     eigen_array                 = correct_eigenvalues(bandsfinal)
-    berry_connections           = load_berry_connections(conduction_band, berry_conn_size, berry_conn_shape)
+    berry_connections           = load_berry_connections(conduction_band, berry_conn_size, berry_conn_shape, initial_band)
     fermi, delta_ea, grad_dea   = get_fermi_delta_ea_grad_ea(grad, eigen_array, conduction_band - initial_band)
 
     gamma1                      = np.zeros(GAMMA_SHAPE, dtype=np.complex128)

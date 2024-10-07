@@ -10,6 +10,8 @@ import numpy as np
 
 from berry import log
 from berry.utils.jit import numba_njit
+from berry._subroutines.comutator import deriv
+from berry.shg import load_berry_connections
 
 try:
     import berry._subroutines.loaddata as d
@@ -211,14 +213,63 @@ def berry_curvature(idx: int, idx_: int) -> None:
     logger.info(f"\tberry_curvature{idx}_{idx_} calculated in {time() - start:.2f} seconds")
 
     np.save(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx_}.npy"), bcr)
+
+
+def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
+    """
+    Calculates the Berry curvature using the curl of Berry connections.
+    """
+
+    
+    
+    if m.dimensions == 2:                # 2D case
+        @numba_njit
+        def aux_curvature() -> np.ndarray:
+            """
+            Auxiliary function to calculate the Berry curvature.
+            Attention: this is valid for 2D and 3D materials.
+            """
+
+            #bcr = np.zeros(wfcgra[0,0].shape, dtype=np.complex128)
+            bcr = deriv(berry_connection, idx, idx_, 0, 1, m.step) 
+            - deriv(berry_connection, idx, idx_, 1, 0, m.step)
+        
+            return bcr 
+        
+    else:                                # 3D case
+        @numba_njit
+        def aux_curvature():
+            """
+            Auxiliary function to calculate the Berry curvature.
+            Attention: this is valid for 2D and 3D materials.
+            """
+
+            bcr0 = deriv(berry_connection, idx, idx_, 1, 2, m.step)
+            - deriv(berry_connection, idx, idx_, 2, 1, m.step)
+
+            bcr1 = deriv(berry_connection, idx, idx_, 2, 0, m.step)
+            - deriv(berry_connection, idx, idx_, 0, 2, m.step)
+
+            bcr2 = deriv(berry_connection, idx, idx_, 0, 1, m.step)
+            - deriv(berry_connection, idx, idx_, 1, 0, m.step)
+
+            return bcr0, bcr1, bcr2
+
+    start = time()
+
+    bcr = aux_curvature() if m.dimensions == 2 else np.array(aux_curvature())
+    logger.info(f"\tberry_curvature{idx}_{idx_}_curl calculated in {time() - start:.2f} seconds")
+
+    np.save(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx_}_curl.npy"), bcr)
+    
+    return bcr
     
 
-def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curv", "conn", "both", "chern"] = "both", digits: int = 0,logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
+def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curv", "conn", "both", "chern", "chern_curl"] = "both", digits: int = 0, logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
     if m.noncolin:
         global wfcgra0, wfcgra1, chern_num, logger
     else:
         global wfcgra, chern_num, logger
-
     logger = log(logger_name, "BERRY GEOMETRY", level=logger_level, flush=flush)
 
     logger.header()
@@ -237,6 +288,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
         GRA_SHAPE = (m.nr, m.dimensions, m.nkx, m.nky, m.nkz)
 
     chern_num = np.zeros((max_band + 1), dtype=np.complex128)
+    chern_num_curl = np.zeros((max_band + 1), dtype=np.complex128)
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
@@ -313,9 +365,21 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
             chern_num = np.abs(np.round(np.real(chern_num), decimals=digits))
             np.save(os.path.join(m.geometry_dir, "chern_number.npy"), chern_num)
             logger.info(f"\tchern_number.npy saved")
-            logger.info(f"\n{'Band:' : >13} Chern Number")
-            for ind, val in enumerate(chern_num):
-                logger.info(f"{f'{ind}:' : >13} {val}")
+
+        if prop == "chern_curl":
+            number_of_bands = max_band + 1 - min_band
+            if m.dimensions == 2:
+                berry_conn_size  = m.dimensions * m.nkx * m.nky * (number_of_bands) ** 2
+                berry_conn_shape = (number_of_bands, number_of_bands, m.dimensions, m.nkx, m.nky)
+            else:
+                berry_conn_size  = m.dimensions * m.nkx * m.nky * m.nkz * (number_of_bands) ** 2
+                berry_conn_shape = (number_of_bands, number_of_bands, m.dimensions, m.nkx, m.nky, m.nkz)
+            berry_connections = load_berry_connections(max_band, berry_conn_size, berry_conn_shape, min_band)
+            for idx in range(min_band, max_band + 1):
+                curv = berry_curvature_curl(idx, idx, berry_connections)
+                chern_num_curl[idx] = chern_number(curv)   
+            np.save(os.path.join(m.geometry_dir, "chern_number_curl.npy"), chern_num_curl)
+            logger.info(f"\tchern_number_curl.npy saved")
 
 
     ###########################################################################
