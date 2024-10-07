@@ -365,6 +365,9 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
             chern_num = np.abs(np.round(np.real(chern_num), decimals=digits))
             np.save(os.path.join(m.geometry_dir, "chern_number.npy"), chern_num)
             logger.info(f"\tchern_number.npy saved")
+            logger.info(f"\n{'Band:' : >13} Chern Number")
+            for ind, val in enumerate(chern_num):
+                logger.info(f"{f'{ind}:' : >13} {val}")
 
         if prop == "chern_curl":
             number_of_bands = max_band + 1 - min_band
