@@ -1,4 +1,3 @@
-from tkinter import NO
 from typing import Dict, Union, List, Tuple
 from multiprocessing import Pool
 from itertools import product
