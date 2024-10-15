@@ -864,7 +864,7 @@ y_1+\Delta y-a_2, & otherwise
 \]
 
  Each of the cases will remove volume from the supercell either from the middle (see figure 
- \ref{fig:vcutcenter}) or from its the sides (see figure \ref{fig:vcutsides}).
+ or from its the sides (see figure \ref{fig:vcut}).
 
 \begin{figure}[h]
     \centering
@@ -872,16 +872,17 @@ y_1+\Delta y-a_2, & otherwise
         \centering
         \includegraphics[width=.5\linewidth]{figures/cnt_vcut_center.png}
         \label{fig:vcutcenter}
-        \caption{}
+        \subcaption{}
     \end{subfigure}%
     \begin{subfigure}{.5\textwidth}
         \centering
-        \includegraphics[width=.5\linewidth]{figures/cnt_vcut_center.png}
+        \includegraphics[width=.5\linewidth]{figures/cnt_vcut_sides.png}
         \label{fig:vcutsides}
-        \caption{}
+        \subcaption{}
     \end{subfigure}
-    \caption{When \(y_1 \leq a_2\), the region removed is located on the center of the supercell
-    (figure \ref{fig:vcutcenter}). Otherwise, the region removed will be splitted into two sides (figure \ref{fig:vcutsides}).}
+    \caption{When \(y_1 \leq a_2\), (\subref{fig:vcutcenter}) the region removed is located
+    on the center of the supercell.
+    Otherwise, (\subref{fig:vcutsides}) the region removed will be splitted into two sides.}
     \label{fig:vcut}
 \end{figure}
 
@@ -922,6 +923,8 @@ y_1+\Delta y-a_2, & otherwise
  second direction in k-space                  & \verb|kvector2 = 0.0 1.0 0.0| \\
  third direction in k-space                   & \verb|kvector3 = 0.0 0.0 1.0| \\
  last band NOT accounted for                  & \verb|wfcut = -1| \\
+ initial limit of volume removal              & \verb|y1, z1 = 0| \\
+ width of volume removal region               & \verb|deltay, deltaz = 0| \\
 
 
 %  DFT prefix  & prefix = '' \\
