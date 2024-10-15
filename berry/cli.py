@@ -338,7 +338,7 @@ berry [package options] script parameter [script options]
                                          type=str, 
                                          default="both", 
                                          metavar="",
-                                         choices=["both", "conn", "curv", "chern", "chern_curl"], 
+                                         choices=["both", "conn", "curv", "chern", "chern_curl", "chern_bp"], 
                                          help="Specify which proprety to calculate. Possible choices are 'both', 'conn' and 'curv' (default: both)")
             geometry_parser.add_argument("-d", 
                                          type=int, 

@@ -10,7 +10,7 @@ import numpy as np
 
 from berry import log
 from berry.utils.jit import numba_njit
-from berry._subroutines.comutator import deriv
+#from berry._subroutines.comutator import deriv
 from berry.shg import load_berry_connections
 
 try:
@@ -19,6 +19,21 @@ try:
 except:
     pass
 
+
+def deriv(berryConnection, s, sprime, alpha1, alpha2, dk):
+    """ Derivative of the Berry connection."""
+    from findiff import Gradient
+    if m.dimensions == 1:
+        grad = Gradient(h=[dk], acc=4)  # Defines gradient function in 1D
+    elif m.dimensions == 2:
+        grad = Gradient(h=[dk, dk], acc=4)  # Defines gradient function in 2D
+    else:
+        grad = Gradient(h=[dk, dk, dk], acc=4)  # Defines gradient function in 3D
+        
+    a = grad(berryConnection[s][sprime][alpha1])
+
+
+    return a[alpha2]
 
 def berry_connection(n_pos: int, n_gra: int):
     """
@@ -75,13 +90,38 @@ def berry_connection(n_pos: int, n_gra: int):
 def chern_number(curv) -> np.complex128:
     chern = 0
     if m.dimensions == 2:
-        chern = np.sum(curv[0]) * (np.linalg.norm(m.b1) / m.nkx) * (np.linalg.norm(m.b2) / m.nky) / (2 * np.pi)
+        chern = np.sum(curv) * (np.linalg.norm(m.b1) / m.nkx) * (np.linalg.norm(m.b2) / m.nky) / (2 * np.pi)
     else:  # 3D 
         chern = (np.sum(curv[0]) * np.linalg.norm(m.b1) / m.nkx
                + np.sum(curv[1]) * np.linalg.norm(m.b2) / m.nky
                + np.sum(curv[2]) * np.linalg.norm(m.b3) / m.nkz) / (2 * np.pi)
 
     return chern
+
+def berry_phase(pos, x, y):
+    bp = (pos[:, x, y].conj()     * pos[:, x+1, y] 
+       *  pos[:, x+1, y].conj()   * pos[:, x+1, y+1]
+       *  pos[:, x+1, y+1].conj() * pos[:, x, y+1]
+       *  pos[:, x, y+1].conj()   * pos[:, x, y])
+
+    bp = np.angle(np.sum(bp))
+
+    return bp
+
+def chern_number_bp(pos) -> np.complex128:
+    chern = 0
+    if m.dimensions == 2:
+        for i in range(m.nkx -1):
+            for j in range(m.nky -1):
+                chern += berry_phase(pos, i, j)
+        chern /= (2*np.pi)
+#    else:  # 3D 
+#        chern = (np.sum(curv[0]) * np.linalg.norm(m.b1) / m.nkx
+#               + np.sum(curv[1]) * np.linalg.norm(m.b2) / m.nky
+#               + np.sum(curv[2]) * np.linalg.norm(m.b3) / m.nkz) / (2 * np.pi)
+
+    return chern
+
 
 def berry_curvature(idx: int, idx_: int) -> None:
     """
@@ -223,7 +263,7 @@ def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
     
     
     if m.dimensions == 2:                # 2D case
-        @numba_njit
+#        @numba_njit
         def aux_curvature() -> np.ndarray:
             """
             Auxiliary function to calculate the Berry curvature.
@@ -237,7 +277,7 @@ def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
             return bcr 
         
     else:                                # 3D case
-        @numba_njit
+#        @numba_njit
         def aux_curvature():
             """
             Auxiliary function to calculate the Berry curvature.
@@ -265,7 +305,7 @@ def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
     return bcr
     
 
-def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curv", "conn", "both", "chern", "chern_curl"] = "both", digits: int = 0, logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
+def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curv", "conn", "both", "chern", "chern_curl", "chern_bp"] = "both", digits: int = 0, logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
     if m.noncolin:
         global wfcgra0, wfcgra1, chern_num, logger
     else:
@@ -288,7 +328,6 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
         GRA_SHAPE = (m.nr, m.dimensions, m.nkx, m.nky, m.nkz)
 
     chern_num = np.zeros((max_band + 1), dtype=np.complex128)
-    chern_num_curl = np.zeros((max_band + 1), dtype=np.complex128)
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
@@ -380,9 +419,17 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
             berry_connections = load_berry_connections(max_band, berry_conn_size, berry_conn_shape, min_band)
             for idx in range(min_band, max_band + 1):
                 curv = berry_curvature_curl(idx, idx, berry_connections)
-                chern_num_curl[idx] = chern_number(curv)   
-            np.save(os.path.join(m.geometry_dir, "chern_number_curl.npy"), chern_num_curl)
+                chern_num[idx] = chern_number(curv)   
+            np.save(os.path.join(m.geometry_dir, "chern_number_curl.npy"), chern_num)
             logger.info(f"\tchern_number_curl.npy saved")
+
+        if prop == "chern_bp":
+            for idx in range(min_band, max_band + 1):
+                pos = np.load(os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
+                chern_num[idx] = chern_number_bp(pos)   
+            np.save(os.path.join(m.geometry_dir, "chern_number_bp.npy"), chern_num)
+            logger.info(f"\tchern_number_bp.npy saved")
+
 
 
     ###########################################################################
