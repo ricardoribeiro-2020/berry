@@ -20,8 +20,6 @@ except:
 def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
     start = time()
 
-    initial_band = m.wfcut + 1
-
     dphase = d_phase[:, nk] * d_phase[:, neighbor].conj()
 
     if m.noncolin:  # Noncolinear case
