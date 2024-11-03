@@ -99,12 +99,12 @@ def chern_number(curv) -> np.complex128:
     return chern
 
 def berry_phase(pos, x, y):
-    bp = (pos[:, x, y].conj()     * pos[:, x+1, y] 
-       *  pos[:, x+1, y].conj()   * pos[:, x+1, y+1]
-       *  pos[:, x+1, y+1].conj() * pos[:, x, y+1]
-       *  pos[:, x, y+1].conj()   * pos[:, x, y])
+    bp = (np.sum(pos[:, x, y].conj()     * pos[:, x+1, y]) 
+       *  np.sum(pos[:, x+1, y].conj()   * pos[:, x+1, y+1])
+       *  np.sum(pos[:, x+1, y+1].conj() * pos[:, x, y+1])
+       *  np.sum(pos[:, x, y+1].conj()   * pos[:, x, y])) / (m.nr ** 4)
 
-    bp = np.angle(np.sum(bp))
+    bp = np.angle(bp)
 
     return bp
 
@@ -113,7 +113,7 @@ def chern_number_bp(pos) -> np.complex128:
     if m.dimensions == 2:
         for i in range(m.nkx -1):
             for j in range(m.nky -1):
-                chern += berry_phase(pos, i, j)
+                chern += berry_phase2(pos, i, j)
         chern /= (2*np.pi)
 #    else:  # 3D 
 #        chern = (np.sum(curv[0]) * np.linalg.norm(m.b1) / m.nkx
@@ -121,6 +121,23 @@ def chern_number_bp(pos) -> np.complex128:
 #               + np.sum(curv[2]) * np.linalg.norm(m.b3) / m.nkz) / (2 * np.pi)
 
     return chern
+
+def chern_number_bp_bz(pos) -> np.complex128:
+    chern = 1
+    if m.dimensions == 2:
+        for i in range(m.nkx-1):
+            chern *= np.complex256(np.sum(pos[:, i, 0].conj() * pos[:, i+1, 0])) * np.complex256(np.sum(pos[:, i, m.nky-1] * pos[:, i+1, m.nky-1].conj()))
+        for j in range(m.nky-1):
+            chern *= np.complex256(np.sum(pos[:, m.nkx-1, j].conj() * pos[:, m.nkx-1, j+1])) * np.complex256(np.sum(pos[:, 0, j] * pos[:, 0, j+1].conj()))
+        chern = np.angle(chern)
+        chern /= (2*np.pi)
+#    else:  # 3D 
+#        chern = (np.sum(curv[0]) * np.linalg.norm(m.b1) / m.nkx
+#               + np.sum(curv[1]) * np.linalg.norm(m.b2) / m.nky
+#               + np.sum(curv[2]) * np.linalg.norm(m.b3) / m.nkz) / (2 * np.pi)
+
+    return chern
+
 
 
 def berry_curvature(idx: int, idx_: int) -> None:
@@ -305,7 +322,7 @@ def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
     return bcr
     
 
-def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curv", "conn", "both", "chern", "chern_curl", "chern_bp"] = "both", digits: int = 0, logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
+def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curv", "conn", "both", "chern", "chern_curl", "chern_bp", "chern_bp_bz"] = "both", digits: int = 0, logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
     if m.noncolin:
         global wfcgra0, wfcgra1, chern_num, logger
     else:
@@ -401,7 +418,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
                 chern_num[idx] = chern_number(curv)
 
             # save the chern number
-            chern_num = np.abs(np.round(np.real(chern_num), decimals=digits))
+            chern_num = np.round(np.real(chern_num), decimals=digits)
             np.save(os.path.join(m.geometry_dir, "chern_number.npy"), chern_num)
             logger.info(f"\tchern_number.npy saved")
             logger.info(f"\n{'Band:' : >13} Chern Number")
@@ -426,9 +443,17 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
         if prop == "chern_bp":
             for idx in range(min_band, max_band + 1):
                 pos = np.load(os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
-                chern_num[idx] = chern_number_bp(pos)   
+                chern_num[idx] = chern_number_bp(wfct_k)   
             np.save(os.path.join(m.geometry_dir, "chern_number_bp.npy"), chern_num)
-            logger.info(f"\tchern_number_bp.npy saved")
+            logger.info(f"\tchern_number_bp2.npy saved")
+
+        if prop == "chern_bp_bz":
+            for idx in range(min_band, max_band + 1):
+                pos = np.load(os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
+                chern_num[idx] = chern_number_bp_bz(pos)   
+            np.save(os.path.join(m.geometry_dir, "chern_number_bp_bz.npy"), chern_num)
+            logger.info(f"\tchern_number_bp_bz.npy saved")
+
 
 
 
