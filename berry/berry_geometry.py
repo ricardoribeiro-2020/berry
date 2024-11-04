@@ -35,17 +35,26 @@ def deriv(berryConnection, s, sprime, alpha1, alpha2, dk):
 
     return a[alpha2]
 
+def loadz(pathz, path, mmap_mode=None):
+    if os.path.exists(pathz): # reading .npz compressed file if exists
+        r = np.load(pathz, mmap_mode=mmap_mode)
+        r = r['arr_0']
+    else: # otherwise read .npy file
+        r = np.load(path, mmap_mode=mmap_mode)
+    
+    return r
+
 def berry_connection(n_pos: int, n_gra: int):
     """
     Calculates the Berry connection.
     """
     if m.noncolin:
         try:
-            wfcpos0 = np.load(os.path.join(m.data_dir, f"wfcpos{n_pos}-0.npy"), mmap_mode="r").conj()
-            wfcpos1 = np.load(os.path.join(m.data_dir, f"wfcpos{n_pos}-1.npy"), mmap_mode="r").conj()
+            wfcpos0 = loadz(os.path.join(m.data_dir, f"wfcpos{n_pos}-0.npz"), os.path.join(m.data_dir, f"wfcpos{n_pos}-0.npy"), mmap_mode="r").conj()
+            wfcpos1 = loadz(os.path.join(m.data_dir, f"wfcpos{n_pos}-1.npz"), os.path.join(m.data_dir, f"wfcpos{n_pos}-1.npy"), mmap_mode="r").conj()
         except:
-            wfcpos0 = np.load(os.path.join(m.data_dir, f"wfcpos{n_pos}-0.npy")).conj()
-            wfcpos1 = np.load(os.path.join(m.data_dir, f"wfcpos{n_pos}-1.npy")).conj()
+            wfcpos0 = loadz(os.path.join(m.data_dir, f"wfcpos{n_pos}-0.npz"), os.path.join(m.data_dir, f"wfcpos{n_pos}-0.npy")).conj()
+            wfcpos1 = loadz(os.path.join(m.data_dir, f"wfcpos{n_pos}-1.npz"), os.path.join(m.data_dir, f"wfcpos{n_pos}-1.npy")).conj()
 
         @numba_njit
         def aux_connection() -> np.ndarray:
@@ -62,9 +71,9 @@ def berry_connection(n_pos: int, n_gra: int):
             return bcc / m.nr
     else:
         try:
-            wfcpos = np.load(os.path.join(m.data_dir, f"wfcpos{n_pos}.npy"), mmap_mode="r").conj()
+            wfcpos = loadz(os.path.join(m.data_dir, f"wfcpos{n_pos}.npz"), os.path.join(m.data_dir, f"wfcpos{n_pos}.npy"), mmap_mode="r").conj()
         except:
-            wfcpos = np.load(os.path.join(m.data_dir, f"wfcpos{n_pos}.npy")).conj()
+            wfcpos = loadz(os.path.join(m.data_dir, f"wfcpos{n_pos}.npz"), os.path.join(m.data_dir, f"wfcpos{n_pos}.npy")).conj()
         @numba_njit
         def aux_connection() -> np.ndarray:
             """
@@ -150,11 +159,11 @@ def berry_curvature(idx: int, idx_: int) -> None:
             wfcgra1_ = wfcgra1.conj()
         else:
             try:
-                wfcgra0_ = np.load(os.path.join(m.data_dir, f"wfcgra{idx_}-0.npy"), mmap_mode="r").conj()
-                wfcgra1_ = np.load(os.path.join(m.data_dir, f"wfcgra{idx_}-1.npy"), mmap_mode="r").conj()
+                wfcgra0_ = loadz(os.path.join(m.data_dir, f"wfcgra{idx_}-0.npz"), os.path.join(m.data_dir, f"wfcgra{idx_}-0.npy"), mmap_mode="r").conj()
+                wfcgra1_ = loadz(os.path.join(m.data_dir, f"wfcgra{idx_}-1.npz"), os.path.join(m.data_dir, f"wfcgra{idx_}-1.npy"), mmap_mode="r").conj()
             except:
-                wfcgra0_ = np.load(os.path.join(m.data_dir, f"wfcgra{idx_}-0.npy")).conj()
-                wfcgra1_ = np.load(os.path.join(m.data_dir, f"wfcgra{idx_}-1.npy")).conj()
+                wfcgra0_ = loadz(os.path.join(m.data_dir, f"wfcgra{idx_}-0.npz"), os.path.join(m.data_dir, f"wfcgra{idx_}-0.npy")).conj()
+                wfcgra1_ = loadz(os.path.join(m.data_dir, f"wfcgra{idx_}-1.npz"), os.path.join(m.data_dir, f"wfcgra{idx_}-1.npy")).conj()
 
         if m.dimensions == 2:                # 2D case
             @numba_njit
@@ -214,9 +223,10 @@ def berry_curvature(idx: int, idx_: int) -> None:
             wfcgra_ = wfcgra.conj()
         else:
             try:
-                wfcgra_ = np.load(os.path.join(m.data_dir, f"wfcgra{idx_}.npy"), mmap_mode="r").conj()
+                wfcgra_ = loadz(os.path.join(m.data_dir, f"wfcgra{idx_}.npz"), os.path.join(m.data_dir, f"wfcgra{idx_}.npy"), mmap_mode="r").conj()
             except:
-                wfcgra_ = np.load(os.path.join(m.data_dir, f"wfcgra{idx_}.npy")).conj()
+                wfcgra_ = loadz(os.path.join(m.data_dir, f"wfcgra{idx_}.npz"), os.path.join(m.data_dir, f"wfcgra{idx_}.npy")).conj()
+
         if m.dimensions == 2:                # 2D case
             @numba_njit
             def aux_curvature() -> np.ndarray:
@@ -374,8 +384,8 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
     if prop == "both" or prop == "conn":
         if m.noncolin:
             for idx in range(min_band, max_band + 1):
-                wfcgra0 = np.load(os.path.join(m.data_dir, f"wfcgra{idx}-0.npy"))
-                wfcgra1 = np.load(os.path.join(m.data_dir, f"wfcgra{idx}-1.npy"))
+                wfcgra0 = loadz(os.path.join(m.data_dir, f"wfcgra{idx}-0.npz"), os.path.join(m.data_dir, f"wfcgra{idx}-0.npy"))
+                wfcgra1 = loadz(os.path.join(m.data_dir, f"wfcgra{idx}-1.npz"), os.path.join(m.data_dir, f"wfcgra{idx}-1.npy"))
 
                 work_load = ((idx_pos, idx) for idx_pos in range(min_band, max_band + 1))
 
@@ -383,7 +393,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
                     pool.starmap(berry_connection, work_load)
         else:
             for idx in range(min_band, max_band + 1):
-                wfcgra = np.load(os.path.join(m.data_dir, f"wfcgra{idx}.npy"))
+                wfcgra = loadz(os.path.join(m.data_dir, f"wfcgra{idx}.npz"), os.path.join(m.data_dir, f"wfcgra{idx}.npy"))
 
                 work_load = ((idx_pos, idx) for idx_pos in range(min_band, max_band + 1))
 
@@ -396,8 +406,8 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
         if prop == "both" or prop == "curv":
             if m.noncolin:
                 for idx in range(min_band, max_band + 1):
-                    wfcgra0 = np.load(os.path.join(m.data_dir, f"wfcgra{idx}-0.npy"))
-                    wfcgra1 = np.load(os.path.join(m.data_dir, f"wfcgra{idx}-1.npy"))
+                wfcgra0 = loadz(os.path.join(m.data_dir, f"wfcgra{idx}-0.npz"), os.path.join(m.data_dir, f"wfcgra{idx}-0.npy"))
+                wfcgra1 = loadz(os.path.join(m.data_dir, f"wfcgra{idx}-1.npz"), os.path.join(m.data_dir, f"wfcgra{idx}-1.npy"))
 
                     work_load = ((idx, idx_) for idx_ in range(min_band, max_band + 1))
 
@@ -405,7 +415,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
                         pool.starmap(berry_curvature, work_load)
             else:
                 for idx in range(min_band, max_band + 1):
-                    wfcgra = np.load(os.path.join(m.data_dir, f"wfcgra{idx}.npy"))
+                    wfcgra = loadz(os.path.join(m.data_dir, f"wfcgra{idx}.npz"), os.path.join(m.data_dir, f"wfcgra{idx}.npy"))
 
                     work_load = ((idx, idx_) for idx_ in range(min_band, max_band + 1))
 
@@ -449,7 +459,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
 
         if prop == "chern_bp_bz":
             for idx in range(min_band, max_band + 1):
-                pos = np.load(os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
+                pos = loadz(os.path.join(m.data_dir, f"wfcpos{idx}.npz"), os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
                 chern_num[idx] = chern_number_bp_bz(pos)   
             np.save(os.path.join(m.geometry_dir, "chern_number_bp_bz.npy"), chern_num)
             logger.info(f"\tchern_number_bp_bz.npy saved")

@@ -143,6 +143,9 @@ berry [package options] script parameter [script options]
                                     metavar=f"[0-{m.nbnd-1}]", 
                                     default=None, choices=range(m.nbnd), 
                                     help="Band where wavefunction will be generated (on k-point -nk) (default: All).")
+            wfc_parser.add_argument("-c", 
+                                    action="store_true", 
+                                    help="Compress the output files.")
             wfc_parser.add_argument("-flush", 
                                     action="store_true", 
                                     help="Flushes output into stdout.")
@@ -160,6 +163,9 @@ berry [package options] script parameter [script options]
                                     metavar=f"[1-{os.cpu_count()}]", 
                                     choices=range(1, os.cpu_count()+1), 
                                     help="Number of processes to use (default: 1)")
+            dot_parser.add_argument("-c", 
+                                    action="store_true", 
+                                    help="Compress the output files.")
             dot_parser.add_argument("-flush", 
                                     action="store_true", 
                                     help="Flushes output into stdout.")
@@ -230,6 +236,9 @@ berry [package options] script parameter [script options]
                                       metavar=f"[1-{os.cpu_count()}]", 
                                       choices=range(1, os.cpu_count()+1), 
                                       help="Number of processes to use (default: 1).")
+            basis_parser.add_argument("-c", 
+                                    action="store_true", 
+                                    help="Compress the output files.")
             basis_parser.add_argument("-flush", 
                                       action="store_true", 
                                       help="Flushes output into stdout.")
@@ -260,6 +269,9 @@ berry [package options] script parameter [script options]
                                           metavar=f"[{m.initial_band}-{m.nbnd-1}]"      , 
                                           choices=range(m.initial_band, m.nbnd)             , 
                                           help="Minimum band to consider (default: 0).")
+                r2k_parser.add_argument("-c", 
+                                        action="store_true", 
+                                        help="Compress the output files.")
                 r2k_parser.add_argument("-flush", 
                                         action="store_true", 
                                         help="Flushes output into stdout.")
@@ -289,6 +301,9 @@ berry [package options] script parameter [script options]
                                         metavar=f"[0-{m.nbnd-1}]"      , 
                                         choices=range(m.nbnd)             , 
                                         help="Minimum band to consider (default: 0).")
+                r2k_parser.add_argument("-c", 
+                                        action="store_true", 
+                                        help="Compress the output files.")
                 r2k_parser.add_argument("-flush", 
                                         action="store_true", 
                                         help="Flushes output into stdout.")
@@ -612,6 +627,7 @@ def generatewfc_cli(args: argparse.Namespace):
     args_dict["logger_name"] = args.o
     args_dict["nk_points"] = args.nk
     args_dict["bands"] = args.band
+    args_dict["compress"] = args.c
     args_dict["flush"] = args.flush
 
     WfcGenerator(**args_dict).run()
@@ -632,6 +648,7 @@ def dotproduct_cli(args: argparse.Namespace):
     args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
     args_dict["logger_name"] = args.o
     args_dict["npr"] = args.np
+    args_dict["compress"] = args.c
     args_dict["flush"] = args.flush
 
     run_dot(**args_dict)
@@ -666,6 +683,7 @@ def basisrotation_cli(args: argparse.Namespace):
     args_dict["logger_name"] = args.o
     args_dict["npr"] = args.np
     args_dict["max_band"] = args.Mb
+    args_dict["compress"] = args.c
     args_dict["flush"] = args.flush
 
     run_basis_rotation(**args_dict)
@@ -686,6 +704,7 @@ def r2k_cli(args: argparse.Namespace):
     args_dict["npr"] = args.np
     args_dict["min_band"] = args.mb
     args_dict["max_band"] = args.Mb
+    args_dict["compress"] = args.c
     args_dict["flush"] = args.flush
 
     run_r2k(**args_dict)

@@ -27,15 +27,28 @@ def read_wfc_files(banda: int, npr: int) -> None:
         if m.noncolin:
             infile0  = f"{m.wfcdirectory}/k0{kp}b0{b}-0.wfc"
             infile1  = f"{m.wfcdirectory}/k0{kp}b0{b}-1.wfc"
-            wfct_k0[:, kp] = np.load(infile0)
-            wfct_k1[:, kp] = np.load(infile1)
+            tmp = np.load(infile0)
+            if isinstance(tmp, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
+                wfct_k0[:, kp] = tmp['arr_0']
+            else:
+                wfct_k0[:, kp] = tmp
+
+            tmp = np.load(infile1)
+            if isinstance(tmp, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
+                wfct_k1[:, kp] = tmp['arr_0']
+            else:
+                wfct_k1[:, kp] = tmp
         else:
             if signalfinal[kp, banda] == -1:                                        # if its a signaled wfc, choose corrected
                 infile = f"{m.wfcdirectory}/k0{kp}b0{b}.wfc1"
             else:                                                                   # else choose original
                 infile = f"{m.wfcdirectory}/k0{kp}b0{b}.wfc"
 
-            wfct_k[:, kp] = np.load(infile)
+            tmp = np.load(infile)
+            if isinstance(tmp, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
+                wfct_k[:, kp] = tmp['arr_0']
+            else:
+                wfct_k[:, kp] = tmp
 
     with Pool(min(10, npr)) as pool: #TODO: try to abstract this operation 
         pool.map(read_wfc_kp, range(m.nks))
@@ -112,17 +125,31 @@ def r_to_k(banda: int, npr: int) -> None:
     start = time()
     #IDEA: Try saving this files into a folder in different chunks
     if m.noncolin:
-        np.save(os.path.join(m.data_dir, f"wfcpos{b}-0.npy"), wfcpos0)
-        np.save(os.path.join(m.data_dir, f"wfcpos{b}-1.npy"), wfcpos1)
-        bands_pos.append(b)
-        np.save(os.path.join(m.data_dir, f"wfcgra{b}-0.npy"), wfcgra0)
-        np.save(os.path.join(m.data_dir, f"wfcgra{b}-1.npy"), wfcgra1)
-        bands_gra.append(b)
+        if compress:
+            np.savez_compressed(os.path.join(m.data_dir, f"wfcpos{b}-0.npz"), wfcpos0)
+            np.savez_compressed(os.path.join(m.data_dir, f"wfcpos{b}-1.npz"), wfcpos1)
+            bands_pos.append(b)
+            np.savez_compressed(os.path.join(m.data_dir, f"wfcgra{b}-0.npz"), wfcgra0)
+            np.savez_compressed(os.path.join(m.data_dir, f"wfcgra{b}-1.npz"), wfcgra1)
+            bands_gra.append(b)
+        else:
+            np.save(os.path.join(m.data_dir, f"wfcpos{b}-0.npy"), wfcpos0)
+            np.save(os.path.join(m.data_dir, f"wfcpos{b}-1.npy"), wfcpos1)
+            bands_pos.append(b)
+            np.save(os.path.join(m.data_dir, f"wfcgra{b}-0.npy"), wfcgra0)
+            np.save(os.path.join(m.data_dir, f"wfcgra{b}-1.npy"), wfcgra1)
+            bands_gra.append(b)
     else:
-        np.save(os.path.join(m.data_dir, f"wfcpos{b}.npy"), wfcpos)
-        bands_pos.append(b)
-        np.save(os.path.join(m.data_dir, f"wfcgra{b}.npy"), wfcgra)
-        bands_gra.append(b)
+        if compress:
+            np.savez_compressed(os.path.join(m.data_dir, f"wfcpos{b}.npz"), wfcpos)
+            bands_pos.append(b)
+            np.savez_compressed(os.path.join(m.data_dir, f"wfcgra{b}.npz"), wfcgra)
+            bands_gra.append(b)
+        else:
+            np.save(os.path.join(m.data_dir, f"wfcpos{b}.npy"), wfcpos)
+            bands_pos.append(b)
+            np.save(os.path.join(m.data_dir, f"wfcgra{b}.npy"), wfcgra)
+            bands_gra.append(b)
 
     logger.debug(f"\twfcpos{b} and wfcgra{b} saved in {time() - start:.2f} seconds\n")
 
@@ -137,7 +164,7 @@ def save_r2k(bpos, bgra):
 
 
 
-def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "r2k", logger_level: int = logging.INFO, flush: bool = False):
+def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "r2k", logger_level: int = logging.INFO, compress: bool = False, flush: bool = False):
     if m.noncolin:
         global grad, signalfinal, bandsfinal, wfct_k0, wfct_k1, wfcpos0, wfcpos1, wfcgra0, wfcgra1, logger, d_phase, initial_band, save_file, bands_pos, bands_gra
     else:

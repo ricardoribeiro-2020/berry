@@ -45,7 +45,12 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : 
     logger.info("\tNeighbors loaded")
     logger.info("\tEigenvalues loaded")
 
-    connections = np.load(os.path.join(m.data_dir, "dp.npy"))
+    try: # reading .npz compressed file if exists
+        connections = np.load(os.path.join(m.data_dir, "dp.npz"))
+        connections = connections['arr_0']
+    except: # reading .npy file otherwise
+        connections = np.load(os.path.join(m.data_dir, "dp.npy"))
+
     logger.info("\tModulus of direct product loaded\n")
 
     logger.info("\tFinished reading data\n")
