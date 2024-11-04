@@ -406,8 +406,8 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
         if prop == "both" or prop == "curv":
             if m.noncolin:
                 for idx in range(min_band, max_band + 1):
-                wfcgra0 = loadz(os.path.join(m.data_dir, f"wfcgra{idx}-0.npz"), os.path.join(m.data_dir, f"wfcgra{idx}-0.npy"))
-                wfcgra1 = loadz(os.path.join(m.data_dir, f"wfcgra{idx}-1.npz"), os.path.join(m.data_dir, f"wfcgra{idx}-1.npy"))
+                    wfcgra0 = loadz(os.path.join(m.data_dir, f"wfcgra{idx}-0.npz"), os.path.join(m.data_dir, f"wfcgra{idx}-0.npy"))
+                    wfcgra1 = loadz(os.path.join(m.data_dir, f"wfcgra{idx}-1.npz"), os.path.join(m.data_dir, f"wfcgra{idx}-1.npy"))
 
                     work_load = ((idx, idx_) for idx_ in range(min_band, max_band + 1))
 

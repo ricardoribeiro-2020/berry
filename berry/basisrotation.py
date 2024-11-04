@@ -269,7 +269,7 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
         with open(outfile, "wb") as f:
             if compress:
                 np.savez_compressed(f, psinewB)
-            else
+            else:
                 np.save(f, psinewB)
 
 

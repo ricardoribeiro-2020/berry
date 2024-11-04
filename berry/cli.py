@@ -53,7 +53,7 @@ try:
         WFCGEN = 1
     if os.path.exists(os.path.join(m.workdir, "data/wfc")):
         DOT = 1
-    if os.path.exists(os.path.join(m.workdir, "data/dpc.npy")):
+    if os.path.exists(os.path.join(m.workdir, "data/dpc.npy")) or os.path.exists(os.path.join(m.workdir, "data/dpc.npz")):
         CLUSTER = 1
     if os.path.exists(os.path.join(m.workdir, "data/signalfinal.npy")):
         BASIS = 1

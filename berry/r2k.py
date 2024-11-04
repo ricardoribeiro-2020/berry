@@ -105,7 +105,7 @@ def calculate_wfcgra(npr: int) -> np.ndarray:
         pool.map(calculate_wfcgra_kp, range(m.nr))
 
 
-def r_to_k(banda: int, npr: int) -> None:
+def r_to_k(banda: int, npr: int, compress: bool) -> None:
     b = banda + initial_band # true band
 
     if b not in bands_pos or b not in bands_gra:
@@ -274,7 +274,7 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     ###########################################################################
     try:
         for banda in range(min_band - initial_band, max_band - initial_band + 1):
-            r_to_k(banda, npr)
+            r_to_k(banda, npr, compress)
             save_r2k(bands_pos, bands_gra) # saving the current state of the execution
     except Exception as err:
         save_r2k(bands_pos, bands_gra)

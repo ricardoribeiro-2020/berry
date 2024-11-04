@@ -73,6 +73,8 @@ class WfcGenerator:
                  flush: bool = False
                 ):
 
+        self.compress = compress
+
         if bands is not None and nk_points is None:
             raise ValueError("To generate a wavefunction for a single band, you must specify the k-point.")
 
@@ -286,13 +288,13 @@ class WfcGenerator:
 
             for i, outfile in enumerate(outfiles0):
                 with open(outfile, "wb") as fich:
-                    if compress:
+                    if self.compress:
                         np.savez_compressed(fich, psifinal0[i * m.nr : (i + 1) * m.nr])
                     else:
                         np.save(fich, psifinal0[i * m.nr : (i + 1) * m.nr])
             for i, outfile in enumerate(outfiles1):
                 with open(outfile, "wb") as fich:
-                    if compress:
+                    if self.compress:
                         np.savez_compressed(fich, psifinal1[i * m.nr : (i + 1) * m.nr])
                     else:
                         np.save(fich, psifinal1[i * m.nr : (i + 1) * m.nr])
@@ -325,7 +327,7 @@ class WfcGenerator:
             outfiles = map(lambda band: os.path.join(m.wfcdirectory, f"k0{nk_point}b0{band+initial_band}.wfc"), range(number_of_bands))
             for i, outfile in enumerate(outfiles):
                 with open(outfile, "wb") as fich:
-                    if compress:
+                    if self.compress:
                         np.savez_compressed(fich, psifinal[i * m.nr : (i + 1) * m.nr])
                     else:
                         np.save(fich, psifinal[i * m.nr : (i + 1) * m.nr])
