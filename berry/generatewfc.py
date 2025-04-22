@@ -69,8 +69,11 @@ class WfcGenerator:
                  bands: Optional[int] = None,
                  logger_name: str = "genwfc",
                  logger_level: int = logging.INFO,
+                 compress: bool = False,
                  flush: bool = False
                 ):
+
+        self.compress = compress
 
         if bands is not None and nk_points is None:
             raise ValueError("To generate a wavefunction for a single band, you must specify the k-point.")
@@ -285,10 +288,16 @@ class WfcGenerator:
 
             for i, outfile in enumerate(outfiles0):
                 with open(outfile, "wb") as fich:
-                    np.save(fich, psifinal0[i * m.nr : (i + 1) * m.nr])
+                    if self.compress:
+                        np.savez_compressed(fich, psifinal0[i * m.nr : (i + 1) * m.nr])
+                    else:
+                        np.save(fich, psifinal0[i * m.nr : (i + 1) * m.nr])
             for i, outfile in enumerate(outfiles1):
                 with open(outfile, "wb") as fich:
-                    np.save(fich, psifinal1[i * m.nr : (i + 1) * m.nr])
+                    if self.compress:
+                        np.savez_compressed(fich, psifinal1[i * m.nr : (i + 1) * m.nr])
+                    else:
+                        np.save(fich, psifinal1[i * m.nr : (i + 1) * m.nr])
 
         else:
             # puts the wavefunctions into a numpy array
@@ -318,7 +327,10 @@ class WfcGenerator:
             outfiles = map(lambda band: os.path.join(m.wfcdirectory, f"k0{nk_point}b0{band+initial_band}.wfc"), range(number_of_bands))
             for i, outfile in enumerate(outfiles):
                 with open(outfile, "wb") as fich:
-                    np.save(fich, psifinal[i * m.nr : (i + 1) * m.nr])
+                    if self.compress:
+                        np.savez_compressed(fich, psifinal[i * m.nr : (i + 1) * m.nr])
+                    else:
+                        np.save(fich, psifinal[i * m.nr : (i + 1) * m.nr])
 
     def _get_command(self, nk_point: int, initial_band: int, final_band: int, number_of_bands: int):
         mpi = "" if m.npr == 1 else f"mpirun -np {m.npr} "
