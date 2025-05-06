@@ -1,11 +1,58 @@
+"""
+-----------------------------------------------------------------------------------------------------------------------
+Project Title: Cluster Solver for Band Structure Analysis
+-----------------------------------------------------------------------------------------------------------------------
+
+Last Modified: [2025-05-06]
+
+Description:
+------------
+This software package is designed to solve for clusters of components in band structure analysis. It provides an 
+iterative process to group components across multiple bands based on their mesh compatibility, energy levels, and 
+intersections. The clustering process is sensitive to degeneracy, and the algorithm ensures that degenerate points 
+are handled accordingly.
+
+The core of the algorithm works by processing each band, grouping compatible components together, and returning the 
+final set of clusters. The solution can be executed either sequentially or in parallel, providing flexibility for 
+large-scale problems.
+
+
+Usage:
+------
+This package is used for clustering components in band structure analysis and can be invoked as shown bellow
+
+        usage: berry cluster [-h] [-mb [0-25]] [-np [1-112]] [-t [0.0-1.0]] [-flush] [-o file_path] [-v] [Mb 0-25]
+
+        Classifies the eigenstates in bands.
+
+        positional arguments:
+        Mb (0-25)     Maximum band to consider.
+
+        optional arguments:
+        -h, --help    show this help message and exit
+        -mb [0-25]    Minimum band to consider (default: 0).
+        -np [1-112]   Number of processes to use (default: 1).
+        -t [0.0-1.0]  Tolerance used for graph construction (default: 0.95).
+        -flush        Flushes output into stdout.
+        -o file_path  Name of output log file. Extension will be .log regardless of user input.
+        -v            Increases output verbosity.
+
+For detailed usage instructions, please refer to the documentation.
+-----------------------------------------------------------------------------------------------------------------------
+"""
+
+
 import os
 import sys
 import logging
+import time
 
 import numpy as np
 
+
 from berry import log
-from berry._subroutines.clustering_libs import MATERIAL
+
+from berry._subroutines.clustering_algorithm import Material
 
 try:
     import berry._subroutines.loaddata as d
@@ -14,7 +61,7 @@ except:
     pass
 
 
-def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : float = 0.5, step : float = 0.1, npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False):
+def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.99, npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False, verbose=False):
     logger = log(logger_name, "CLUSTER", level=logger_level, flush=flush)
 
     logger.header()
@@ -45,12 +92,7 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : 
     logger.info("\tNeighbors loaded")
     logger.info("\tEigenvalues loaded")
 
-    try: # reading .npz compressed file if exists
-        connections = np.load(os.path.join(m.data_dir, "dp.npz"))
-        connections = connections['arr_0']
-    except: # reading .npy file otherwise
-        connections = np.load(os.path.join(m.data_dir, "dp.npy"))
-
+    connections = np.abs(np.load("data/dpc.npy").real)
     logger.info("\tModulus of direct product loaded\n")
 
     logger.info("\tFinished reading data\n")
@@ -59,22 +101,26 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : 
     # 3. CLUSTERING ALGORITHM
     ########################################################################### 
 
-    material = MATERIAL(m.dimensions, [m.nkx, m.nky, m.nkz], m.nbnd, m.nks, d.eigenvalues,
-                        connections, d.neighbors, logger, min_band, n_process=npr)
+    delta_k = m.step
 
-    logger.info('\tCalculating Vectors')
-    material.make_vectors(min_band=min_band, max_band=max_band)
 
-    logger.info('\n\tCalculating Connections')
-    material.make_connections(tol=tol)
+    material = Material(m.dimensions, [m.nkx, m.nky, m.nkz], m.nbnd, m.nks, d.eigenvalues,
+                        connections, d.neighbors, logger, min_band, max_band, delta_k, n_process=npr, verbose=verbose)
+    
+    material.solver(tol)
+    logger.info("\n")
+    material.report()
+    logger.info(material.final_report)
 
-    logger.info('\tSolving problem')
-    material.solve(step=step, alpha=alpha)
+    '''
+    ------------------------------------------------------------------------
+    Saving the results
+    ------------------------------------------------------------------------
+    '''
 
     logger.info('\n\tClustering Done')
 
-    with open(os.path.join(m.data_dir, 'final.report'), 'w') as f:
-        f.write(material.final_report)
+    m.data_dir = 'data/'
 
     with open(os.path.join(m.data_dir, 'bandsfinal.npy'), 'wb') as f:
         np.save(f, material.bands_final)
@@ -82,17 +128,8 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : 
     with open(os.path.join(m.data_dir, 'signalfinal.npy'), 'wb') as f:
         np.save(f, material.signal_final)
 
-    with open(os.path.join(m.data_dir, 'correct_signalfinal.npy'), 'wb') as f:
-        np.save(f, material.correct_signalfinal)
-
     with open(os.path.join(m.data_dir, 'degeneratefinal.npy'), 'wb') as f:
         np.save(f, material.degenerate_final)
-
-    with open(os.path.join(m.data_dir, 'final_score.npy'), 'wb') as f:
-        np.save(f, material.final_score)
-    
-    with open(os.path.join(m.data_dir, 'completed_bands.npy'), 'wb') as f:
-        np.save(f, material.completed_bands)
 
     sys.stdout.write('\n')
     logger.footer()
