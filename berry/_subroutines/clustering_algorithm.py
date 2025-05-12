@@ -16,7 +16,6 @@ import textwrap
 import numpy as np
 import networkx as nx
 
-from __future__ import annotations
 from typing import Tuple, Union
 from numba import prange
 from tqdm import tqdm
