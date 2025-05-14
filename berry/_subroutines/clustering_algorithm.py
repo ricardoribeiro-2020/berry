@@ -16,7 +16,9 @@ import textwrap
 import numpy as np
 import networkx as nx
 
-from typing import Tuple, Union
+import numpy.typing as npt
+
+from typing import Tuple, Union, List
 from numba import prange
 from tqdm import tqdm
 
@@ -60,7 +62,7 @@ EVALUATE_RESULT_HELP = '''
 '''
 EVALUATE_RESULT_HEADER = ['MIS', 'DEG', 'COR']
 
-def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
+def evaluate_result(values: Union[List[Connection], npt.NDArray]) -> int:
     f'''
     This function attributes the correspondent signal using
     the dot product between each neighbor.
@@ -120,12 +122,12 @@ class Material:
     """
     def __init__(self,
                  dimensions:int,
-                 nk_i: list[int],
+                 nk_i: List[int],
                  number_of_bands: int,
                  nks: int,
-                 eigenvalues: np.ndarray,
-                 connections: np.ndarray,
-                 neighbors: np.ndarray,
+                 eigenvalues: npt.NDArray,
+                 connections: npt.NDArray,
+                 neighbors: npt.NDArray,
                  logger: log,
                  min_band: int,
                  max_band: int,
@@ -347,7 +349,7 @@ class Material:
         prev_max_band = -1
         for bn_i, max_band_i in enumerate(max_band_energies):
             if prev_max_band < bn_i:
-                sequence.append(f"{bn_i + self.min_band} → {max_band_i + self.min_band}" if max_band_i != bn_i else f"{bn_i + self.min_band}")
+                sequence.append(f"{bn_i + self.min_band} - {max_band_i + self.min_band}" if max_band_i != bn_i else f"{bn_i + self.min_band}")
                 prev_max_band = max_band_i
 
             for bn_j in self.bands[bn_i + 1: max_band_i + 1]:
@@ -574,7 +576,7 @@ class Material:
                 self.signal_final[k, bn2] = DEGENERATE                         # Signal k_point as Degenerate
 
         self.k_basis_rotation = []
-        k_basis_rotation : list[Tuple[Kpoint, Kpoint, Band, list[Band]]] = []           # Storage pairs of points that are degenerates by dot product 0.5 < <i|j> < DEGENERATE_TOLERANCE
+        k_basis_rotation = []           # Storage pairs of points that are degenerates by dot product 0.5 < <i|j> < DEGENERATE_TOLERANCE
         self.final_score = np.zeros(self.number_of_bands)                            # The bands' score
         for bn in self.bands:
             # Search these degenerate points on each band
@@ -698,7 +700,7 @@ class Material:
         self.k_basis_rotation = np.array(self.k_basis_rotation)
         self.k_basis_rotation = np.unique(self.k_basis_rotation, axis=0)
 
-    def print_report(self, signal_report: np.ndarray, description:str, show:bool=True):
+    def print_report(self, signal_report: npt.NDArray, description:str, show:bool=True):
         '''
         Shows on screen the report for each band.
 
