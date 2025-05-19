@@ -57,7 +57,7 @@ try:
         CLUSTER = 1
     if os.path.exists(os.path.join(m.workdir, "data/signalfinal.npy")):
         BASIS = 1
-    if os.path.exists(os.path.join(m.workdir, "data/final.report")):
+    if os.path.exists(os.path.join(m.workdir, "data/final.report")) or os.path.exists(os.path.join(m.workdir, "data/signalfinal.npy")):
         R2K = 1
     if os.path.exists(os.path.join(m.workdir, "log/r2k.log")):
         GEOMETRY = 1
