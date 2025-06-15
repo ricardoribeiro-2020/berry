@@ -21,16 +21,71 @@ import numpy.typing as npt
 from typing import Tuple, Union, List
 from numba import prange
 from tqdm import tqdm
+from datetime import datetime
 
 from berry._subroutines.clustering_utils import Component, compute_edges, solver_algorithm
 from berry import log
 
+
+
+
+import psutil, os
+import sys
+
+# Try importing pympler; if unavailable, we do shallow sizing
 try:
-    import berry._subroutines.loadmeta as m
-except:
-    pass
+    from pympler import asizeof
+    _USE_PYMP = True
+except ImportError:
+    _USE_PYMP = False
 
 
+def attribute_memory_usage(obj):
+    """
+    Given an object instance, return a dict {attribute_name: memory_in_bytes}.
+    - If pympler is available, uses asizeof.asizeof(attr) (deep size).
+    - Otherwise, for np.ndarray it uses arr.nbytes + overhead; else sys.getsizeof(attr).
+    Works for classes with __dict__ or with __slots__.
+    """
+    mem_usage = {}
+    seen_names = set()
+
+    # 1) Handle standard attributes in __dict__
+    if hasattr(obj, '__dict__'):
+        for name, val in vars(obj).items():
+            if _USE_PYMP:
+                size = asizeof.asizeof(val)
+            else:
+                if isinstance(val, np.ndarray):
+                    size = val.nbytes + sys.getsizeof(val)
+                else:
+                    size = sys.getsizeof(val)
+            mem_usage[name] = size
+            seen_names.add(name)
+
+    # 2) Handle __slots__ (if defined and not in __dict__)
+    cls = obj.__class__
+    slots = getattr(cls, '__slots__', ())
+    if slots:
+        # __slots__ might be a single string or iterable
+        slot_list = (slots,) if isinstance(slots, str) else slots
+        for name in slot_list:
+            if name in seen_names:
+                continue
+            try:
+                val = getattr(obj, name)
+            except AttributeError:
+                continue
+            if _USE_PYMP:
+                size = asizeof.asizeof(val)
+            else:
+                if isinstance(val, np.ndarray):
+                    size = val.nbytes + sys.getsizeof(val)
+                else:
+                    size = sys.getsizeof(val)
+            mem_usage[name] = size
+
+    return mem_usage
 
 
 ###########################################################################
@@ -121,7 +176,7 @@ class Material:
         - solver: Executes the main clustering and degeneracy analysis algorithm.
     """
     def __init__(self,
-                 dimensions:int,
+                 dimensions: int,
                  nk_i: List[int],
                  number_of_bands: int,
                  nks: int,
@@ -137,18 +192,18 @@ class Material:
         
         numba.set_num_threads(n_process)
 
-        self.dimensions = dimensions
         self.number_of_bands = number_of_bands - min_band
         self.bands = np.arange(0, self.number_of_bands)
         self.min_band = min_band
         self.max_band = max_band    # m.final_band
+        self.dimensions = dimensions
+        self.nks = nks
 
 
         self.eigenvalues = eigenvalues[:, min_band:]
         self.connections = connections
 
         self.nkx, self.nky, self.nkz = nk_i
-        self.nks = nks
         self.neighbors = neighbors
         self.delta_k = delta_k
         self.number_neighbors = self.dimensions * 2
@@ -290,6 +345,15 @@ class Material:
         
         self.make_kpoints_index()
         self.make_bands()
+
+        self.logger.info(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting clustering algorithm...")
+        self.logger.info(f"Memory mesh_kpoints_index: {self.mesh_kpoints_index.nbytes / (1024 ** 2):.2f} MB")
+        self.logger.info(f"Memory array_kpoints_index: {self.array_kpoints_index.nbytes / (1024 ** 2):.2f} MB")
+        self.logger.info(f"Memory mesh_energies: {self.mesh_energies.nbytes / (1024 ** 2):.2f} MB")
+
+        self.logger.info(f"Memory PID: {os.getpid()} - {psutil.Process(os.getpid()).memory_info().rss / (1024 ** 2):.2f} MB")
+
+        Component.set_global_data(self.dimensions, self.nks, self.mesh_kpoints_index, self.array_kpoints_index, self.mesh_energies)
         
         graphs = []
         components = []
@@ -361,6 +425,9 @@ class Material:
             width=100,
             subsequent_indent='  '
         ))
+
+        self.logger.info(f"Memory PID: {os.getpid()} - {psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3):.2f} GB")
+
  
         for bn_i in self.bands:
             self.logger.debug("Degenerate points: ", np.sum(mask_degenerates[bn_i]))
@@ -393,10 +460,9 @@ class Material:
             not_k_points = not_energy_points[bn_i]
 
             if graphs[bn_i].number_of_nodes() == self.nks:
-                components.append([Component(graphs[bn_i], self.dimensions, self.nks, self.mesh_kpoints_index, self.array_kpoints_index, self.mesh_energies)])
+                components.append([Component(graphs[bn_i])])
                 continue
             
-
             vectors_bn_i = np.column_stack([not_k_points, np.full((len(not_k_points), 1), bn_i)])
 
             do_parallel = self.n_process > 1 and len(vectors_bn_i) > self.nks
@@ -422,12 +488,21 @@ class Material:
             graphs[bn_i].add_nodes_from([(k, bn_i) for k in not_k_points])
             graphs[bn_i].add_edges_from(edges)
 
-            band_components = [Component(graphs[bn_i].subgraph(c), self.dimensions, self.nks, self.mesh_kpoints_index, self.array_kpoints_index, self.mesh_energies) for c in nx.connected_components(graphs[bn_i])]
+            band_components = [Component(graphs[bn_i].subgraph(c)) for c in nx.connected_components(graphs[bn_i])]
 
             components.append(band_components)
 
+        # Free memory
+        del graphs
+
         degenerate_components = []
 
+        memory_of_component = []
+        for components_bn_i in components:
+            for c in components_bn_i:
+                memory_of_component.append(sys.getsizeof(c))
+
+        self.logger.info(f"Memory PID: {os.getpid()} - {psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3):.2f} GB")
 
         for bn_i, degenerate_points_bn_i in enumerate(degenerate_points):
             if len(degenerate_points_bn_i) == 0:
@@ -437,16 +512,17 @@ class Material:
             degenerate_graph = nx.Graph()
             degenerate_graph.add_nodes_from([(k, bn_i) for k in degenerate_points_bn_i])
     
-            degenerate_components_bn_i = [Component(degenerate_graph.subgraph(c), self.dimensions, self.nks, self.mesh_kpoints_index, self.array_kpoints_index, self.mesh_energies) for c in nx.connected_components(degenerate_graph)]
+            degenerate_components_bn_i = [Component(degenerate_graph.subgraph(c)) for c in nx.connected_components(degenerate_graph)]
             degenerate_components.append(degenerate_components_bn_i)
 
         for bn_i, connected_components_bn_i in enumerate(components):
             number_nodes = [c.number_of_nodes for c in connected_components_bn_i]
             self.logger.debug(f"Number of connected components {bn_i}: {len(connected_components_bn_i)} total: {np.sum(number_nodes)}")
-
+        
+        self.logger.info(f"Memory PID Before Start: {os.getpid()} - {psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3):.2f} GB")
         clusters, iterable_bands = solver_algorithm(components, degenerate_components, degenerate_points, self.connections, self.neighbors, self.mesh_kpoints_index, self.nks, max_band_energies, mask_degenerates, self.bands, n_process=self.n_process, verbose=self.verbose, logger=self.logger, tolerance=initial_tol)
         
-        order_bands = [np.min(c.energy_mesh) for c in clusters]
+        order_bands = [c.min_energy() for c in clusters]
         order_bands = np.argsort(order_bands)
 
         self.cluster_bands = [clusters[i] for i in order_bands]
@@ -499,10 +575,12 @@ class Material:
 
         clusters, iterable_bands = solver_algorithm(components, degenerate_components, degenerate_points, self.connections, self.neighbors, self.mesh_kpoints_index, self.nks, max_band_energies, mask_degenerates, self.bands, n_process=self.n_process, verbose=self.verbose, logger=self.logger, energies=self.eigenvalues, tolerance=initial_tol)
 
-        order_bands = [np.min(c.energy_mesh) for c in clusters]
+        order_bands = [c.min_energy() for c in clusters]
         order_bands = np.argsort(order_bands)
 
         self.cluster_bands = [clusters[i] for i in order_bands]
+
+        self.logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Clustering algorithm finished.")
 
         self.obtain_output()
 
@@ -521,6 +599,8 @@ class Material:
         ###########################################################################
         # Obtain the resultant bands' attribution and the k-point's signal.
         ###########################################################################
+
+        self.logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Obtaining the output...")
 
         self.signal_final = np.zeros((self.nks, self.number_of_bands), dtype=int)   # The k-point's signal
 
@@ -549,7 +629,7 @@ class Material:
         ###########################################################################
 
         self.degenerate_final = []                                                 # Final degenerates k-points
-        for k, bn1, bn2 in self.degenerates:
+        for k, bn1, bn2 in tqdm(self.degenerates, desc="Scoring the result", unit="k-points", disable=not self.verbose):
             # Signaling the numerically degenerate points Ei ~ Ej
 
             Bk1 = self.bands_final[k] == bn1                               # Find in which  band the k-point was attributed
@@ -797,7 +877,7 @@ class Material:
                         subsequent_indent='\t\t  ') + '\n'
 
 
-        TOL_USABLE = 0.91           # Minimum score to consider a band as usable.
+        TOL_USABLE = 0.90           # Minimum score to consider a band as usable.
         n_recomended = self.min_band
         
         for i, s in enumerate(self.final_score):
