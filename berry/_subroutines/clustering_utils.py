@@ -26,6 +26,7 @@ Main Functions:
 
 import numpy as np
 import networkx as nx
+import datetime
 
 from functools import partial
 from multiprocessing import Pool
@@ -95,6 +96,9 @@ def compute_edges_for_vi(vi, args):
         edges += [[vi, vj, weight] for vj, weight in zip(similarity_vj_indexes, similarity_vi_vj) if vj in neighs_points]
     else:
         edges += [[vi, vj, weight] for vj, weight in zip(similarity_vj_indexes, similarity_vi_vj)]
+
+    # Free memory
+    del neighbors_vectors_indexes, neighbors_kpoints, neighbors_bands, similarity_vi_vj, kp_i_index_neighs
 
     return edges
 
@@ -179,71 +183,89 @@ class Component:
         remove_points(mesh_to_remove):
             Removes k-points from the component and returns the resulting new components.
     """
-    def __init__(self, graph, dimensions, number_of_kpoints, mesh_kpoints_index, array_kpoints_index, energies):
-        self.graph = graph
-        self.dimensions = dimensions
-        self.nks = number_of_kpoints
-        self.mesh_kpoints_index = mesh_kpoints_index
-        self.array_kpoints_index = array_kpoints_index
-        self.energies = energies
+    mesh_kpoints_index: np.ndarray = None
+    array_kpoints_index: np.ndarray = None
+    energies: np.ndarray = None
+    dimensions: int = None
+    nks: int = None
 
-        self.compute_mesh_and_gradient()
-        
-    def compute_mesh_and_gradient(self):
+    @classmethod
+    def set_global_data(cls, dimensions, nks, mesh_kpoints_index, array_kpoints_index, energies):
         """
-        Computes the mesh and gradient of the energy values based on the graph's k-points and energy bands.
+        Supply the big arrays exactly once to the Component class.
+        """
+        cls.mesh_kpoints_index = mesh_kpoints_index
+        cls.array_kpoints_index = array_kpoints_index
+        cls.energies = energies
 
-        Depending on the dimensionality, the method calculates the mesh grid and gradient of the energies
-        for the component and also identifies boundaries and neighbors.
+        cls.dimensions = dimensions
+        cls.nks = nks
+
+    def __init__(self, graph):
+        self.graph = graph
+        
+        self.compute_boundary()
+
+    def min_energy(self):
+        """
+        Returns the minimum energy in the component.
+        """
+        if Component.energies is None:
+            raise ValueError("Energies are not set for this component.")
+    
+        coords_tuples = tuple(self.active_coords.T)
+
+        return np.min(Component.energies[self.nodes[:, 1], coords_tuples])
+
+    def compute_boundary(self):
+        """
+        Populate self._boundary_mask and self._interior_mask from self.active_coords.
+        We never allocate a full D-dim grid; we only inspect each node's ±1 neighbors to
+        see whether those ±1 neighbors are also in this component.
         """
         self.nodes = np.array(self.graph.nodes)
-        # correct the nodes (k, bands)
-        self.k_points = self.nodes[:, 0]
-        self.k_bands = self.nodes[:, 1]
         self.number_of_nodes = self.graph.number_of_nodes()
 
-        self.mesh = np.zeros(self.mesh_kpoints_index.shape, dtype=np.int8)
-        self.energy_mesh = np.zeros(self.mesh_kpoints_index.shape, dtype=np.float64)
+        self.active_coords = Component.array_kpoints_index[self.nodes[:, 0]]
 
-        if self.dimensions == 1:
-            self.mesh[self.k_points] = 1
-            self.energy_mesh[self.k_points] = self.energies[self.k_bands, self.k_points]
-            self.gradient_energy = np.abs(np.gradient(self.energy_mesh))
-            self.gradient = np.sign(np.gradient(self.mesh))
+        n = self.number_of_nodes
+        D = Component.dimensions
 
-        elif self.dimensions == 2:
-            self.k_points_index = self.array_kpoints_index[self.k_points]
-            self.mesh[self.k_points_index[:, 0], self.k_points_index[:, 1]] = 1
-            self.energy_mesh[self.k_points_index[:, 0], self.k_points_index[:, 1]] = self.energies[self.k_bands, self.k_points_index[:, 0], self.k_points_index[:, 1]]
-            self.gradient_energy = np.sum(np.array(np.gradient(self.energy_mesh, axis=(0, 1)))**2, axis=0)
-            self.gradient = np.sign(np.array(np.gradient(self.mesh, axis=(0, 1))))
-
+        # Build a hash‐set of all active_coord tuples to test membership in O(1):
+        if Component.dimensions > 1:
+            self.coord_tuples = { tuple(self.active_coords[i]) for i in range(n) }
         else:
-            self.k_points_index = self.array_kpoints_index[self.k_points]
-            self.mesh[self.k_points_index[:, 0], self.k_points_index[:, 1], self.k_points_index[:, 2]] = 1
-            self.energy_mesh[self.k_points_index[:, 0], self.k_points_index[:, 1], self.k_points_index[:, 2]] = self.energies[self.k_bands, self.k_points_index[:, 0], self.k_points_index[:, 1], self.k_points_index[:, 2]]
-            self.gradient_energy = np.sum(np.array(np.gradient(self.energy_mesh, axis=(0, 1, 2)))**2, axis=0)
-            self.gradient = np.sign(np.array(np.gradient(self.mesh, axis=(0, 1, 2))))
+            self.coord_tuples = { self.active_coords[i] for i in range(n) }
 
-        if self.dimensions == 1:
-            self.gradient_abs = np.abs(self.gradient)
-        else:
-            self.gradient_abs = np.sign(np.sum(self.gradient**2, axis=0))
+        self.neighbor_coords = set()
 
-        self.min_energy = np.min(self.energy_mesh[self.mesh == 1])
-        
-        self.positive_gradient = self.gradient.copy()
-        self.positive_gradient[self.positive_gradient < 0] = 0
-        self.negative_gradient = np.abs(self.gradient - self.positive_gradient)
-        
-        self.positive_boundary = self.mesh * self.positive_gradient
-        self.negative_boundary = self.mesh * self.negative_gradient
+        boundary = np.zeros(n, dtype=bool)
+        interior = np.zeros(n, dtype=bool)
 
-        self.positive_neighs = self.positive_gradient - self.positive_boundary
-        self.negative_neighs = self.negative_gradient - self.negative_boundary
+        for i in range(n):
+            coord = self.active_coords[i]
+            is_interior = True
+            for dim in range(D):
+                for offset in (-1, +1):
+                    neighbor_coord = list(coord) if Component.dimensions > 1 else [coord]
+                    neighbor_coord[dim] += offset
+                    neighbor_coord = tuple(neighbor_coord) if Component.dimensions > 1 else neighbor_coord[0]
 
-        self.boundary = np.array(self.mesh * self.gradient_abs, dtype=bool)
-        self.neighs = np.array(self.gradient_abs - self.boundary, dtype=bool)
+                    if neighbor_coord not in self.coord_tuples:
+                        self.neighbor_coords.add(neighbor_coord)
+                        boundary[i] = True
+                        is_interior = False
+                        break
+
+                if not is_interior:
+                    break
+                
+            if not boundary[i]:
+                # We never saw a missing neighbor; so it’s truly interior:
+                interior[i] = True
+
+        self._boundary_mask = boundary
+        self._interior_mask = interior
 
     def does_intersect(self, other:'Component'):
         """
@@ -255,10 +277,71 @@ class Component:
         Returns:
             bool: True if the components intersect, False otherwise.
         """
-        return np.sum(self.mesh ^ other.mesh) != self.number_of_nodes + other.number_of_nodes
+        # Extract just the k_flat indices for each component:
+        ours = set(self.nodes[:, 0].tolist())
+        theirs = set(other.nodes[:, 0].tolist())
+        # If intersection of k‐flats is nonempty, they intersect.
+        return not ours.isdisjoint(theirs)
     
     def to_cluster(self):
-        return Cluster(self.graph, self.dimensions, self.nks, self.mesh_kpoints_index, self.array_kpoints_index, self.energies)
+        new_cluster = Cluster(self.graph)
+
+        return new_cluster
+    
+    
+    def compute_mesh_and_gradient(self):
+        """
+        !! This method is deprecated and will be removed in future versions. Use `compute_boundary` instead.
+
+        Computes the mesh and gradient of the energy values based on the graph's k-points and energy bands.
+
+        Depending on the dimensionality, the method calculates the mesh grid and gradient of the energies
+        for the component and also identifies boundaries and neighbors.
+        """
+
+        self.mesh = np.zeros(Component.mesh_kpoints_index.shape, dtype=bool)
+        #self.energy_mesh = np.zeros(Component.mesh_kpoints_index.shape, dtype=np.float64)
+
+        if Component.dimensions == 1:
+            self.mesh[self.nodes[:, 0]] = 1
+            #self.energy_mesh[self.nodes[:, 0]] = Component.energies[self.nodes[:, 1], self.nodes[:, 0]]
+            #gradient_energy = np.abs(np.gradient(self.energy_mesh))
+            self.gradient = np.sign(np.gradient(self.mesh))
+
+        elif Component.dimensions == 2:
+            self.k_points_index = Component.array_kpoints_index[self.nodes[:, 0]]
+            self.mesh[self.k_points_index[:, 0], self.k_points_index[:, 1]] = 1
+            #self.energy_mesh[self.k_points_index[:, 0], self.k_points_index[:, 1]] = Component.energies[self.nodes[:, 1], self.k_points_index[:, 0], self.k_points_index[:, 1]]
+            #gradient_energy = np.sum(np.array(np.gradient(self.energy_mesh, axis=(0, 1)))**2, axis=0)
+            self.gradient = np.sign(np.array(np.gradient(self.mesh, axis=(0, 1))))
+
+        else:
+            self.k_points_index = Component.array_kpoints_index[self.nodes[:, 0]]
+            self.mesh[self.k_points_index[:, 0], self.k_points_index[:, 1], self.k_points_index[:, 2]] = 1
+            #self.energy_mesh[self.k_points_index[:, 0], self.k_points_index[:, 1], self.k_points_index[:, 2]] = Component.energies[self.nodes[:, 1], self.k_points_index[:, 0], self.k_points_index[:, 1], self.k_points_index[:, 2]]
+            #gradient_energy = np.sum(np.array(np.gradient(self.energy_mesh, axis=(0, 1, 2)))**2, axis=0)
+            self.gradient = np.sign(np.array(np.gradient(self.mesh, axis=(0, 1, 2))))
+
+        if Component.dimensions == 1:
+            gradient_abs = np.abs(self.gradient)
+        else:
+            gradient_abs = np.sign(np.sum(self.gradient**2, axis=0))
+
+        #self.min_energy = np.min(self.energy_mesh[self.mesh == 1])
+
+        positive_gradient = self.gradient.copy()
+        positive_gradient[positive_gradient < 0] = 0
+        negative_gradient = np.abs(self.gradient - positive_gradient)
+
+        positive_boundary = self.mesh * positive_gradient
+        negative_boundary = self.mesh * negative_gradient
+
+        self.positive_neighs = positive_gradient - positive_boundary
+        self.negative_neighs = negative_gradient - negative_boundary
+
+        self.boundary = np.array(self.mesh * gradient_abs, dtype=bool)
+        self.neighs = np.array(gradient_abs - self.boundary, dtype=bool)
+
     
     def remove_points(self, mesh_to_remove):
         """
@@ -270,11 +353,11 @@ class Component:
         Returns:
             list: A list of new Component objects after removing the specified k-points.
         """
-        k_points = self.mesh_kpoints_index[mesh_to_remove == 1]
+        k_points = Component.mesh_kpoints_index[mesh_to_remove == 1]
         nodes_to_remove = []
 
         for k in k_points.flatten():
-            b = self.k_bands[self.k_points == k][0]
+            b = self.nodes[:, 1][self.nodes[:, 0] == k][0]
             nodes_to_remove.append((k, b))
 
         self.graph = self.graph.copy()
@@ -284,9 +367,9 @@ class Component:
         for node in nodes_to_remove:
             new_graph = nx.Graph()
             new_graph.add_node(node)
-            new_components.append(Component(new_graph, self.dimensions, self.nks, self.mesh_kpoints_index, self.array_kpoints_index, self.energies))
+            new_components.append(Component(new_graph))
         
-        new_components += [Component(self.graph.subgraph(c), self.dimensions, self.nks, self.mesh_kpoints_index, self.array_kpoints_index, self.energies) for c in nx.connected_components(self.graph)]
+        new_components += [Component(self.graph.subgraph(c)) for c in nx.connected_components(self.graph)]
 
         return new_components
 
@@ -322,8 +405,8 @@ class Cluster(Component):
         merge(Sample: Component):
             Merges the current cluster with a sample component by combining their graphs and recalculating the mesh and gradient.
     """
-    def __init__(self, graph, dimensions, number_of_kpoints, mesh_kpoints_index, array_kpoints_index, energies):
-        super().__init__(graph, dimensions, number_of_kpoints, mesh_kpoints_index, array_kpoints_index, energies)
+    def __init__(self, graph):
+        super().__init__(graph)
 
         self.outliers = np.array([], dtype=np.int8)
 
@@ -344,7 +427,26 @@ class Cluster(Component):
             bool: True if the clusters can merge, False otherwise.
         """
         total_number_of_nodes = self.number_of_nodes + Sample.number_of_nodes
-        return total_number_of_nodes <= self.nks and not self.does_intersect(Sample) and (np.sum(self.neighs * Sample.mesh) != 0 or np.sum(self.boundary * Sample.neighs) != 0)
+        if total_number_of_nodes > Component.nks:
+            return False
+
+        if self.does_intersect(Sample):
+            return False
+
+        self_neighs_coords = self.neighbor_coords
+        sample_coords = Sample.coord_tuples
+
+        self_boundary_coords = {
+            tuple(coord) if Component.dimensions > 1 else coord
+            for coord in self.active_coords[self._boundary_mask]
+        }
+
+        sample_neighs_coords = set(Sample.neighbor_coords)
+
+        neighs_intersect_sample_coords = not self_neighs_coords.isdisjoint(sample_coords)
+        self_intersect_sample_neighs = not self_boundary_coords.isdisjoint(sample_neighs_coords)
+
+        return neighs_intersect_sample_coords or self_intersect_sample_neighs
 
     def enery_score(self, Sample:Component, energies, neighbors):
         """
@@ -386,8 +488,8 @@ class Cluster(Component):
             float: The dot product score between the cluster and sample component.
         """
 
-        cluster_points = self.nodes
-        sample_points = Sample.nodes
+        cluster_points = self.nodes[self._boundary_mask]
+        sample_points = Sample.nodes[Sample._boundary_mask]
 
         dot_products = np.array(obtain_dot_products(sample_points,  cluster_points, connections, neighbors))
         if len(dot_products) != 1:
@@ -448,7 +550,7 @@ class Cluster(Component):
             Sample (Component): The sample component to merge with the cluster.
         """
         self.graph = nx.compose(self.graph, Sample.graph)
-        self.compute_mesh_and_gradient()
+        self.compute_boundary()
 
 
 def obtain_dot_products(sample_points, cluster_points, connections, neighbors):
@@ -592,7 +694,10 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
         # This is the component that will be used to attribute the points
 
         cluster_bn_i = components[bn_i].pop(0).to_cluster()
-        attribution_points = -1 * cluster_bn_i.mesh
+        
+        for coord in cluster_bn_i.active_coords:
+            idx_coord = tuple(coord) if Component.dimensions > 1 else coord
+            attribution_points[idx_coord] = -1
 
         samples_that_can_be_added = []
 
@@ -605,7 +710,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
         samples_that_can_be_added = []
         remaining_samples = []
         
-        number_of_available_points = np.sum(cluster_bn_i.mesh)
+        number_of_available_points = np.sum(cluster_bn_i.number_of_nodes)
 
         for bn_j in bands[bn_i: max_band_energies[bn_i] + 1]:
 
@@ -627,9 +732,14 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                     continue
 
                 # Check if the sample intersect with the degenerate points
-                if np.sum(sample.mesh * mask_degenerates[bn_i]) != 0:
+                sample_mesh = np.zeros_like(mesh_kpoints_index, dtype=bool)
+                for coord in sample.active_coords:
+                    idx_coord = tuple(coord) if Component.dimensions > 1 else coord
+                    sample_mesh[idx_coord] = True
+
+                if np.sum(sample_mesh * mask_degenerates[bn_i]) != 0:
                     if sample.number_of_nodes != 1:
-                        components[bn_j] += sample.remove_points(sample.mesh * mask_degenerates[bn_i])
+                        components[bn_j] += sample.remove_points(sample_mesh * mask_degenerates[bn_i])
                         number_of_available_points -= sample.number_of_nodes
                         del sample
                         continue
@@ -637,7 +747,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                     continue
 
                 # If the sample does not intersect with the cluster, then it can be added to the cluster
-                attribution_points += 1 * sample.mesh
+                attribution_points += 1 * sample_mesh
                 samples_that_can_be_added[-1].append(sample)
 
             components[bn_j] = remaining_samples[-1]
@@ -664,19 +774,19 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
         ------------------------------------------------------------------------
         '''
 
-        number_of_available_points = np.sum(cluster_bn_i.mesh)
+        number_of_available_points = np.sum(cluster_bn_i.number_of_nodes)
         for bn_j in bands[bn_i: max_band_energies[bn_i] + 1]:
             for sample in degenerate_components[bn_j]:
-                number_of_available_points += np.sum(sample.mesh)
+                number_of_available_points += np.sum(sample.number_of_nodes)
             for sample in components[bn_j]:
-                number_of_available_points += np.sum(sample.mesh)
+                number_of_available_points += np.sum(sample.number_of_nodes)
 
 
         number_of_to_be_added_points = 0
 
         for samples in samples_that_can_be_added:
             for sample in samples:
-                number_of_to_be_added_points += np.sum(sample.mesh)
+                number_of_to_be_added_points += np.sum(sample.number_of_nodes)
 
         did_change = True
         number_of_points_added = 0
@@ -694,7 +804,12 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                 while len(samples) > 0:
                     sample = samples.popleft()
 
-                    if np.sum(attribution_points[sample.mesh == 1] == 1) == sample.number_of_nodes and cluster_bn_i.can_merge(sample):
+                    sample_mesh = np.zeros_like(mesh_kpoints_index, dtype=bool)
+                    for coord in sample.active_coords:
+                        idx_coord = tuple(coord) if Component.dimensions > 1 else coord
+                        sample_mesh[idx_coord] = True
+
+                    if np.sum(attribution_points[sample_mesh] == 1) == sample.number_of_nodes and cluster_bn_i.can_merge(sample):
                         number_of_points_added += sample.number_of_nodes
                         cluster_bn_i.merge(sample)
                         did_change = True
@@ -747,21 +862,27 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
 
             if add_degenerates_points:
 
-                remaining_points = np.zeros_like(cluster_bn_i.mesh, dtype=int)
-                remaining_points[cluster_bn_i.mesh == 0] = 1
+                remaining_points = np.zeros_like(mesh_kpoints_index, dtype=bool)
+                for coord in cluster_bn_i.active_coords:
+                    idx_coord = tuple(coord) if Component.dimensions > 1 else coord
+                    remaining_points[idx_coord] = True
+
+                remaining_points = np.logical_not(remaining_points)
 
                 for j, samples in enumerate(degenerate_components[bn_i: max_band_energies[bn_i] + 1]):
                     remaining_samples_bnj = []
-                    degenerate_mesh = np.zeros_like(cluster_bn_i.mesh, dtype=int)
 
                     samples = deque(samples)
                     while len(samples) > 0:
                         sample = samples.popleft()
-                        if np.sum(sample.mesh * remaining_points) == 0:
+                        sample_mesh = np.zeros_like(mesh_kpoints_index, dtype=bool)
+                        for coord in sample.active_coords:
+                            idx_coord = tuple(coord) if Component.dimensions > 1 else coord
+                            sample_mesh[idx_coord] = True
+                        if np.sum(sample_mesh * remaining_points) == 0:
                             remaining_samples_bnj.append(sample)
                             continue
                         samples_that_can_be_added[j].append(sample)
-                        degenerate_mesh += sample.mesh
 
                     degenerate_components[bn_i + j] = remaining_samples_bnj
 
@@ -774,7 +895,11 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
             for i, samples in enumerate(samples_that_can_be_added):
                 remaining_samples.append([])
                 for j, sample in enumerate(samples):
-                    check_degenerates = np.sum(sample.mesh * mask_degenerates[bn_i]) != 0 if check_degenerates_points else False
+                    sample_mesh = np.zeros_like(mesh_kpoints_index, dtype=bool)
+                    for coord in sample.active_coords:
+                        idx_coord = tuple(coord) if Component.dimensions > 1 else coord
+                        sample_mesh[idx_coord] = True
+                    check_degenerates = np.sum(sample_mesh * mask_degenerates[bn_i]) != 0 if check_degenerates_points else False
                     if not cluster_bn_i.can_merge(sample) or check_degenerates:
                         remaining_samples[-1].append(sample)
                         continue
@@ -883,7 +1008,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                 raise ValueError(f"Band {bn_i} has remaining points, but the next band is not in the range of the bands that are being solved")
 
             
-        number_of_available_points = np.sum(cluster_bn_i.mesh)
+        number_of_available_points = np.sum(cluster_bn_i.number_of_nodes)
         
         for samples in components[bn_i + 1: max_band_energies[bn_i] + 1]:
             for sample in samples:
@@ -903,7 +1028,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
         clusters.append(cluster_bn_i)
 
         logger.info(
-            f"[Band {bn_i}] Progress: {1:.2%} | Degenerates are being included: {not check_degenerates_points}"
+            f"[Band {bn_i}] Progress: {1:.2%} | The band is completed | Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
     return clusters
