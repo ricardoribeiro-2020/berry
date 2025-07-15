@@ -178,16 +178,16 @@ def run_conductivity(conduction_band: int, npr: int = 1, min_band: int = 0, ener
     cb = conduction_band + 1 - initial_band
     if m.dimensions == 1:
         OMEGA_SHAPE = (m.nkx, cb, cb)
-        berry_conn_size  = 2 * m.nkx * (cb) ** 2
-        berry_conn_shape = (cb, cb, 2, m.nkx)
+        berry_conn_size  = m.dimensions * m.nkx * (cb) ** 2
+        berry_conn_shape = (cb, cb, m.dimensions, m.nkx)
     elif m.dimensions == 2:
         OMEGA_SHAPE = (m.nkx, m.nky, cb, cb)
-        berry_conn_size  = 2 * m.nkx * m.nky * (cb) ** 2
-        berry_conn_shape = (cb, cb, 2, m.nkx, m.nky)
+        berry_conn_size  = m.dimensions * m.nkx * m.nky * (cb) ** 2
+        berry_conn_shape = (cb, cb, m.dimensions, m.nkx, m.nky)
     else:
         OMEGA_SHAPE = (m.nkx, m.nky, m.nkz, cb, cb)
-        berry_conn_size  = 2 * m.nkx * m.nky * m.nkz * (cb) ** 2
-        berry_conn_shape = (cb, cb, 2, m.nkx, m.nky, m.nkz)
+        berry_conn_size  = m.dimensions * m.nkx * m.nky * m.nkz * (cb) ** 2
+        berry_conn_shape = (cb, cb, m.dimensions , m.nkx, m.nky, m.nkz)
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
