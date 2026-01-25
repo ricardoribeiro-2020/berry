@@ -3,7 +3,7 @@
 Project Title: Cluster Solver for Band Structure Analysis
 -----------------------------------------------------------------------------------------------------------------------
 
-Last Modified: [2025-05-06]
+Last Modified: [2025-12-11]
 
 Description:
 ------------
@@ -21,7 +21,7 @@ Usage:
 ------
 This package is used for clustering components in band structure analysis and can be invoked as shown bellow
 
-        usage: berry cluster [-h] [-mb [0-25]] [-np [1-112]] [-t [0.0-1.0]] [-flush] [-o file_path] [-v] [Mb 0-25]
+        usage: berry cluster [-h] [-mb [0-25]] [-np [1-112]] [-t [0.0-1.0]] [-iterations N] [-step F] [-alpha F] [-flush] [-o file_path] [-v] Mb
 
         Classifies the eigenstates in bands.
 
@@ -29,13 +29,16 @@ This package is used for clustering components in band structure analysis and ca
         Mb (0-25)     Maximum band to consider.
 
         optional arguments:
-        -h, --help    show this help message and exit
-        -mb [0-25]    Minimum band to consider (default: 0).
-        -np [1-112]   Number of processes to use (default: 1).
-        -t [0.0-1.0]  Tolerance used for graph construction (default: 0.95).
-        -flush        Flushes output into stdout.
-        -o file_path  Name of output log file. Extension will be .log regardless of user input.
-        -v            Increases output verbosity.
+        -h, --help      show this help message and exit
+        -mb [0-25]      Minimum band to consider (default: 0).
+        -np [1-112]     Number of processes to use (default: 1).
+        -t [0.0-1.0]    Tolerance used for graph construction (default: 0.99).
+        -iterations N   Number of clustering iterations (default: 5).
+        -step F         Step for alpha update (default: 0.01) : alpha = alpha + step * iteration.
+        -alpha F        Initial alpha parameter (default: 1) : score = dot_product * alpha + (1 - alpha) * energy_diff.
+        -flush          Flushes output into stdout.
+        -o file_path    Name of output log file. Extension will be .log regardless of user input.
+        -v              Increases output verbosity.
 
 For detailed usage instructions, please refer to the documentation.
 -----------------------------------------------------------------------------------------------------------------------
@@ -61,7 +64,9 @@ except:
     pass
 
 
-def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.99, npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False, verbose=False):
+def run_clustering( max_band: int, min_band: int = 0, tol: float = 0.99, 
+                    iterations: int = 5, step: float = 0.01, alpha: float = 1,
+                    npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False, verbose=False):
     logger = log(logger_name, "CLUSTER", level=logger_level, flush=flush)
 
     logger.header()
@@ -107,7 +112,7 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.99, npr: int
     material = Material(m.dimensions, [m.nkx, m.nky, m.nkz], m.nbnd, m.nks, d.eigenvalues,
                         connections, d.neighbors, logger, min_band, max_band, delta_k, n_process=npr, verbose=verbose)
     
-    material.solver(tol)
+    material.solver(tol, max_iter=iterations, step_alpha=step, alpha=alpha, datadir=m.data_dir)
     logger.info("\n")
     material.report()
     logger.info(material.final_report)
@@ -119,8 +124,6 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.99, npr: int
     '''
 
     logger.info('\n\tClustering Done')
-
-    m.data_dir = 'data/'
 
     with open(os.path.join(m.data_dir, 'bandsfinal.npy'), 'wb') as f:
         np.save(f, material.bands_final)
