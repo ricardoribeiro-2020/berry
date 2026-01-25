@@ -7,10 +7,12 @@ the dot product information.
 Classes:
     - Material: Core class that handles eigenvalue and connection data and builds clustering logic.
 
-Last Modified: [2025-05-06]
+Last Modified: [2025-12-11]
 """
 
 
+from copy import deepcopy
+from matplotlib import pyplot as plt
 import numba
 import textwrap
 import numpy as np
@@ -23,7 +25,7 @@ from numba import prange
 from tqdm import tqdm
 from datetime import datetime
 
-from berry._subroutines.clustering_utils import Component, compute_edges, solver_algorithm
+from berry._subroutines.clustering_utils import Component, compute_edges, solver_algorithm, print_bool_array, evaluate_point, print_int_array
 from berry import log
 
 
@@ -317,7 +319,7 @@ class Material:
 
         self.vectors = np.stack(stack_aux, axis=1)
 
-    def solver(self, initial_tol=0.99):
+    def solver(self, initial_tol=0.99, max_iter=5, step_alpha=0.01, alpha=1, datadir='data/') -> None:
         """
         Perform the full band structure analysis, identifying energy-connected components
         and degenerate regions across a k-point mesh.
@@ -334,6 +336,16 @@ class Material:
             Initial tolerance used for determining whether k-points from different bands 
             are considered connected (default is 0.99). This influences the energy 
             similarity threshold when building edges between bands.
+
+        max_iter : int, (default=5) 
+            Maximum number of iterations for the clustering algorithm.
+        step_alpha : float, (default=0.01)
+            Step size for alpha adjustment in the clustering algorithm.
+        alpha : float, (default=1)
+            Initial alpha value for the clustering algorithm.
+
+            score = alpha * dot_product_score  + (1 - alpha) * energy_score
+            alpha decreases by step_alpha in each iteration.
         """
             
         # -- Values that can be optimized --
@@ -410,10 +422,12 @@ class Material:
         
         max_band_energies = max_band_energies_corrected
         sequence = []
+        sequence_int = []
         prev_max_band = -1
         for bn_i, max_band_i in enumerate(max_band_energies):
             if prev_max_band < bn_i:
                 sequence.append(f"{bn_i + self.min_band} - {max_band_i + self.min_band}" if max_band_i != bn_i else f"{bn_i + self.min_band}")
+                sequence_int.append((bn_i + self.min_band, max_band_i + self.min_band))
                 prev_max_band = max_band_i
 
             for bn_j in self.bands[bn_i + 1: max_band_i + 1]:
@@ -462,33 +476,49 @@ class Material:
             if graphs[bn_i].number_of_nodes() == self.nks:
                 components.append([Component(graphs[bn_i])])
                 continue
-            
+
             vectors_bn_i = np.column_stack([not_k_points, np.full((len(not_k_points), 1), bn_i)])
 
             do_parallel = self.n_process > 1 and len(vectors_bn_i) > self.nks
 
-            edges_aux = compute_edges(vectors_bn_i, self.neighbors, self.connections, np.arange(bn_i, max_band_energies[bn_i] + 1), tol_to_be_an_edge=initial_tol, n_process=self.n_process, verbose=False, parallel=do_parallel)
-
             edges = []
-
-            for (k, b), v, weight in edges_aux:
-                k_n = v % self.nks
-                b_n = v // self.nks
-
-                if b_n > bn_i:
-                    if k_n not in not_energy_points[b_n] or k_n in degenerate_points[b_n]:
+            for k_j in not_k_points:
+                for k_n in self.neighbors[k_j]:
+                    if k_n == -1 or k_n not in not_k_points:
                         continue
-                    not_energy_points[b_n] = np.delete(not_energy_points[b_n], np.where(not_energy_points[b_n] == k_n)[0])
-                else:
-                    if k_n not in not_energy_points[bn_i] or k_n in degenerate_points[bn_i]:
-                        continue
-                
-                edges.append([(k, b), (k_n, b_n)])
+                    edges.append( [(k_j, bn_i), (k_n, bn_i)] )
+
+            #compute_edges(vectors_bn_i, self.neighbors, self.connections, np.arange(bn_i, max_band_energies[bn_i] + 1), tol_to_be_an_edge=initial_tol, n_process=self.n_process, verbose=False, parallel=do_parallel)
+
+            #edges = {}
+
+            #for (k, b), v, weight in edges_aux:
+            #    k_n = v % self.nks
+            #    b_n = v // self.nks
+
+            #    if b_n > bn_i:
+            #        if k_n not in not_energy_points[b_n] or k_n in degenerate_points[b_n]:
+            ##            continue
+            #        not_energy_points[b_n] = np.delete(not_energy_points[b_n], np.where(not_energy_points[b_n] == k_n)[0])
+            #    else:
+            #        if k_n not in not_energy_points[bn_i] or k_n in degenerate_points[bn_i]:
+            #            continue
+
+            #   if (k, b) in edges:
+            #        _, prev_weight = edges[(k, b)].get(k_n, (None, 0))
+            #        if prev_weight < weight:
+            #            edges[(k, b)][k_n] = (b_n, weight)
+            #    else:
+            #        edges[(k, b)] = {k_n: (b_n, weight)}
 
             graphs[bn_i].add_nodes_from([(k, bn_i) for k in not_k_points])
             graphs[bn_i].add_edges_from(edges)
 
-            band_components = [Component(graphs[bn_i].subgraph(c)) for c in nx.connected_components(graphs[bn_i])]
+            band_components = []
+            for c in nx.connected_components(graphs[bn_i]):
+                aux_component = Component(graphs[bn_i].subgraph(c))
+                aux_components = aux_component.remove_repeated_k_points()
+                band_components += aux_components
 
             components.append(band_components)
 
@@ -520,74 +550,130 @@ class Material:
             self.logger.debug(f"Number of connected components {bn_i}: {len(connected_components_bn_i)} total: {np.sum(number_nodes)}")
         
         self.logger.info(f"Memory PID Before Start: {os.getpid()} - {psutil.Process(os.getpid()).memory_info().rss / (1024 ** 3):.2f} GB")
-        clusters, iterable_bands = solver_algorithm(components, degenerate_components, degenerate_points, self.connections, self.neighbors, self.mesh_kpoints_index, self.nks, max_band_energies, mask_degenerates, self.bands, n_process=self.n_process, verbose=self.verbose, logger=self.logger, tolerance=initial_tol)
+
+        best_score = [-np.inf for _ in sequence_int]
+        best_energy_score = [-np.inf for _ in sequence_int]
+        number_of_mistakes = [np.inf for _ in sequence_int]
+
+        best_clusters = [None for _ in self.bands]
+        best_grad_e = [None for _ in self.bands]
+        best_signal_final = np.zeros((self.nks, self.number_of_bands), dtype=int)
+
+        for iter_ in range(max_iter):
+            clusters, iterable_bands = solver_algorithm(components, degenerate_components, degenerate_points, self.connections, self.neighbors, self.mesh_kpoints_index, self.nks, max_band_energies, mask_degenerates, self.bands, n_process=self.n_process, verbose=self.verbose, logger=self.logger, tolerance=initial_tol, energies=self.eigenvalues, alpha=alpha)
+
+            alpha = max(0, alpha - step_alpha)
+            
+            order_bands = [c.min_energy() for c in clusters]
+            order_bands = np.argsort(order_bands)
+
+            self.cluster_bands = [clusters[i] for i in order_bands]
+
+            # Merge bands_final_temp_{bn_i}_{max_band_energies[bn_i]}.npy files into bandsfinal.npy
+            bn_i_temp = 0
+            while bn_i_temp < self.number_of_bands:
+                bands_temp_file = np.load(f"bands_final_temp_{bn_i_temp}_{max_band_energies[bn_i_temp]}.npy")
+                bands_temp = np.arange(bn_i_temp, max_band_energies[bn_i_temp] + 1)
+
+                self.bands_final[:, bands_temp] = bands_temp_file[:, bands_temp]
+                bn_i_temp = max_band_energies[bn_i_temp] + 1
+
+                os.remove(f"bands_final_temp_{bands_temp[0]}_{bands_temp[-1]}.npy")
+                
+            with open(os.path.join(datadir, 'bandsfinal.npy'), 'wb') as f:
+                np.save(f, self.bands_final)
+                self.logger.info(f"Temporary bandsfinal.npy file saved to {datadir}.")
+ 
+            # ---- compute score ----
+            self.obtain_output()
+
+            for seq_i, (min_band, max_band) in enumerate(sequence_int):
+                min_band -= self.min_band
+                max_band -= self.min_band
+                
+                total_score_sequence = self.final_score[min_band:max_band + 1].sum() / (max_band - min_band + 1)
+                energy_total_score_sequence = np.sum(self.energy_score[min_band:max_band + 1]) / (max_band - min_band + 1)
+                n_mistakes_sequence = np.sum(self.signal_final[:, min_band:max_band + 1] == MISTAKE)
+
+                self.logger.info(f"Sequence {min_band} - {max_band} - Total Score: {total_score_sequence}, Energy Score: {energy_total_score_sequence:.4f}, Mistakes: {n_mistakes_sequence}")
+
+                if total_score_sequence > best_score[seq_i] or energy_total_score_sequence > best_energy_score[seq_i] or n_mistakes_sequence < number_of_mistakes[seq_i]:
+                    best_score[seq_i] = total_score_sequence
+                    best_energy_score[seq_i] = energy_total_score_sequence
+                    number_of_mistakes[seq_i] = n_mistakes_sequence
+
+                    for bn in range(min_band, max_band + 1):
+                        best_clusters[bn] = deepcopy(self.cluster_bands[bn])
+                        best_grad_e[bn] = deepcopy(self.grad_energy_bands[bn])
+
+                    best_signal_final[:, min_band:max_band + 1] = self.signal_final[:, min_band:max_band + 1].copy()
+                
+                else:
+                    for bn in range(min_band, max_band + 1):
+                        self.cluster_bands[bn] = deepcopy(best_clusters[bn])
+                        self.grad_energy_bands[bn] = deepcopy(best_grad_e[bn])
+
+                    self.signal_final[:, min_band:max_band + 1] = best_signal_final[:, min_band:max_band + 1].copy()
+
+
+            if iter_ == max_iter - 1:
+
+                self.logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Clustering algorithm finished.")
+
+                self.obtain_output()
+
+                self._number_of_preserved_mistakes = np.sum(self.signal_final == MISTAKE)
+                self.iterable_bands = iterable_bands
+
+                #self.signal_final[self.signal_final == MISTAKE] = CORRECT
+
+                break
+
+            self.print_report(self.signal_final, "Intermediate Report")
+            self.logger.info(f"Iteration {iter_ + 1}/{max_iter} - Total Score: {np.sum(self.final_score)}, Energy Score: {np.sum(self.energy_score):.4f}, Alpha: {alpha + step_alpha:.2f}\n")
+            #self.logger.info(f"\nIteration {iter_ + 1}/{max_iter} - Total Score: {total_score}, Energy Score: {energy_total_score:.4f}, Mean Score: {mean_score:.4f} +/- {std_score:.4f}, Mean Energy Score: {mean_energy_score:.4f} +/- {std_energy_score:.4f}, Mistakes: {n_mistakes}, Alpha: {alpha + step_alpha:.2f}\n")
+            
+
+            self.prev_signal = self.signal_final
+
+            components = []
+            degenerate_components = [[] for _ in self.bands]
+
+            mesh_with_mistakes = [np.zeros_like(self.mesh_kpoints_index) for _ in self.bands]
+
+            for bn_i, band in enumerate(self.cluster_bands):
+                mask_degenerates[bn_i] = np.zeros_like(mask_degenerates[bn_i])
+                
+                mistakes = np.zeros_like(self.mesh_kpoints_index)
+                marked_indexes = self.array_kpoints_index[self.signal_final[:, bn_i] == MISTAKE]
+                if len(marked_indexes.shape) > 1:
+                    marked_indexes = tuple(marked_indexes.T)
+                
+                mistakes[marked_indexes] = 1
+
+                grad_E = self.energy_bands[bn_i]
+                mesh_with_mistakes[bn_i] = np.logical_or(mesh_with_mistakes[bn_i], mistakes)
+                mesh_with_mistakes[bn_i] = np.logical_or(mesh_with_mistakes[bn_i], grad_E)
+
+                for bn_j in self.bands[bn_i + 1: max_band_energies[bn_i] + 1]:
+                    mesh_with_mistakes[bn_j] = np.logical_or(mesh_with_mistakes[bn_j], mesh_with_mistakes[bn_i])
+
+            for bn_i, band in enumerate(self.cluster_bands):
+                edges = []
+                
+                #for bn_j in self.bands[bn_i + 1: max_band_energies[bn_i] + 1]:
+                #    mesh_with_mistakes[bn_i] = np.logical_or(self.energy_bands[bn_j], mesh_with_mistakes[bn_i])
+
+                if np.sum(self.signal_final[:, bn_i] == MISTAKE) == 0:
+                    components.append([band])
+                    continue
+
+                new_components = band.remove_points(mesh_with_mistakes[bn_i])
+
+                components.append(new_components)
+                del band
+
         
-        order_bands = [c.min_energy() for c in clusters]
-        order_bands = np.argsort(order_bands)
-
-        self.cluster_bands = [clusters[i] for i in order_bands]
-
-        self.obtain_output()
-        self.print_report(self.signal_final, "Intermediate Report")
-
-        self.prev_signal = self.signal_final
-
-        components = []
-        degenerate_components = [[] for _ in self.bands]
-
-        mesh_with_mistakes = [np.zeros_like(self.mesh_kpoints_index) for _ in self.bands]
-
-        for bn_i, band in enumerate(self.cluster_bands):
-            mask_degenerates[bn_i] = np.zeros_like(mask_degenerates[bn_i])
-            
-            mistakes = np.zeros_like(self.mesh_kpoints_index)
-            marked_indexes = self.array_kpoints_index[self.signal_final[:, bn_i] == MISTAKE]
-            if len(marked_indexes.shape) > 1:
-                marked_indexes = tuple(marked_indexes.T)
-            
-            mistakes[marked_indexes] = 1
-
-            mesh_with_mistakes[bn_i] = np.logical_or(mesh_with_mistakes[bn_i], mistakes)
-            for bn_j in self.bands[bn_i + 1: max_band_energies[bn_i] + 1]:
-                mesh_with_mistakes[bn_j] = np.logical_or(mesh_with_mistakes[bn_j], mesh_with_mistakes[bn_i])
-
-        for bn_i, band in enumerate(self.cluster_bands):
-            edges = []
-            
-            for bn_j in self.bands[bn_i + 1: max_band_energies[bn_i] + 1]:
-                mesh_with_mistakes[bn_i] = np.logical_or(mesh_with_mistakes[bn_j], mesh_with_mistakes[bn_i])
-
-            if np.sum(mesh_with_mistakes[bn_i]) == 0:
-                components.append([band])
-                continue
-
-            for k, b in band.nodes:
-                for i_neig, k_neig in enumerate(self.neighbors[k]):
-                    if k_neig < k:
-                        continue
-                    b_neigh = band.nodes[k_neig, 1]
-                    edges.append([(k, b), (k_neig, b_neigh)])
-            
-            band.graph.add_edges_from(edges)
-
-            components.append(band.remove_points(mesh_with_mistakes[bn_i]))
-            del band
-
-        clusters, iterable_bands = solver_algorithm(components, degenerate_components, degenerate_points, self.connections, self.neighbors, self.mesh_kpoints_index, self.nks, max_band_energies, mask_degenerates, self.bands, n_process=self.n_process, verbose=self.verbose, logger=self.logger, energies=self.eigenvalues, tolerance=initial_tol)
-
-        order_bands = [c.min_energy() for c in clusters]
-        order_bands = np.argsort(order_bands)
-
-        self.cluster_bands = [clusters[i] for i in order_bands]
-
-        self.logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Clustering algorithm finished.")
-
-        self.obtain_output()
-
-        self._number_of_preserved_mistakes = np.sum(self.signal_final == MISTAKE)
-        self.iterable_bands = iterable_bands
-
-        self.signal_final[self.signal_final == MISTAKE] = CORRECT
 
 
     def obtain_output(self) -> None:
@@ -603,14 +689,49 @@ class Material:
         self.logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Obtaining the output...")
 
         self.signal_final = np.zeros((self.nks, self.number_of_bands), dtype=int)   # The k-point's signal
+        
+        self.energy_bands = []
+        self.grad_energy_bands = []
+
+        self.energy_score = np.zeros(self.number_of_bands, dtype=float)
 
         for bn_i, band in enumerate(self.cluster_bands):
-            
             band.nodes = band.nodes[band.nodes[:, 0].argsort()]                   # Sort the k-points inside the band
-
+            energy_band = np.zeros_like(self.mesh_kpoints_index, dtype=float)
             for k, bn1 in band.nodes:
                 self.bands_final[k, bn_i] = bn1
+                coord = self.array_kpoints_index[k]
+                energy_band[tuple(coord)] = self.eigenvalues[k, bn1]
+            
+            grad_e = np.gradient(energy_band, axis=tuple(range(self.dimensions)))
+            grad_e_magnitude = np.sqrt(np.sum(np.array(grad_e)**2, axis=0))
+            #grad_grad_e = np.gradient(grad_e_magnitude, axis=tuple(range(self.dimensions)))
+            #grad_e_magnitude = np.sqrt(np.sum(np.array(grad_grad_e)**2, axis=0))
+            
+            self.grad_energy_bands.append(grad_e_magnitude)
+            mask_mistakes_energy = (grad_e_magnitude > np.mean(grad_e_magnitude) + 4 * np.std(grad_e_magnitude)) * 1
 
+            for _ in range(3):
+                grad_mistakes_energy = np.zeros_like(mask_mistakes_energy)
+                for k in range(self.nks):
+                    coord = tuple(self.array_kpoints_index[k])
+                    if mask_mistakes_energy[coord] == 1:
+                        grad_mistakes_energy[coord] = 1
+                        for k_neig in self.neighbors[k]:
+                            if k_neig == -1:
+                                continue
+                            coord_neig = tuple(self.array_kpoints_index[k_neig])
+                            grad_mistakes_energy[coord_neig] = 1
+                mask_mistakes_energy = grad_mistakes_energy
+            
+            
+            self.energy_bands.append(grad_mistakes_energy)
+
+
+        for bn_i, band in enumerate(self.cluster_bands):
+            band.nodes = band.nodes[band.nodes[:, 0].argsort()]                   # Sort the k-points inside the band
+            
+            for ik, (k, bn1) in enumerate(band.nodes):
                 connections = []                                                    # The array that store the dot-product with the k-point's neighbors
                 for i_neig, k_neig in enumerate(self.neighbors[k]):
                     # Obtain the dot-product with each neighbor
@@ -621,6 +742,22 @@ class Material:
                     connections.append(self.connections[k, i_neig, bn1, bn2])       # <k, k neighbor>
 
                 self.signal_final[k, bn_i] = evaluate_result(connections)             # Computes the k-point's signal
+                
+                
+                signal_energy, score_energy = evaluate_point(self.dimensions,
+                                                                k,
+                                                                bn1,
+                                                                self.array_kpoints_index,
+                                                                self.mesh_kpoints_index,
+                                                                self.bands_final,
+                                                                self.eigenvalues,)
+                
+                if self.energy_bands[bn_i][tuple(self.array_kpoints_index[k])] == 0 and signal_energy == MISTAKE:
+                    self.energy_bands[bn_i][tuple(self.array_kpoints_index[k])] = 1
+
+                self.energy_score[bn_i] += score_energy
+
+            self.energy_score[bn_i] /= self.nks
 
 
         ###########################################################################
@@ -795,6 +932,10 @@ class Material:
             final_report : string
         '''
         final_report = f'\n\t====== {description} ======\n'
+        # Add sum_score, mean_score, std_score
+        final_report += f'\n\t\t Total score: {np.sum(self.final_score):.4f}'
+        final_report += f'\n\t\t Mean score: {np.mean(self.final_score):.4f}'
+        final_report += f'\n\t\t Standard deviation of score: {np.std(self.final_score):.4f}\n'
         bands_report = []
         MAX = np.max(signal_report) + 1
         ###########################################################################
@@ -862,8 +1003,8 @@ class Material:
 
         if number_of_k_basis_rotation > 0:
             self.final_report += f'\n\n\t\tNumber of degenerate points: {number_of_degenerates}\n'
-            for k1, bn1, bn2 in self.degenerate_final:
-                self.final_report += f'\n\t\t\t* K-point: {k1} Bands: {bn1 + self.min_band}, {bn2 + self.min_band}'
+            #for k1, bn1, bn2 in self.degenerate_final:
+            #    self.final_report += f'\n\t\t\t* K-point: {k1} Bands: {bn1 + self.min_band}, {bn2 + self.min_band}'
             self.final_report += f'\n\n\t\t  ' + textwrap.fill(
                         f"Degenerate points refer to instances where a point shares the same numerical energy value with another "
                         f"k-point, and the dot product with its neighboring points falls within the range of 0.5 to "
@@ -930,7 +1071,7 @@ class Material:
 
         self.final_report += message
 
-        self.final_report += f'\n\n\tThe information is stored in the `completed_bands.npy` file.'
+        self.final_report += f'\n\n\tThe information is stored in the `bandsfinal.npy` file.'
         self.final_report += f'\n\t\t  Band: ' + ', '.join([str(bn+self.min_band) for bn in self.bands])
 
         if number_of_degenerates > 0:
