@@ -5,7 +5,7 @@ This file contains utility classes and functions that support the main algorithm
 utilities are designed to handle specific tasks like data manipulation, computation, and assisting in the 
 implementation of the clustering logic.
 
-Last Modified: [2025-05-06]
+Last Modified: [2025-12-11]
 
 Main Classes:
 ----------
@@ -27,9 +27,12 @@ Main Functions:
 import numpy as np
 import networkx as nx
 import datetime
+import time
 
 from functools import partial
 from multiprocessing import Pool
+
+from scipy.optimize import curve_fit
 
 from tqdm import tqdm
 from tqdm.contrib.concurrent import process_map
@@ -215,7 +218,39 @@ class Component:
     
         coords_tuples = tuple(self.active_coords.T)
 
-        return np.min(Component.energies[self.nodes[:, 1], coords_tuples])
+        return np.mean(Component.energies[self.nodes[:, 1], coords_tuples])
+    
+    def remove_repeated_k_points(self):
+        'If there are repeated k-points in the component, remove them and return new components each with one of the repeated k-points.'
+        k_points = self.nodes[:, 0]
+
+        set_k_points = set(k_points)
+        if len(set_k_points) == len(k_points):
+            return [self]
+
+        new_components = []
+
+        unique_points = []
+        unique_graph = nx.Graph()
+
+        for k in set_k_points:
+            mask = (k_points == k)
+            if np.sum(mask) == 1:
+                unique_points.append(self.nodes[mask][0])
+                continue
+
+            nodes_to_remove = self.nodes[mask]
+            for k_ in nodes_to_remove:
+                new_graph = nx.Graph()
+                new_graph.add_node((k_[0], k_[1]))
+                new_components.append(Component(new_graph))
+            
+        for point in unique_points:
+            unique_graph.add_node((point[0], point[1]))
+        
+        new_components.append(Component(unique_graph))         
+
+        return new_components
 
     def compute_boundary(self):
         """
@@ -263,6 +298,49 @@ class Component:
             if not boundary[i]:
                 # We never saw a missing neighbor; so it’s truly interior:
                 interior[i] = True
+
+
+        self.sigma_E = np.zeros(np.sum(boundary), dtype=float)
+        N_neighbor_for_sigma_E = 2
+
+        for i, k in enumerate(np.arange(n)[boundary]):
+            coord = self.active_coords[k]
+            E_mesh = np.zeros((Component.dimensions, 2*N_neighbor_for_sigma_E + 1), dtype=float)
+            Ek_index = (self.nodes[k, 1], ) + tuple(coord) if Component.dimensions > 1 else  (self.nodes[k, 1], coord)
+            Ek = Component.energies[Ek_index]
+
+            for dim in range(Component.dimensions):
+                E_mesh[dim, N_neighbor_for_sigma_E] = Ek
+
+                for offset in range(-N_neighbor_for_sigma_E, N_neighbor_for_sigma_E + 1):
+                    if offset == 0:
+                        continue
+                    neighbor_coord = list(coord) if Component.dimensions > 1 else [coord]
+                    neighbor_coord[dim] += offset
+                    neighbor_coord = tuple(neighbor_coord) if Component.dimensions > 1 else neighbor_coord[0]
+                    
+                    if neighbor_coord in self.coord_tuples:
+                        k_neighbor = np.where((self.active_coords == neighbor_coord).all(axis=1))[0][0] if Component.dimensions > 1 else np.where(self.active_coords == neighbor_coord)[0][0]
+                        b_neighbor = self.nodes[k_neighbor, 1]
+                        Ek_neighbor = Component.energies[(b_neighbor, ) + tuple(neighbor_coord) if Component.dimensions > 1 else (b_neighbor, neighbor_coord,)]
+                        E_mesh[dim, N_neighbor_for_sigma_E + offset] = Ek_neighbor
+                    else:
+                        # Add None if the neighbor is not in the component
+                        E_mesh[dim, N_neighbor_for_sigma_E + offset] = None
+
+            # Compute the gradient of the energy mesh
+            grad_E = [np.gradient(E_axis) for E_axis in E_mesh]
+            abs_E = []
+
+            for dim in range(Component.dimensions):
+                grad_E_not_none = [g for g in grad_E[dim].flatten() if np.isfinite(g)]
+                abs_E.append(np.mean(grad_E_not_none) if len(grad_E_not_none) > 0 else None)
+
+            if len([a for a in abs_E if a is not None]) == Component.dimensions:
+                self.sigma_E[i] = np.linalg.norm(abs_E)
+            else:
+                self.sigma_E[i] = None
+
 
         self._boundary_mask = boundary
         self._interior_mask = interior
@@ -354,9 +432,31 @@ class Component:
             list: A list of new Component objects after removing the specified k-points.
         """
         k_points = Component.mesh_kpoints_index[mesh_to_remove == 1]
+
+        # Unfrozen the graph to allow modifications
+        self.graph = self.graph.copy()
+
+        for k, b in self.nodes:
+            if k in k_points.flatten():
+                continue
+            neighbor_coord_plus = list(Component.array_kpoints_index[k]) if Component.dimensions > 1 else [Component.array_kpoints_index[k]]
+            for d in range(Component.dimensions):
+                offset = 1
+                if neighbor_coord_plus[d] + offset >= Component.mesh_kpoints_index.shape[d]:
+                    continue
+                neighbor_coord_plus[d] += offset
+                k_neig = Component.mesh_kpoints_index[tuple(neighbor_coord_plus)]
+                if k_neig in k_points.flatten():
+                    continue
+                b_neig = self.nodes[:, 1][self.nodes[:, 0] == k_neig]
+                if len(b_neig) > 0:
+                    self.graph.add_edge((k, b), (k_neig, b_neig[0]))
+
         nodes_to_remove = []
 
         for k in k_points.flatten():
+            if not k in self.nodes[:, 0]:
+                continue
             b = self.nodes[:, 1][self.nodes[:, 0] == k][0]
             nodes_to_remove.append((k, b))
 
@@ -428,9 +528,13 @@ class Cluster(Component):
         """
         total_number_of_nodes = self.number_of_nodes + Sample.number_of_nodes
         if total_number_of_nodes > Component.nks:
+            if verbose:
+                return False, f"Total number of nodes exceeds total k-points"
             return False
 
         if self.does_intersect(Sample):
+            if verbose:
+                return False, "Clusters intersect." + f" Shared k-points"
             return False
 
         self_neighs_coords = self.neighbor_coords
@@ -445,6 +549,12 @@ class Cluster(Component):
 
         neighs_intersect_sample_coords = not self_neighs_coords.isdisjoint(sample_coords)
         self_intersect_sample_neighs = not self_boundary_coords.isdisjoint(sample_neighs_coords)
+        if verbose:
+            if neighs_intersect_sample_coords:
+                return True, "Clusters can merge: neighboring mesh points intersect."
+            if self_intersect_sample_neighs:
+                return True, "Clusters can merge: shared boundaries intersect."
+            return False, "No neighboring mesh points or shared boundaries intersect."
 
         return neighs_intersect_sample_coords or self_intersect_sample_neighs
 
@@ -462,16 +572,17 @@ class Cluster(Component):
         Returns:
             float: The energy score between the cluster and sample component (1 - energy difference).
         """
-        cluster_points = self.nodes
-        sample_points = Sample.nodes
+        cluster_points = self.nodes[self._boundary_mask]
+        sample_points = Sample.nodes[Sample._boundary_mask]
 
-        energies_differences = np.array(obtain_energy_difference(sample_points, cluster_points, energies, neighbors))
+        energies_differences = np.array(obtain_energy_difference(sample_points, cluster_points, self.sigma_E, energies, neighbors))
+
         if len(energies_differences) != 1:
             energies_score = np.mean(energies_differences)
         else:
             energies_score = energies_differences[0]
         
-        return 1 - energies_score
+        return energies_score
     
     def dot_product_score(self, Sample:Component, connections, neighbors):
         """
@@ -569,7 +680,7 @@ def obtain_dot_products(sample_points, cluster_points, connections, neighbors):
             dot_products.append(connections[k_s, i_neigh, b_s, b_c])
     return dot_products
 
-def obtain_energy_difference(sample_points, cluster_points, energies, neighbors):
+def obtain_energy_difference(sample_points, cluster_points, sigma_E, energies, neighbors):
     '''
     Obtain the difference on energy between the cluster and the sample.
     '''
@@ -583,13 +694,17 @@ def obtain_energy_difference(sample_points, cluster_points, energies, neighbors)
             k_c = np.where(cluster_points[:, 0] == k)[0][0]
             b_c = cluster_points[k_c, 1]
             E_kc_bc = energies[k, b_c]
-            energy_difference.append(np.abs((E_kc_bc - E_ks_bs) / E_kc_bc))
-            
+            sigma_E_kc = sigma_E[k_c]
+            if not np.isfinite(sigma_E_kc) or sigma_E_kc == 0:
+                energy_difference.append(np.exp(- (np.abs(E_kc_bc - E_ks_bs))**2 / (1e-3**2)))
+            else:
+                energy_difference.append(np.exp(- (np.abs(E_kc_bc - E_ks_bs) - sigma_E_kc)**2 / ( 2 * sigma_E_kc**2)))
+
     return energy_difference
 
 
 
-def solver_iterable(bands_to_solve, components, degenerate_components, degenerate_points, connections, neighbors, mesh_kpoints_index, nks, max_band_energies, mask_degenerates, bands, logger, energies=None, tolerance=0.99):
+def solver_iterable(bands_to_solve, components, degenerate_components, degenerate_points, connections, neighbors, mesh_kpoints_index, nks, max_band_energies, mask_degenerates, bands, logger, energies=None, tolerance=0.99, alpha=0.5):
     """
     ----------------------------------------------------------------------------------------------------------------------
     Main loop for solving clusters of components across multiple bands.
@@ -655,11 +770,17 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
     ----------------------------------------------------------------------------------------------------------------------
     '''
     clusters = []
+    compute_energy_only = None
 
     if energies is None:
         compute_score = lambda sample: cluster_bn_i.compute_similarity_with_sample(sample, connections, neighbors, compute='dot_product')
+        compute_energy_only = compute_score
     else:
-        compute_score = lambda sample: np.mean(cluster_bn_i.compute_similarity_with_sample(sample, connections, neighbors, energies=energies, compute='all'))
+        def compute_score_(sample, alpha=0.5):
+            dot_product_score, energy_score = cluster_bn_i.compute_similarity_with_sample(sample, connections, neighbors, energies=energies, compute='all')
+            return alpha * dot_product_score + (1 - alpha) * energy_score
+        compute_score = partial(compute_score_, alpha=alpha)
+        compute_energy_only = partial(compute_score_, alpha=0)
 
     for bn_i in bands_to_solve:
         # Sort the components by number of nodes
@@ -677,7 +798,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
             clusters.append(components[bn_i][0])
             # Check if there is more than one component
             # If there is, add the rest of the components to the next band
-            logger.info(
+            logger.debug(
                     f"[Band {bn_i}] Progress: {1:.2%}"
                 )
             if len(components[bn_i][1:]) > 0 and bn_i + 1 <= max_band_energies[bn_i]:
@@ -836,6 +957,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
 
         add_degenerates_points = False
         check_degenerates_points = True
+        only_energy_score = False
 
         '''
         -----------------------------------------------------------------------
@@ -843,24 +965,30 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
         -----------------------------------------------------------------------
         '''
         last_logged_percent = -1
-        
+
+        remaining_samples_ = [[] for _ in range(len(samples_that_can_be_added))]
+        logger.info(
+                    f"[Band {bn_i}] Progress: {0:.2%} | Degenerates are being included: {not check_degenerates_points}"
+                )
         while cluster_bn_i.number_of_nodes < nks:
+
             progress = cluster_bn_i.number_of_nodes / nks
             current_percent = int(progress * 100)
 
-            if current_percent % 5 == 0 and current_percent != last_logged_percent:
-                logger.info(
-                    f"[Band {bn_i}] Progress: {progress:.2%} | Degenerates are being included: {not check_degenerates_points}"
+            if current_percent % 10 == 0 and current_percent != last_logged_percent:
+                logger.debug(
+                    f"[Band {bn_i}] Progress: {progress:.2%} {cluster_bn_i.number_of_nodes}| Degenerates are being included: {not check_degenerates_points}"
                 )
-                last_logged_percent = current_percent
-    
+            #    last_logged_percent = current_percent
+
             samples_that_can_be_added = remaining_samples
             remaining_samples = []
 
-            add_degenerates_points = add_degenerates_points or cluster_bn_i.number_of_nodes == nks - len(degenerate_points[bn_i])
-
+            add_degenerates_points = add_degenerates_points or cluster_bn_i.number_of_nodes >= nks - len(degenerate_points[bn_i])
 
             if add_degenerates_points:
+
+                only_energy_score = True
 
                 remaining_points = np.zeros_like(mesh_kpoints_index, dtype=bool)
                 for coord in cluster_bn_i.active_coords:
@@ -868,6 +996,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                     remaining_points[idx_coord] = True
 
                 remaining_points = np.logical_not(remaining_points)
+
 
                 for j, samples in enumerate(degenerate_components[bn_i: max_band_energies[bn_i] + 1]):
                     remaining_samples_bnj = []
@@ -889,9 +1018,9 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                 check_degenerates_points = False
                 add_degenerates_points = False
 
+
             scores = []
                     
-
             for i, samples in enumerate(samples_that_can_be_added):
                 remaining_samples.append([])
                 for j, sample in enumerate(samples):
@@ -899,68 +1028,93 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                     for coord in sample.active_coords:
                         idx_coord = tuple(coord) if Component.dimensions > 1 else coord
                         sample_mesh[idx_coord] = True
-                    check_degenerates = np.sum(sample_mesh * mask_degenerates[bn_i]) != 0 if check_degenerates_points else False
+                    check_degenerates = check_degenerates_points and np.sum(sample_mesh * mask_degenerates[bn_i]) != 0
                     if not cluster_bn_i.can_merge(sample) or check_degenerates:
                         remaining_samples[-1].append(sample)
                         continue
-                    score = compute_score(sample)
+                    if only_energy_score:
+                        score = compute_energy_only(sample)
+                    else:
+                        score = compute_score(sample)
                     scores.append([i, j, score])
 
 
             scores = np.array(scores)
+            #logger.info(f"[Band {bn_i}] Number of samples that can be added in this iteration: {len(scores)}")
+
             appended_samples = []
 
             if len(scores) == 0:
                 add_degenerates_points = True
                 if not check_degenerates_points:
-                    raise ValueError(
-                            f"There is no more points to be attributed. This could be due to a small initial "
-                            f"tolerance (currently {tolerance}), and the quality of the dot-product is not good "
-                            f"enough to properly discriminate the bands. Please repeat the process by increasing "
-                            f"the initial tolerance using the -t option."
+                    logger.info(
+                            f"[{bn_i}] There is no more points to be attributed."
+                            f" The cluster has {cluster_bn_i.number_of_nodes} points."
                         )
-                    #----------------------------------------------------------------------
-                    # Debugging Purposes
-                    #----------------------------------------------------------------------
+
+                    for ri, samples in enumerate(remaining_samples):
+                        logger.info(f"Band {bn_i + ri}: {len(samples)} samples, {len(remaining_samples_[ri])} remaining samples.")
                     
-                    logger.info("No samples that can be added")
-                    logger.info("Number of nodes: ", cluster_bn_i.number_of_nodes)
-                    print_bool_array(cluster_bn_i.mesh)
+                    cluster_mesh = np.zeros_like(mesh_kpoints_index, dtype=bool)
+                    
+                    for act_coord in cluster_bn_i.active_coords:
+                        idx_coord = tuple(act_coord) if Component.dimensions > 1 else act_coord
+                        cluster_mesh[idx_coord] = True
+                    
+                    remaining_points_mesh = np.logical_not(cluster_mesh) * 1
+                    if np.sum(remaining_points_mesh) > np.sum(cluster_mesh):
+                        remaining_points_mesh = cluster_mesh * 1
+                    logger.debug(print_bool_array(remaining_points_mesh))
 
-                    logger.info("Degenerate points")
-                    for j, samples in enumerate(degenerate_components[bn_i: max_band_energies[bn_i] + 1]):
-                        logger.info(f"Band {bn_i + j} - Number of nodes: {len(samples)}")
-                        mesh_samples = np.zeros_like(cluster_bn_i.mesh, dtype=int)
+                    new_remaining_samples = []
+                    for samples in remaining_samples:
+                        new_remaining_samples.append([])
                         for sample in samples:
-                            mesh_samples += sample.mesh
-                        print_bool_array(mesh_samples)
-                        input()
+                            new_components = sample.remove_points(remaining_points_mesh)
+                            new_remaining_samples[-1] += new_components
 
-                    logger.info("Samples")
-                    for j, samples in enumerate(remaining_samples):
-                        logger.info(f"Band {bn_i + j} - Number of nodes: {len(samples)}")
-                        mesh_samples = np.zeros_like(cluster_bn_i.mesh, dtype=int)
+                    remaining_samples = new_remaining_samples
+
+                    new_remaining_samples_ = []
+                    for ri, samples in enumerate(remaining_samples_):
+                        new_remaining_samples_.append([])
                         for sample in samples:
-                            mesh_samples += sample.mesh
-                        print_bool_array(mesh_samples)
-                        input()
+                            new_components = sample.remove_points(remaining_points_mesh)
+                            new_remaining_samples_[-1] += new_components
+                        remaining_samples[ri] += new_remaining_samples_[-1]
 
-                    logger.info("Components")
-                    for j, samples in enumerate(components[bn_i: max_band_energies[bn_i] + 1]):
-                        logger.info(f"Band {bn_i + j} - Number of nodes: {len(samples)}")
-                        mesh_samples = np.zeros_like(cluster_bn_i.mesh, dtype=int)
+                    remaining_samples_ = [[] for _ in range(len(samples_that_can_be_added))]
+                    logger.debug(f"New remaining samples after removing points:")
+                    total_samples_can_merge = 0
+                    for ri, samples in enumerate(remaining_samples):
+                        total_can_merge = 0
+                        infos_print = []
                         for sample in samples:
-                            mesh_samples += sample.mesh
-                        print_bool_array(mesh_samples)
-                        input()
+                            can_merge, info_print =  cluster_bn_i.can_merge(sample, verbose=True)
+                            if can_merge:
+                                total_can_merge += 1
+                            else:
+                                infos_print.append(info_print)
+                        total_samples_can_merge += total_can_merge
+                        logger.debug(f"Band {bn_i + ri}: {len(samples)} samples remaining. Can merge with cluster: {total_can_merge}")
+                        info_print = set(infos_print)
+                        for info in info_print:
+                            logger.debug(f"  - {info}")
+                    if total_samples_can_merge == 0:
+                        # sort the remaining samples by number of nodes
+                        remaining_samples[0] = [s for s in sorted(remaining_samples[0], key=lambda x: x.number_of_nodes, reverse=True)]
+                        cluster_bn_i_swap = remaining_samples[0].pop(0).to_cluster()
+                        logger.debug(f"Swapping cluster with a component of size {cluster_bn_i_swap.number_of_nodes} (was {cluster_bn_i.number_of_nodes})")
+                        remaining_samples[0].append(cluster_bn_i)
+                        cluster_bn_i = cluster_bn_i_swap
 
-                    raise ValueError(f"Number of available points is not equal to the number of points in the band")
-                
                 logger.debug("No samples that can be added, but there are still points to be added")
                 continue
             
             scores = scores[scores[:, 2].argsort()[::-1]]
             first_score = scores[0][2]
+
+            #logger.info(f"[Band {bn_i}] Best score in this iteration: {first_score:.4f}")
 
             # ------------------------------------------------------------------------------
 
@@ -976,6 +1130,10 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                 for sample in samples:
                     number_of_available_points += sample.number_of_nodes
 
+            for samples in remaining_samples_:
+                for sample in samples:
+                    number_of_available_points += sample.number_of_nodes
+
             for i, j, score in scores:
                 i = int(i)
                 j = int(j)
@@ -983,10 +1141,18 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                 number_of_available_points += sample.number_of_nodes
                 already_added = any([sample.does_intersect(s) for s in appended_samples])
 
-                if already_added or not np.isclose(score, first_score, atol=1e-3):
-                    remaining_samples[i].append(sample)
+                if already_added:
+                    remaining_samples_[i].append(sample)
                     continue
                 
+                if first_score > 0.7 and score < first_score * 0.7 or first_score <= 0.7 and score < first_score:
+                    remaining_samples[i].append(sample)
+                    continue
+
+                #if not np.isclose(score, first_score, atol=1e-3):
+                #    remaining_samples[i].append(sample)
+                #    continue
+
                 appended_samples.append(sample)
                 cluster_bn_i.merge(sample)
 
@@ -996,6 +1162,8 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                 logger.info(f"Number of points in the band: {nks * (max_band_energies[bn_i] - bn_i + 1)}")
                 raise ValueError(f"Number of available points is not equal to the number of points in the band")
 
+        for i, samples in enumerate(remaining_samples_):
+            remaining_samples[i] += samples
 
         for j, samples in enumerate(remaining_samples):
             components[bn_i + j] += samples
@@ -1031,10 +1199,24 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
             f"[Band {bn_i}] Progress: {1:.2%} | The band is completed | Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
+        if bn_i == max_band_energies[bn_i]:
+            logger.info(f"All bands from the group {np.min(bands_to_solve)} - {bn_i} have been solved. | Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+            bands_final_temp = np.full((nks, np.max(max_band_energies) + 1), -1, dtype=int)
+            for cluster, bn in zip(clusters, bands_to_solve):
+                for k, b in cluster.nodes:
+                    bands_final_temp[k, bn] = b
+
+            # Save the bands_final_temp to a file
+            np.save(f'bands_final_temp_{np.min(bands_to_solve)}_{bn_i}.npy', bands_final_temp)
+            logger.info(f"Temporary file bands_final_temp_{np.min(bands_to_solve)}_{bn_i}.npy saved.")
+
+
+
     return clusters
 
 
-def solver_algorithm(components, degenerate_components, degenerate_points, connections, neighbors, mesh_kpoints_index, nks, max_band_energies, mask_degenerates, bands, logger, n_process=1, verbose=False, parallel=True, energies=None, tolerance=0.99):
+def solver_algorithm(components, degenerate_components, degenerate_points, connections, neighbors, mesh_kpoints_index, nks, max_band_energies, mask_degenerates, bands, logger, n_process=1, verbose=False, parallel=True, energies=None, tolerance=0.99, alpha=0.5):
     """
     ----------------------------------------------------------------------------------------------------------------------
     Main algorithm for solving clusters of components across multiple bands, with support for parallel processing.
@@ -1051,7 +1233,7 @@ def solver_algorithm(components, degenerate_components, degenerate_points, conne
     ----------------------------------------------------------------------------------------------------------------------
     '''
     clusters = []
-    solver_iterable_partial = partial(solver_iterable, components=components, degenerate_components=degenerate_components, degenerate_points=degenerate_points, connections=connections, neighbors=neighbors, mesh_kpoints_index=mesh_kpoints_index, nks=nks, max_band_energies=max_band_energies, mask_degenerates=mask_degenerates, bands=bands, logger=logger, energies=energies, tolerance = tolerance)
+    solver_iterable_partial = partial(solver_iterable, components=components, degenerate_components=degenerate_components, degenerate_points=degenerate_points, connections=connections, neighbors=neighbors, mesh_kpoints_index=mesh_kpoints_index, nks=nks, max_band_energies=max_band_energies, mask_degenerates=mask_degenerates, bands=bands, logger=logger, energies=energies, tolerance = tolerance, alpha=alpha)
 
     iterable_bands = []
 
@@ -1181,3 +1363,211 @@ Not Used but implemented to otimized previous algorithms:
 #        print(f"Number of final subgraphs: {len(sub_graphs)}")
 #        
 #        return sub_graphs
+
+
+
+def evaluate_point(dimension:int, k, bn, k_index: np.ndarray, k_matrix: np.ndarray, bands: np.ndarray, energies: np.ndarray):
+    '''
+    Assign a signal value depending on energy continuity.
+
+    Parameters
+        dimension: int
+            Dimension of the problem.
+        k: Kpoint
+            Integer that index the k point on analysis.
+        bn: Band
+            Integer that index the band number on analysis.
+        k_index: array_like
+            An array that contains the indices of each k point on the k-space matrix.
+        k_matrix: array_like
+            An array with the shape of the k-space. 
+            It contains the value of each k point in their corresponding position.
+        signal: array_like
+            An array with the current signal value for each k point.
+        bands: array_like
+            An array with the information of current solution of band clustering.
+        energies: array_like
+            It contais the energy value for each k point.
+    
+    Returns
+        (signal, scores): Tuple[int, list[int]]
+    '''
+    
+    CORRECT = 4
+    MISTAKE = 1
+    OTHER = 3
+
+    TOL = 0.9                       # Tolerance to consider that exist energy continuity
+    N = 4                           # Number of points to fit the curve
+    N_NEIGS = 2 * dimension         # Number of neighbors to consider the continuity
+
+    mach_bn = bands[k, bn]          # original band
+
+    if dimension == 1:
+        ik = k_index[k]             # k point index on k-space
+    elif dimension == 2:
+        ik, jk = k_index[k]         # k point indices on k-space
+    else:
+        ik, jk, kk = k_index[k]     # k point indices on k-space
+
+    Ek = energies[k, mach_bn]       # k point's Energy value
+
+    def difference_energy(Ek: float, Enew: float) -> float:
+        '''
+        Attributes a value that score how close is Ek to Enew.
+
+        Parameters
+            Ek: float
+                K point's energy value.
+            Enew: float
+                Energy value to compare.
+        Returns
+            score: float [0, 1]
+                Value that measures the closeness between Ek and Enew consider the other possible values.
+        '''
+        min_energy = np.min(np.abs(Enew-energies[k]))           # Computes all possible energy values for this k point
+        delta_energy = np.abs(Enew-Ek)                          # Actual difference between Ek and Enew
+        return min_energy/delta_energy if delta_energy else 1   # Score
+
+
+    if dimension == 1:
+        directions = np.array([[1], [-1]])                     # Right, Left
+        energy_vals = []
+
+        ###########################################################################
+        # Calculate the score for each direction
+        ###########################################################################
+
+        for direction in directions:
+            # Iterates each direction and obtain N points to be used for fit the curve
+            n = np.repeat(np.arange(1,N+1),2).reshape(N,2)
+            kn_index = n*direction + np.array([ik])
+            i = kn_index[:, 0]
+            i = i[i >= 0]
+            i = i[i < k_matrix.shape[0]]
+
+            ks = k_matrix[i] if len(i) > 0 else []               # Identify the N k points
+            if len(ks) == 0:
+                # The direction in analysis does not have points
+                energy_vals.append(1)
+                continue
+            if len(ks) <= 3:
+                # If there are not enough points to fit the curve it is used the Energy of the nearest neighbor
+                Eneig = energies[ks[0], bands[ks[0], bn]]
+                energy_vals.append(difference_energy(Ek, Eneig))
+                continue
+            
+            k_bands = bands[ks, bn]
+            Es = energies[ks, k_bands]
+            X = i
+            new_x = ik
+            pol = lambda x, a, b, c: a*x**2 + b*x + c           # Second order polynomial
+            popt, pcov = curve_fit(pol, X, Es)                  # Curve fitting
+            Enew = pol(new_x, *popt)                            # Obtain Energy value
+            energy_vals.append(difference_energy(Ek, Enew))     # Calculate score
+
+    elif dimension == 2:
+
+        directions = np.array([[1,0], [0,1], [-1,0], [0,-1]])       # Down, Right, Up, Left
+        energy_vals = []
+
+        ###########################################################################
+        # Calculate the score for each direction
+        ###########################################################################
+
+        for direction in directions:
+            # Iterates each direction and obtain N points to be used for fit the curve
+            n = np.repeat(np.arange(1,N+1),2).reshape(N,2)
+            kn_index = n*direction + np.array([ik, jk])
+            i, j = kn_index[:, 0], kn_index[:, 1]   # Selects the indices of these N points
+            flag = len(np.unique(i)) > 1            # Necessary to identify which will be the direction of the fit
+            if flag:
+                i = i[i >= 0]
+                i = i[i < k_matrix.shape[0]]
+                j = np.full(len(i), j[0])
+            else:
+                j = j[j >= 0]
+                j = j[j < k_matrix.shape[1]]
+                i = np.full(len(j), i[0])
+            
+            ks = k_matrix[i, j] if len(i) > 0 else []   # Identify the N k points
+            if len(ks) == 0:    
+                # The direction in analysis does not have points
+                energy_vals.append(1)
+                continue
+            if len(ks) <= 3:    
+                # If there are not enough points to fit the curve it is used the Energy of the nearest neighbor
+                Eneig = energies[ks[0], bands[ks[0], bn]]
+                energy_vals.append(difference_energy(Ek, Eneig))
+                continue
+            
+            k_bands = bands[ks, bn]
+            Es = energies[ks, k_bands]
+            X = i if flag else j
+            new_x = ik if flag else jk
+            pol = lambda x, a, b, c: a*x**2 + b*x + c           # Second order polynomial
+            popt, pcov = curve_fit(pol, X, Es)                  # Curve fitting
+            Enew = pol(new_x, *popt)                            # Obtain Energy value
+            energy_vals.append(difference_energy(Ek, Enew))     # Calculate score
+    
+    else:
+            
+        directions = np.array([[1,0,0], [0,1,0], [0,0,1], [-1,0,0], [0,-1,0], [0,0,-1]]) # Down, Right, Up, Left, Front, Back
+        energy_vals = []
+
+        ###########################################################################
+        # Calculate the score for each direction
+        ###########################################################################
+
+        for direction in directions:
+            # Iterates each direction and obtain N points to be used for fit the curve
+            n = np.repeat(np.arange(1,N+1),3).reshape(N,3)
+            kn_index = n*direction + np.array([ik, jk, kk])
+            i, j, k = kn_index[:, 0], kn_index[:, 1], kn_index[:, 2]
+            flag_i = len(np.unique(i)) > 1
+            flag_j = len(np.unique(j)) > 1
+
+            if flag_i:
+                i = i[i >= 0]
+                i = i[i < k_matrix.shape[0]]
+                j = np.full(len(i), j[0])
+                k = np.full(len(i), k[0])
+            elif flag_j:
+                j = j[j >= 0]
+                j = j[j < k_matrix.shape[1]]
+                i = np.full(len(j), i[0])
+                k = np.full(len(j), k[0])
+            else:
+                k = k[k >= 0]
+                k = k[k < k_matrix.shape[2]]
+                i = np.full(len(k), i[0])
+                j = np.full(len(k), j[0])
+
+            ks = k_matrix[i, j, k] if len(i) > 0 else []   # Identify the N k points
+            if len(ks) == 0:
+                # The direction in analysis does not have points
+                energy_vals.append(1)
+                continue
+            if len(ks) <= 3:
+                # If there are not enough points to fit the curve it is used the Energy of the nearest neighbor
+                Eneig = energies[ks[0], bands[ks[0], bn]]
+                energy_vals.append(difference_energy(Ek, Eneig))
+                continue
+
+            k_bands = bands[ks, bn]
+            Es = energies[ks, k_bands]
+            X = i if flag_i else j if flag_j else k
+            new_x = ik if flag_i else jk if flag_j else kk
+            pol = lambda x, a, b, c: a*x**2 + b*x + c           # Second order polynomial
+            popt, pcov = curve_fit(pol, X, Es)                  # Curve fitting
+            Enew = pol(new_x, *popt)                            # Obtain Energy value
+            energy_vals.append(difference_energy(Ek, Enew))     # Calculate score
+
+
+    energy_vals = np.array(energy_vals)
+    score = np.mean(energy_vals) if len(energy_vals) > 0 else 0
+    min_score = np.min(energy_vals) if len(energy_vals) > 0 else 0
+
+    if score >= TOL and min_score >= 0.6:
+        return 2, score
+    return 0, score
