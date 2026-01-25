@@ -199,6 +199,22 @@ berry [package options] script parameter [script options]
                                         type=restricted_float, 
                                         default=0.99, metavar="[0.0-1.0]",  
                                         help="Tolerance used for graph construction (default: 0.95).")
+            cluster_parser.add_argument("-iterations",
+                                        type=int,
+                                        default=5,
+                                        metavar="[1-100]",
+                                        choices=range(1, 101),
+                                        help="Maximum number of iterations for the clustering algorithm (default: 5).")
+            cluster_parser.add_argument("-step",
+                                        type=float,
+                                        default=0.01,
+                                        metavar="[0.0-1.0]",
+                                        help="Step size for alpha adjustment in the clustering algorithm (default: 0.01). Score is calculated as: score = alpha * dot_product_score  + (1 - alpha) * energy_score, with alpha decreasing by step size in each iteration.")
+            cluster_parser.add_argument("-alpha",
+                                        type=float,
+                                        default=1.0,
+                                        metavar="[0.0-1.0]",
+                                        help="Initial alpha value for the clustering algorithm (default: 1.0). Score is calculated as: score = alpha * dot_product_score  + (1 - alpha) * energy_score.")
             cluster_parser.add_argument("-flush", 
                                         action="store_true", 
                                         help="Flushes output into stdout.")
@@ -658,6 +674,9 @@ def clustering_cli(args: argparse.Namespace):
     args_dict["max_band"] = args.Mb
     args_dict["min_band"] = args.mb
     args_dict["tol"] = args.t
+    args_dict["iterations"] = args.iterations
+    args_dict["step"] = args.step
+    args_dict["alpha"] = args.alpha
     args_dict["flush"] = args.flush
     args_dict["verbose"] = args.v
 
