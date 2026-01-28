@@ -782,14 +782,20 @@ One possible choice of sample is to chose the following three directions in k-sp
  \hat{k}_2 &= \dfrac{1}{\sqrt{2}}(1,-1,0)\\
  \hat{k}_3 &= \dfrac{1}{\sqrt{2}}(1,1,0)
 \end{align*}
-all with the same size:
+ with sizes:
+\begin{align*}
+  |\vec{k}_1| &= \dfrac{4\pi}{a} \\
+  |\vec{k}_{2,3}| &= \dfrac{2\pi}{a}\sqrt{2}
+\end{align*}
+Which means that the number of points sampling in directions 2 and 3 should be the same:
 \begin{equation}
- |\vec{k}_i| = \dfrac{4\pi}{a}
+ n_2 = n_3
 \end{equation}
-Which means that the number of points sampling in each directions should be the same:
-\begin{equation}
- n_1 = n_2 = n_3
-\end{equation}
+and
+\begin{equation*}
+ n_1 = \dfrac{n_2}{\sqrt{2}}
+\end{equation*}
+
 
 Another way of seeing this is:
 \begin{align*}
