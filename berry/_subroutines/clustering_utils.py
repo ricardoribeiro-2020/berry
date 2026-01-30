@@ -28,6 +28,7 @@ import numpy as np
 import networkx as nx
 import datetime
 import time
+import os
 
 from functools import partial
 from multiprocessing import Pool
@@ -1064,7 +1065,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                     remaining_points_mesh = np.logical_not(cluster_mesh) * 1
                     if np.sum(remaining_points_mesh) > np.sum(cluster_mesh):
                         remaining_points_mesh = cluster_mesh * 1
-                    logger.debug(print_bool_array(remaining_points_mesh))
+                    # logger.debug(print_bool_array(remaining_points_mesh))
 
                     new_remaining_samples = []
                     for samples in remaining_samples:
@@ -1208,8 +1209,10 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                     bands_final_temp[k, bn] = b
 
             # Save the bands_final_temp to a file
-            np.save(f'bands_final_temp_{np.min(bands_to_solve)}_{bn_i}.npy', bands_final_temp)
-            logger.info(f"Temporary file bands_final_temp_{np.min(bands_to_solve)}_{bn_i}.npy saved.")
+            if not os.path.exists('temp'):
+                os.makedirs('temp')
+            np.save(f'temp/bands_final_temp_{np.min(bands_to_solve)}_{bn_i}.npy', bands_final_temp)
+            logger.info(f"Temporary file temp/bands_final_temp_{np.min(bands_to_solve)}_{bn_i}.npy saved.")
 
 
 
