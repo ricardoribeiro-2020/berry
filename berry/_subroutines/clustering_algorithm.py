@@ -572,13 +572,13 @@ class Material:
             # Merge bands_final_temp_{bn_i}_{max_band_energies[bn_i]}.npy files into bandsfinal.npy
             bn_i_temp = 0
             while bn_i_temp < self.number_of_bands:
-                bands_temp_file = np.load(f"bands_final_temp_{bn_i_temp}_{max_band_energies[bn_i_temp]}.npy")
+                bands_temp_file = np.load(f"temp/bands_final_temp_{bn_i_temp}_{max_band_energies[bn_i_temp]}.npy")
                 bands_temp = np.arange(bn_i_temp, max_band_energies[bn_i_temp] + 1)
 
                 self.bands_final[:, bands_temp] = bands_temp_file[:, bands_temp]
                 bn_i_temp = max_band_energies[bn_i_temp] + 1
 
-                os.remove(f"bands_final_temp_{bands_temp[0]}_{bands_temp[-1]}.npy")
+                os.remove(f"temp/bands_final_temp_{bands_temp[0]}_{bands_temp[-1]}.npy")
                 
             with open(os.path.join(datadir, 'bandsfinal.npy'), 'wb') as f:
                 np.save(f, self.bands_final)
