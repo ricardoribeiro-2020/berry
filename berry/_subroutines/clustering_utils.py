@@ -799,7 +799,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
             clusters.append(components[bn_i][0])
             # Check if there is more than one component
             # If there is, add the rest of the components to the next band
-            logger.debug(
+            logger.info(
                     f"[Band {bn_i}] Progress: {1:.2%}"
                 )
             if len(components[bn_i][1:]) > 0 and bn_i + 1 <= max_band_energies[bn_i]:
@@ -808,6 +808,19 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                 # If the band bn_i + 1 is not in the range of the bands that are being solved, then raise an error
                 if len(components[bn_i][1:]) > 0:
                     raise ValueError(f"Band {bn_i} has more than one component, but the first one is already the full band")
+            if bn_i == max_band_energies[bn_i]:
+                logger.info(f"All bands from the group {np.min(bands_to_solve)} - {bn_i} have been solved. | Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+                bands_final_temp = np.full((nks, np.max(max_band_energies) + 1), -1, dtype=int)
+                for cluster, bn in zip(clusters, bands_to_solve):
+                    for k, b in cluster.nodes:
+                        bands_final_temp[k, bn] = b
+
+                # Save the bands_final_temp to a file
+                if not os.path.exists('temp'):
+                    os.makedirs('temp')
+                np.save(f'temp/bands_final_temp_{np.min(bands_to_solve)}_{bn_i}.npy', bands_final_temp)
+                logger.info(f"Temporary file temp/bands_final_temp_{np.min(bands_to_solve)}_{bn_i}.npy saved.")
             continue
         
         attribution_points = np.zeros_like(mesh_kpoints_index, dtype=int)
