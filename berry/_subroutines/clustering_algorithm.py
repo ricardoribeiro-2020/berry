@@ -625,7 +625,7 @@ class Material:
                 self._number_of_preserved_mistakes = np.sum(self.signal_final == MISTAKE)
                 self.iterable_bands = iterable_bands
 
-                #self.signal_final[self.signal_final == MISTAKE] = CORRECT
+                self.signal_final[np.logical_and(self.signal_final == MISTAKE, self.energy_signal_final != MISTAKE)] = CORRECT
 
                 break
 
@@ -689,6 +689,7 @@ class Material:
         self.logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Obtaining the output...")
 
         self.signal_final = np.zeros((self.nks, self.number_of_bands), dtype=int)   # The k-point's signal
+        self.energy_signal_final = np.zeros((self.nks, self.number_of_bands), dtype=int)   # The k-point's signal considering only energy information
         
         self.energy_bands = []
         self.grad_energy_bands = []
@@ -751,6 +752,8 @@ class Material:
                                                                 self.mesh_kpoints_index,
                                                                 self.bands_final,
                                                                 self.eigenvalues,)
+
+                self.energy_signal_final[k, bn_i] = signal_energy
                 
                 if self.energy_bands[bn_i][tuple(self.array_kpoints_index[k])] == 0 and signal_energy == MISTAKE:
                     self.energy_bands[bn_i][tuple(self.array_kpoints_index[k])] = 1
