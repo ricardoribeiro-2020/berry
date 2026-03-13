@@ -112,19 +112,21 @@ class Preprocess:
                 self.logger.info(f"\tVectors 1 and 3 that define the volume in reciprocal space have to be orthogonal.")
                 self.logger.info(f"\tExiting program.")
                 self.logger.footer()
+                exit(0)
             elif self.kvector2[0]*self.kvector3[0] + self.kvector2[1]*self.kvector3[1] + self.kvector2[2]*self.kvector3[2] != 0:
                 self.logger.info(f"\tVectors 2 and 3 that define the volume in reciprocal space have to be orthogonal.")
                 self.logger.info(f"\tExiting program.")
                 self.logger.footer()
+                exit(0)
             if self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2 != 1:
                 modulus_kvector1 = np.sqrt(self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2)
-                self.kvector1 = kvector1/modulus_kvector1
+                self.kvector1 = np.array(self.kvector1)/modulus_kvector1
             if self.kvector2[0]**2 + self.kvector2[1]**2 + self.kvector2[2]**2 != 1:
                 modulus_kvector2 = np.sqrt(self.kvector2[0]**2 + self.kvector2[1]**2 + self.kvector2[2]**2)
-                self.kvector2 = kvector2/modulus_kvector2
+                self.kvector2 = np.array(self.kvector2)/modulus_kvector2
             if self.kvector3[0]**2 + self.kvector3[1]**2 + self.kvector3[2]**2 != 1:
                 modulus_kvector3 = np.sqrt(self.kvector3[0]**2 + self.kvector3[1]**2 + self.kvector3[2]**2)
-                self.kvector3 = kvector3/modulus_kvector3
+                self.kvector3 = np.array(self.kvector3)/modulus_kvector3
         elif self.nkz == 1 and self.nky > 1:
             self.dimensions = 2
             if self.kvector1[0]*self.kvector2[0] + self.kvector1[1]*self.kvector2[1] + self.kvector1[2]*self.kvector2[2] != 0:
@@ -134,15 +136,15 @@ class Preprocess:
                 exit(0)
             if self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2 != 1:
                 modulus_kvector1 = np.sqrt(self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2)
-                self.kvector1 = kvector1/modulus_kvector1
+                self.kvector1 = np.array(self.kvector1)/modulus_kvector1
             if self.kvector2[0]**2 + self.kvector2[1]**2 + self.kvector2[2]**2 != 1:
                 modulus_kvector2 = np.sqrt(self.kvector2[0]**2 + self.kvector2[1]**2 + self.kvector2[2]**2)
-                self.kvector2 = kvector2/modulus_kvector2
+                self.kvector2 = np.array(self.kvector2)/modulus_kvector2
         else:
             self.dimensions = 1
             if self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2 != 1:
                 modulus_kvector = np.sqrt(self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2)
-                self.kvector1 = kvector1/modulus_kvector
+                self.kvector1 = np.array(self.kvector1)/modulus_kvector
                 #self.kvector2 = [0.0,1.0,0.0]
                 #self.kvector3 = [0.0,0.0,1.0]
         # If it is 2D, use x and y directions

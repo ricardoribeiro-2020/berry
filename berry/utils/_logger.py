@@ -13,6 +13,7 @@ def prepare_message(method):
         message = ''
         if len(messages) == 0:
             method(ref, message)
+            return
         for m in messages:
             message += str(m) + ' '
         method(ref, message)

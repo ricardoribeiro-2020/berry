@@ -78,7 +78,7 @@ def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
     
     sigfinal[k, bn] = evaluate_result(dot_products)
 
-    return signalfinal
+    return sigfinal
 
 # Start run of basis rotation
 def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", logger_level: int = logging.INFO, flush: bool = False):
