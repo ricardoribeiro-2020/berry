@@ -26,12 +26,14 @@ setup(
     packages=['berry', 'berry/_subroutines', 'berry/utils', 'berry/vis'],
     install_requires=[
         "numpy",
+        "numba",
         "networkx",
         "findiff",
         "matplotlib",
         "scipy",
         "argcomplete",
         "colorama",
+        "tqdm",
     ],
     extras_require={
         'dev': [

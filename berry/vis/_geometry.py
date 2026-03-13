@@ -65,7 +65,7 @@ def bcr(band:int, grad:int, type: str):
         print("\tExiting.")
         sys.exit(0)
 
-    berry_curv = np.load(f"berryCur{band}_{grad}.npy")
+    berry_curv = np.load(f"{m.geometry_dir}/berryCur{band}_{grad}.npy")
 
     if m.dimensions == 2:
         M = np.hypot(np.real(berry_curv[0]), np.real(berry_curv[1]))  # Colors for real part

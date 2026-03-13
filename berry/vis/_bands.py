@@ -255,8 +255,8 @@ def machine(args):
 
     footer(tempo(starttime, endtime))
 
-def wave(args):
-    if args.wave_vis == "corrected":
+def bands(args):
+    if args.bands_vis == "corrected":
         corrected(args)
-    elif args.wave_vis == "machine":
+    elif args.bands_vis == "machine":
         machine(args)

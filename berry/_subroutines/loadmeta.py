@@ -58,3 +58,10 @@ with open("data/datafile.npy", "rb") as fich:
     initial_band = int(np.load(fich))    # Initial band
     number_of_bands = int(np.load(fich)) # Number of bands to be used in berry
     final_band = int(np.load(fich))      # Final band
+
+    z1 = np.load(fich)                   # Size of cut, direction z
+    Deltaz = np.load(fich)               # Size of cut, direction z
+    y1 = np.load(fich)                   # Size of cut, direction y
+    Deltay = np.load(fich)               # Size of cut, direction y
+
+    

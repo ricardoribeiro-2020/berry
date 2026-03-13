@@ -20,17 +20,29 @@ except:
 def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
     start = time()
 
-    initial_band = m.wfcut + 1
-
     dphase = d_phase[:, nk] * d_phase[:, neighbor].conj()
 
     if m.noncolin:  # Noncolinear case
         for band0 in range(m.initial_band,m.nbnd):
             wfc00 = np.load(os.path.join(m.wfcdirectory, f"k0{nk}b0{band0}-0.wfc"))
             wfc01 = np.load(os.path.join(m.wfcdirectory, f"k0{nk}b0{band0}-1.wfc"))
+
+            if isinstance(wfc00, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
+                wfc00 = wfc00['arr_0']
+            if isinstance(wfc01, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
+                wfc01 = wfc01['arr_0']
+            
             for band1 in range(m.initial_band,m.nbnd):
-                wfc10 = np.load(os.path.join(m.wfcdirectory, f"k0{neighbor}b0{band1}-0.wfc")).conj()
-                wfc11 = np.load(os.path.join(m.wfcdirectory, f"k0{neighbor}b0{band1}-1.wfc")).conj()
+                wfc10 = np.load(os.path.join(m.wfcdirectory, f"k0{neighbor}b0{band1}-0.wfc"))
+                wfc11 = np.load(os.path.join(m.wfcdirectory, f"k0{neighbor}b0{band1}-1.wfc"))
+
+                if isinstance(wfc10, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
+                    wfc10 = wfc10['arr_0']
+                if isinstance(wfc11, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
+                    wfc11 = wfc11['arr_0']
+
+                wfc10 = wfc10.conj()
+                wfc11 = wfc11.conj()
                 
                 # Positions of the bands on the dpc array.
                 # In the arrays dp and dpc, bands start at 0.
@@ -48,8 +60,17 @@ def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
     else:  # Non-relativistic case
         for band0 in range(m.initial_band,m.nbnd):
             wfc0 = np.load(os.path.join(m.wfcdirectory, f"k0{nk}b0{band0}.wfc"))
+
+            if isinstance(wfc0, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
+                wfc0 = wfc0['arr_0']
+
             for band1 in range(m.initial_band,m.nbnd):
-                wfc1 = np.load(os.path.join(m.wfcdirectory, f"k0{neighbor}b0{band1}.wfc")).conj()
+                wfc1 = np.load(os.path.join(m.wfcdirectory, f"k0{neighbor}b0{band1}.wfc"))
+
+                if isinstance(wfc1, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
+                    wfc1 = wfc1['arr_0']
+
+                wfc1 = wfc1.conj()
                 
                 # Positions of the bands on the dpc array.
                 # In the arrays dp and dpc, bands start at 0.
@@ -76,7 +97,7 @@ def get_point_neighbors(nk: int, j: int) -> None:
         return (nk, j, neighbor, jNeighbor)
     return None
 
-def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logging.INFO, flush: bool = False):
+def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logging.INFO, compress: bool = False, flush: bool = False):
     global dpc, logger, d_phase
     logger = log(logger_name, "DOT PRODUCT", level=logger_level, flush=flush)
 
@@ -128,10 +149,16 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
     ###########################################################################
     # 5. SAVE OUTPUT
     ###########################################################################
-    np.save(os.path.join(m.data_dir, "dpc.npy"), dpc)
-    np.save(os.path.join(m.data_dir, "dp.npy"), dp)
-    logger.info(f"\n\tDot products saved to file dpc.npy")
-    logger.info(f"\tDot products modulus saved to file dp.npy")
+    if compress:
+        np.savez_compressed(os.path.join(m.data_dir, "dpc.npz"), dpc)
+        np.savez_compressed(os.path.join(m.data_dir, "dp.npz"), dp)
+        logger.info(f"\n\tDot products saved to file dpc.npz")
+        logger.info(f"\tDot products modulus saved to file dp.npz")
+    else:
+        np.save(os.path.join(m.data_dir, "dpc.npy"), dpc)
+        np.save(os.path.join(m.data_dir, "dp.npy"), dp)
+        logger.info(f"\n\tDot products saved to file dpc.npy")
+        logger.info(f"\tDot products modulus saved to file dp.npy")
 
     ###########################################################################
     # Finished

@@ -56,6 +56,8 @@ def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
         logger.info(f"\tCalculating dot product <{k},{machbn + initial_band}|{kneig},{bneig + initial_band}>")
         # Get neighbor's wavefunction
         psineig = np.load(os.path.join(m.wfcdirectory, f"k0{kneig}b0{bneig + initial_band}.wfc"))
+        if isinstance(psineig, np.lib.npyio.NpzFile): # check if wfc is .npz compressed file
+            psineig = psineig['arr_0']
 
         # Calculate the dot product between the neighbor and the new state
         dphase = d_phase[:, k] * np.conjugate(d_phase[:, kneig])
@@ -81,7 +83,7 @@ def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
     return sigfinal
 
 # Start run of basis rotation
-def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", logger_level: int = logging.INFO, flush: bool = False):
+def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", logger_level: int = logging.INFO, compress: bool = False, flush: bool = False):
     global signalfinal, d_phase, initial_band
     logger = log(logger_name, "BASIS ROTATION", level=logger_level, flush=flush)
 
@@ -110,9 +112,18 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     d_phase = np.load(os.path.join(m.data_dir, "phase.npy"))
     logger.info("\tPhases loaded")
 
-    dotproduct = np.load(os.path.join(m.data_dir, "dpc.npy"))
-    connections = np.load(os.path.join(m.data_dir, "dp.npy"))
-    logger.info("\tDot product loaded")
+    try: # reading .npz compressed file if exists
+        dotproduct = np.load(os.path.join(m.data_dir, "dpc.npz"))
+        connections = np.load(os.path.join(m.data_dir, "dp.npz"))
+        
+        dotproduct = dotproduct['arr_0']
+        connections = connections['arr_0']
+
+        logger.info("\tDot product loaded")
+    except: # reading .npy file otherwise
+        dotproduct = np.load(os.path.join(m.data_dir, "dpc.npy"))
+        connections = np.load(os.path.join(m.data_dir, "dp.npy"))
+        logger.info("\tDot product loaded")
 
     logger.info("\tReading files bandsfinal.npy, signalfinal.npy and degeneratefinal.npy")
     bandsfinal = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
@@ -228,9 +239,14 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
         logger.info()
         logger.info("\tReading old wavefunction 1: ", infile)
         psi1 = np.load(infile)  # puts wfc in this array
+        if isinstance(psi1, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
+            psi1 = psi1['arr_0']
+
         infile = os.path.join(m.wfcdirectory, f"k0{nk0}b0{nb2 + initial_band}.wfc")
         logger.info("\tReading old wavefunction 2: ", infile)
         psi2 = np.load(infile)  # puts wfc in this array
+        if isinstance(psi2, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
+            psi2 = psi2['arr_0']
 
         # Calculate new wavefunctions
         psinewA = psi1*ca1 + psi2*ca2
@@ -244,11 +260,17 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
         outfile = os.path.join(m.wfcdirectory, f"k0{nk0}b0{nb1 + initial_band}.wfc1")
         logger.info("\tWriting file: ", outfile)
         with open(outfile, "wb") as f:
-            np.save(f, psinewA)
+            if compress:
+                np.savez_compressed(f, psinewA)
+            else:
+                np.save(f, psinewA)
         outfile = os.path.join(m.wfcdirectory, f"k0{nk0}b0{nb2 + initial_band}.wfc1")
         logger.info("\tWriting file: ", outfile)
         with open(outfile, "wb") as f:
-            np.save(f, psinewB)
+            if compress:
+                np.savez_compressed(f, psinewB)
+            else:
+                np.save(f, psinewB)
 
 
     #sys.exit("Stop")

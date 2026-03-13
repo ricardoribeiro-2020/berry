@@ -327,7 +327,7 @@ Electrons in a crystal can be described by the solutions to time independent Sch
 \begin{equation}\label{eq:Schrodinger}
  H_{\pmb{k}}\psi_{\pmb{k},s}(\pmb{r}) = E_{\pmb{k},s}\psi_{\pmb{k},s}(\pmb{r})
 \end{equation}
-where $H_{\pmb{k}}$ is the hamiltonean of the system, which has the periodicity of the crystal lattice,
+where $H_{\pmb{k}}$ is the hamiltonian of the system, which has the periodicity of the crystal lattice,
 and is a function of the momentum $\pmb{k}$.
 For each $\pmb{k}$ we have an equation \ref{eq:Schrodinger} that gives a (infinite) set of solutions,
 which are labeled by the letter $s$.
@@ -771,7 +771,7 @@ $\vec{b}_1 = \dfrac{2\pi}{a}\left( -\vec{k}_x + \vec{k}_y  + \vec{k}_z\right) $\
 $\vec{a}_2 = \dfrac{a}{2}\left( \vec{e}_x + \vec{e}_z\right) $ &
 $\vec{b}_2 = \dfrac{2\pi}{a}\left( \vec{k}_x - \vec{k}_y + \vec{k}_z\right) $\\[0.2cm]
 $\vec{a}_3 = \dfrac{a}{2}\left( \vec{e}_x + \vec{e}_y\right) $ &
-$\vec{b}_2 = \dfrac{2\pi}{a}\left( \vec{k}_x + \vec{k}_y - \vec{k}_z\right) $\\[0.2cm]
+$\vec{b}_3 = \dfrac{2\pi}{a}\left( \vec{k}_x + \vec{k}_y - \vec{k}_z\right) $\\[0.2cm]
 \hline
 \end{tabular}
 \bigskip
@@ -782,14 +782,20 @@ One possible choice of sample is to chose the following three directions in k-sp
  \hat{k}_2 &= \dfrac{1}{\sqrt{2}}(1,-1,0)\\
  \hat{k}_3 &= \dfrac{1}{\sqrt{2}}(1,1,0)
 \end{align*}
-all with the same size:
+ with sizes:
+\begin{align*}
+  |\vec{k}_1| &= \dfrac{4\pi}{a} \\
+  |\vec{k}_{2,3}| &= \dfrac{2\pi}{a}\sqrt{2}
+\end{align*}
+Which means that the number of points sampling in directions 2 and 3 should be the same:
 \begin{equation}
- |\vec{k}_i| = \dfrac{4\pi}{a}
+ n_2 = n_3
 \end{equation}
-Which means that the number of points sampling in each directions should be the same:
-\begin{equation}
- n_1 = n_2 = n_3
-\end{equation}
+and
+\begin{equation*}
+ n_1 = \dfrac{n_2}{\sqrt{2}}
+\end{equation*}
+
 
 Another way of seeing this is:
 \begin{align*}
@@ -808,7 +814,7 @@ Another way of seeing this is:
  It is necessary to specify the set of bands that will be processed.
  It is important to obtain and look at a normal band diagram of the material before chosing
  what bands to include.
- Otherwise, a large ammount of time and computer ressources may be spent uselessly.
+ Otherwise, a large amount of time and computer resources may be spent uselessly.
 
  The parameter \verb|nbnd| (mandatory) gives the number of bands to be calculated.
  This number will be used in the nscf calculation of QE.
@@ -825,10 +831,66 @@ Another way of seeing this is:
  So, if \verb|wfcut| is negative, all bands will be included.
 
  It is important that there is a gap between the excluded bands and the included ones.
- Otherwise, there will likelly be incomplete (and so useless) bands.
+ Otherwise, there will likely be incomplete (and so useless) bands.
 
 
+\bigskip
 
+ \subsection{Removing volume from the supercell}
+
+ When performing 1D and 2D calculations, the wavefunctions provided by the DFT don't fill the whole
+ supercell.
+ There are regions in the supercell where the wavefunctions should be zero, but actually
+ there is some noise.
+ Knowing this, it should be possible to remove part of the supercell, saving computational
+ resources and without compromising the results.
+
+ In order to do this, the parameters \verb|z1| and \verb|deltaz| and/or \verb|y1| and \verb|deltay| 
+  must be included in the input file.
+ \verb|z1| and \verb|y1| are used to define the initial limit of the region to be removed, and 
+ should have a value between 0 and $a_3$ and $a_2$, respectively.
+ Then \verb|deltaz| and \verb|deltay| define the width of the region to be removed, and should have 
+ a value between 0 and $a_3$ and $a_2$, respectively.
+ The default values are 0, meaning no volume is removed.
+ The final limit, \verb|z2| and \verb|y2| is then calculated by one of the following expressions:
+ 
+\[
+z_2=
+\begin{cases}
+z_1+\Delta z, & \text{if } z_1+\Delta z \leq a_3 \\
+z_1+\Delta z-a_3, & otherwise
+\end{cases}
+\]
+\[
+y_2=
+\begin{cases}
+y_1+\Delta y, & \text{if } y_1+\Delta y \leq a_2 \\
+y_1+\Delta y-a_2, & otherwise
+\end{cases}
+\]
+
+ Each of the cases will remove volume from the supercell either from the middle (see figure 
+ or from its the sides (see figure \ref{fig:vcut}).
+
+\begin{figure}[h]
+    \centering
+    \begin{subfigure}{.5\textwidth}
+        \centering
+        \includegraphics[width=.5\linewidth]{figures/cnt_vcut_center.png}
+        \label{fig:vcutcenter}
+        \subcaption{}
+    \end{subfigure}%
+    \begin{subfigure}{.5\textwidth}
+        \centering
+        \includegraphics[width=.5\linewidth]{figures/cnt_vcut_sides.png}
+        \label{fig:vcutsides}
+        \subcaption{}
+    \end{subfigure}
+    \caption{When \(y_1 \leq a_2\), (\subref{fig:vcutcenter}) the region removed is located
+    on the center of the supercell.
+    Otherwise, (\subref{fig:vcutsides}) the region removed will be splitted into two sides.}
+    \label{fig:vcut}
+\end{figure}
 
 
 
@@ -867,6 +929,8 @@ Another way of seeing this is:
  second direction in k-space                  & \verb|kvector2 = 0.0 1.0 0.0| \\
  third direction in k-space                   & \verb|kvector3 = 0.0 0.0 1.0| \\
  last band NOT accounted for                  & \verb|wfcut = -1| \\
+ initial limit of volume removal              & \verb|y1, z1 = 0| \\
+ width of volume removal region               & \verb|deltay, deltaz = 0| \\
 
 
 %  DFT prefix  & prefix = '' \\
@@ -1501,7 +1565,7 @@ A component is a sub-graph (i.e., a smaller graph $g$ belonging to a bigger one 
         \caption{}
         \label{fig:Cb}
     \end{subfigure}
-    \caption{Figure \ref{fig:Ca} represents a general graph $G(V, E)$ where the vertices $V$ are the gray circles, and the edges $E$ are the line that connects them. Figure \ref{fig:Cb} shows the $G$'s components. Each component is identified with a different color.}
+    \caption{Figure }%\ref{fig:Ca} represents a general graph $G(V, E)$ where the vertices $V$ are the gray circles, and the edges $E$ are the line that connects them. Figure \ref{fig:Cb} shows the $G$'s components. Each component is identified with a different color.}
     \label{fig:components}
 \end{figure}
 

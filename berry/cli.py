@@ -53,11 +53,11 @@ try:
         WFCGEN = 1
     if os.path.exists(os.path.join(m.workdir, "data/wfc")):
         DOT = 1
-    if os.path.exists(os.path.join(m.workdir, "data/dpc.npy")):
+    if os.path.exists(os.path.join(m.workdir, "data/dpc.npy")) or os.path.exists(os.path.join(m.workdir, "data/dpc.npz")):
         CLUSTER = 1
     if os.path.exists(os.path.join(m.workdir, "data/signalfinal.npy")):
         BASIS = 1
-    if os.path.exists(os.path.join(m.workdir, "data/final.report")):
+    if os.path.exists(os.path.join(m.workdir, "data/final.report")) or os.path.exists(os.path.join(m.workdir, "data/signalfinal.npy")):
         R2K = 1
     if os.path.exists(os.path.join(m.workdir, "log/r2k.log")):
         GEOMETRY = 1
@@ -124,7 +124,7 @@ berry [package options] script parameter [script options]
                                                          description="Calculates the Berry connections and curvatures.")
         if CONDUCTIVITY:
             conductivity_parser = main_sub_parser.add_parser("conductivity", 
-                                                             help="Calculates the optical linear conductivity of the system..", 
+                                                             help="Calculates the optical linear conductivity of the system.", 
                                                              description="Calculates the optical linear conductivity of the system.")
         if SHG:
             shg_parser = main_sub_parser.add_parser("shg", 
@@ -143,6 +143,9 @@ berry [package options] script parameter [script options]
                                     metavar=f"[0-{m.nbnd-1}]", 
                                     default=None, choices=range(m.nbnd), 
                                     help="Band where wavefunction will be generated (on k-point -nk) (default: All).")
+            wfc_parser.add_argument("-c", 
+                                    action="store_true", 
+                                    help="Compress the output files.")
             wfc_parser.add_argument("-flush", 
                                     action="store_true", 
                                     help="Flushes output into stdout.")
@@ -160,6 +163,9 @@ berry [package options] script parameter [script options]
                                     metavar=f"[1-{os.cpu_count()}]", 
                                     choices=range(1, os.cpu_count()+1), 
                                     help="Number of processes to use (default: 1)")
+            dot_parser.add_argument("-c", 
+                                    action="store_true", 
+                                    help="Compress the output files.")
             dot_parser.add_argument("-flush", 
                                     action="store_true", 
                                     help="Flushes output into stdout.")
@@ -191,16 +197,24 @@ berry [package options] script parameter [script options]
                                         help="Number of processes to use (default: 1).")
             cluster_parser.add_argument("-t",  
                                         type=restricted_float, 
-                                        default=0.80, metavar="[0.0-1.0]",  
+                                        default=0.99, metavar="[0.0-1.0]",  
                                         help="Tolerance used for graph construction (default: 0.95).")
-            cluster_parser.add_argument("-s",  
-                                        type=restricted_float, 
-                                        default=0.1, metavar="[0.0-1.0]",  
-                                        help="Step used for update each iteration (default: 0.1).")
-            cluster_parser.add_argument("-a",
-                                        type=restricted_float, 
-                                        default=0.5, metavar="[0.0-1.0]",  
-                                        help="Alpha used for the first iteration (default: 0.5).")
+            cluster_parser.add_argument("-iterations",
+                                        type=int,
+                                        default=5,
+                                        metavar="[1-100]",
+                                        choices=range(1, 101),
+                                        help="Maximum number of iterations for the clustering algorithm (default: 5).")
+            cluster_parser.add_argument("-step",
+                                        type=float,
+                                        default=0.01,
+                                        metavar="[0.0-1.0]",
+                                        help="Step size for alpha adjustment in the clustering algorithm (default: 0.01). Score is calculated as: score = alpha * dot_product_score  + (1 - alpha) * energy_score, with alpha decreasing by step size in each iteration.")
+            cluster_parser.add_argument("-alpha",
+                                        type=float,
+                                        default=1.0,
+                                        metavar="[0.0-1.0]",
+                                        help="Initial alpha value for the clustering algorithm (default: 1.0). Score is calculated as: score = alpha * dot_product_score  + (1 - alpha) * energy_score.")
             cluster_parser.add_argument("-flush", 
                                         action="store_true", 
                                         help="Flushes output into stdout.")
@@ -230,6 +244,9 @@ berry [package options] script parameter [script options]
                                       metavar=f"[1-{os.cpu_count()}]", 
                                       choices=range(1, os.cpu_count()+1), 
                                       help="Number of processes to use (default: 1).")
+            basis_parser.add_argument("-c", 
+                                    action="store_true", 
+                                    help="Compress the output files.")
             basis_parser.add_argument("-flush", 
                                       action="store_true", 
                                       help="Flushes output into stdout.")
@@ -260,6 +277,9 @@ berry [package options] script parameter [script options]
                                           metavar=f"[{m.initial_band}-{m.nbnd-1}]"      , 
                                           choices=range(m.initial_band, m.nbnd)             , 
                                           help="Minimum band to consider (default: 0).")
+                r2k_parser.add_argument("-c", 
+                                        action="store_true", 
+                                        help="Compress the output files.")
                 r2k_parser.add_argument("-flush", 
                                         action="store_true", 
                                         help="Flushes output into stdout.")
@@ -289,6 +309,9 @@ berry [package options] script parameter [script options]
                                         metavar=f"[0-{m.nbnd-1}]"      , 
                                         choices=range(m.nbnd)             , 
                                         help="Minimum band to consider (default: 0).")
+                r2k_parser.add_argument("-c", 
+                                        action="store_true", 
+                                        help="Compress the output files.")
                 r2k_parser.add_argument("-flush", 
                                         action="store_true", 
                                         help="Flushes output into stdout.")
@@ -338,8 +361,14 @@ berry [package options] script parameter [script options]
                                          type=str, 
                                          default="both", 
                                          metavar="",
-                                         choices=["both", "conn", "curv"], 
+                                         choices=["both", "conn", "curv", "chern", "chern_curl", "chern_bp", "chern_bp_bz"], 
                                          help="Specify which proprety to calculate. Possible choices are 'both', 'conn' and 'curv' (default: both)")
+            geometry_parser.add_argument("-d", 
+                                         type=int, 
+                                         default=1,
+                                         metavar="", 
+                                         help="Number of decimal places to save chern number with (default: 0)")
+
             geometry_parser.add_argument("-flush", 
                                          action="store_true", 
                                          help="Flushes output into stdout.")
@@ -358,12 +387,24 @@ berry [package options] script parameter [script options]
                                                  metavar=f"cb ({vb+1}-{m.nbnd-1})",
                                                  choices=range(m.vb+1, m.nbnd)     , 
                                                  help="Index of the highest conduction band to consider.")
+                conductivity_parser.add_argument("-mb",
+                                                 metavar=f"[{m.initial_band}-{m.nbnd-1}]",
+                                                 type=int,
+                                                 choices=range(m.initial_band, m.nbnd),
+                                                 default=m.initial_band,
+                                                 help=f"Minimum band to consider (default: {m.initial_band}).")
             else:
                 conductivity_parser.add_argument("cb" , 
                                                  type=int ,
                                                  metavar=f"cb ({m.vb+1}-{m.nbnd-1})", 
                                                  choices=range(m.vb+1, m.nbnd)     , 
                                                  help="Index of the highest conduction band to consider.")
+                conductivity_parser.add_argument("-mb",
+                                                 metavar=f"[0-{m.nbnd-1}]",
+                                                 type=int,
+                                                 choices=range(m.nbnd),
+                                                 default=0,
+                                                 help="Minimum band to consider (default: 0).")
             conductivity_parser.add_argument("-np"       , 
                                              type=int  , 
                                              default=1    , 
@@ -383,7 +424,7 @@ berry [package options] script parameter [script options]
             conductivity_parser.add_argument("-brd", 
                                              metavar="", 
                                              type=float, 
-                                             default=0.01j, 
+                                             default=0.01, 
                                              help="Energy broading in Ry units (default: 0.01).")
             conductivity_parser.add_argument("-flush", 
                                              action="store_true", 
@@ -404,11 +445,24 @@ berry [package options] script parameter [script options]
                                         metavar=f"cb ({vb+1}-{m.nbnd-1})", 
                                         choices=range(m.vb+1, m.nbnd), 
                                         help="Index of the highest conduction band to consider.")
+                shg_parser.add_argument("-mb",
+                                        metavar=f"[{m.initial_band}-{m.nbnd-1}]",
+                                        type=int,
+                                        choices=range(m.initial_band, m.nbnd),
+                                        default=m.initial_band,
+                                        help=f"Minimum band to consider (default: {m.initial_band}).")
+ 
             else:
                 shg_parser.add_argument("cb" , 
                                         type=int,metavar=f"cb ({m.vb+1}-{m.nbnd-1})", 
                                         choices=range(m.vb+1, m.nbnd), 
                                         help="Index of the highest conduction band to consider.")
+                shg_parser.add_argument("-mb",
+                                        metavar=f"[0-{m.nbnd-1}]",
+                                        type=int,
+                                        choices=range(m.nbnd),
+                                        default=0,
+                                        help="Minimum band to consider (default: 0).")
             shg_parser.add_argument("-np", 
                                     type=int, 
                                     default=1, 
@@ -428,7 +482,7 @@ berry [package options] script parameter [script options]
             shg_parser.add_argument("-brd", 
                                     metavar="", 
                                     type=float, 
-                                    default=0.01j, 
+                                    default=0.01, 
                                     help="Energy broading in Ry units (default: 0.01).")
             shg_parser.add_argument("-flush",
                                      action="store_true", 
@@ -548,7 +602,15 @@ def preprocessing_cli(args: argparse.Namespace):
         if ii[0] == "kvector3":
             args_dict["kvector3"] = [float(ii[1]), float(ii[2]), float(ii[3])]   
         if ii[0] == "wfcut":
-            args_dict["wfcut"] = ii[1]         
+            args_dict["wfcut"] = ii[1]
+        if ii[0] == "y1":
+            args_dict["y1"] = float(ii[1])                 
+        if ii[0] == "deltay":
+            args_dict["Deltay"] = float(ii[1])              
+        if ii[0] == "z1":
+            args_dict["z1"] = float(ii[1])      
+        if ii[0] == "deltaz":
+            args_dict["Deltaz"] = float(ii[1])              
 
     args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
     args_dict["logger_name"] = args.o
@@ -573,6 +635,7 @@ def generatewfc_cli(args: argparse.Namespace):
     args_dict["logger_name"] = args.o
     args_dict["nk_points"] = args.nk
     args_dict["bands"] = args.band
+    args_dict["compress"] = args.c
     args_dict["flush"] = args.flush
 
     WfcGenerator(**args_dict).run()
@@ -593,6 +656,7 @@ def dotproduct_cli(args: argparse.Namespace):
     args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
     args_dict["logger_name"] = args.o
     args_dict["npr"] = args.np
+    args_dict["compress"] = args.c
     args_dict["flush"] = args.flush
 
     run_dot(**args_dict)
@@ -610,9 +674,11 @@ def clustering_cli(args: argparse.Namespace):
     args_dict["max_band"] = args.Mb
     args_dict["min_band"] = args.mb
     args_dict["tol"] = args.t
-    args_dict["step"] = args.s
-    args_dict["alpha"] = args.a
+    args_dict["iterations"] = args.iterations
+    args_dict["step"] = args.step
+    args_dict["alpha"] = args.alpha
     args_dict["flush"] = args.flush
+    args_dict["verbose"] = args.v
 
     run_clustering(**args_dict)
 
@@ -627,6 +693,7 @@ def basisrotation_cli(args: argparse.Namespace):
     args_dict["logger_name"] = args.o
     args_dict["npr"] = args.np
     args_dict["max_band"] = args.Mb
+    args_dict["compress"] = args.c
     args_dict["flush"] = args.flush
 
     run_basis_rotation(**args_dict)
@@ -647,6 +714,7 @@ def r2k_cli(args: argparse.Namespace):
     args_dict["npr"] = args.np
     args_dict["min_band"] = args.mb
     args_dict["max_band"] = args.Mb
+    args_dict["compress"] = args.c
     args_dict["flush"] = args.flush
 
     run_r2k(**args_dict)
@@ -668,6 +736,7 @@ def berry_props_cli(args: argparse.Namespace):
     args_dict["min_band"] = args.mb
     args_dict["max_band"] = args.Mb
     args_dict["prop"] = args.prop
+    args_dict["digits"] = args.d
     args_dict["flush"] = args.flush
 
     run_berry_geometry(**args_dict)
@@ -687,9 +756,10 @@ def conductivity_cli(args: argparse.Namespace):
     args_dict["logger_name"] = args.o
     args_dict["npr"] = args.np
     args_dict["conduction_band"] = args.cb
+    args_dict["min_band"] = args.mb
     args_dict["energy_max"] = args.eM
     args_dict["energy_step"] = args.eS
-    args_dict["broadning"] = args.brd
+    args_dict["brd"] = args.brd
     args_dict["flush"] = args.flush
 
     run_conductivity(**args_dict)
@@ -709,9 +779,10 @@ def shg_cli(args: argparse.Namespace):
     args_dict["logger_name"] = args.o
     args_dict["npr"] = args.np
     args_dict["conduction_band"] = args.cb
+    args_dict["min_band"] = args.mb
     args_dict["energy_max"] = args.eM
     args_dict["energy_step"] = args.eS
-    args_dict["broadning"] = args.brd
+    args_dict["brd"] = args.brd
     args_dict["flush"] = args.flush
 
     run_shg(**args_dict)
@@ -732,7 +803,7 @@ def berry_vis_cli():
     sub_programs = {
         "debug": "debug_vis",
         "geometry": "geometry_vis",
-        "wave": "wave_vis",
+        "bands": "bands_vis",
     }
     ###########################################################################
     # 1. DEFINING BERRY VIS CLI ARGS
@@ -744,11 +815,11 @@ def berry_vis_cli():
     vis_sub_parser = parser.add_subparsers(metavar="VIS_PROGRAMS", dest="vis_programs", help="Choose a visualization program.")
     debug_parser = vis_sub_parser.add_parser("debug", help="Prints data for debugging.")
     geometry_parser = vis_sub_parser.add_parser("geometry", help="Draws Berry connection and curvature vectors.")
-    wave_parser = vis_sub_parser.add_parser("wave", help="Shows the electronic band structure.")
+    bands_parser = vis_sub_parser.add_parser("bands", help="Shows the electronic band structure.")
     
     debug_dot2_parser, debug_eigen_parser = handle_debug_parser(debug_parser)
     bcc_parser, bcr_parser = handle_geometry_parser(geometry_parser)
-    wave_corrected_parser, wave_machine_parser = handle_wave_parser(wave_parser)
+    bands_corrected_parser, bands_machine_parser = handle_bands_parser(bands_parser)
 
     argcomplete.autocomplete(parser)
 
@@ -767,11 +838,11 @@ def berry_vis_cli():
             bcr_parser.add_argument("grad", type=int, metavar=f"grad ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Gradient to visualize.")
             bcr_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
         
-            wave_corrected_parser.add_argument("Mb", type=int, metavar=f"Mb ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Maximum band to consider")
-            wave_corrected_parser.add_argument("-mb", type=int, default=m.initial_band, metavar=f"({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help=f"Minimum band to consider (default: {m.initial_band})")
+            bands_corrected_parser.add_argument("Mb", type=int, metavar=f"Mb ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Maximum band to consider")
+            bands_corrected_parser.add_argument("-mb", type=int, default=m.initial_band, metavar=f"({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help=f"Minimum band to consider (default: {m.initial_band})")
         
-            wave_machine_parser.add_argument("Mb", type=int, metavar=f"Mb ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Maximum band to consider")
-            wave_machine_parser.add_argument("-mb", type=int, default=m.initial_band, metavar=f"({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help=f"Minimum band to consider (default: {m.initial_band})")
+            bands_machine_parser.add_argument("Mb", type=int, metavar=f"Mb ({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help="Maximum band to consider")
+            bands_machine_parser.add_argument("-mb", type=int, default=m.initial_band, metavar=f"({m.initial_band}-{m.nbnd-1})", choices=range(m.initial_band, m.nbnd), help=f"Minimum band to consider (default: {m.initial_band})")
 
         else: # for older versions
             debug_dot2_parser.add_argument("band", type=int, metavar=f"band (0-{m.nbnd-1})", choices=range(m.nbnd), help="Band to consider.")
@@ -787,11 +858,11 @@ def berry_vis_cli():
             bcr_parser.add_argument("grad", type=int, metavar=f"grad (0-{m.nbnd-1})", choices=range(m.nbnd), help="Gradient to visualize.")
             bcr_parser.add_argument("-space", default="all", choices=["all", "real", "imag", "complex"], help="Space to visualize (default: all).")
         
-            wave_corrected_parser.add_argument("Mb", type=int, metavar=f"Mb (0-{m.nbnd-1})", choices=range(m.nbnd), help="Maximum band to consider")
-            wave_corrected_parser.add_argument("-mb", type=int, default=0, metavar=f"(0-{m.nbnd-1})", choices=range(m.nbnd), help="Minimum band to consider (default: 0)")
+            bands_corrected_parser.add_argument("Mb", type=int, metavar=f"Mb (0-{m.nbnd-1})", choices=range(m.nbnd), help="Maximum band to consider")
+            bands_corrected_parser.add_argument("-mb", type=int, default=0, metavar=f"(0-{m.nbnd-1})", choices=range(m.nbnd), help="Minimum band to consider (default: 0)")
         
-            wave_machine_parser.add_argument("Mb", type=int, metavar=f"Mb (0-{m.nbnd-1})", choices=range(m.nbnd), help="Maximum band to consider")
-            wave_machine_parser.add_argument("-mb", type=int, default=0, metavar=f"(0-{m.nbnd-1})", choices=range(m.nbnd), help="Minimum band to consider (default: 0)")
+            bands_machine_parser.add_argument("Mb", type=int, metavar=f"Mb (0-{m.nbnd-1})", choices=range(m.nbnd), help="Maximum band to consider")
+            bands_machine_parser.add_argument("-mb", type=int, default=0, metavar=f"(0-{m.nbnd-1})", choices=range(m.nbnd), help="Minimum band to consider (default: 0)")
 
 
 
@@ -825,26 +896,26 @@ def berry_vis_cli():
     ###########################################################################
     # HANDLE BERRY VIS SUITE SUB PROGRAMS
     ###########################################################################
-    from berry.vis import _debug, _geometry, _wave
+    from berry.vis import _debug, _geometry, _bands
 
     program_dict: Dict[str, Callable] = {
         "debug": _debug.debug,
         "geometry": _geometry.geometry,
-        "wave": _wave.wave,
+        "bands": _bands.bands,
     }
 
     program_dict[args.vis_programs](args)
 
-def handle_wave_parser(debug_parser: CustomParser) -> Tuple[argparse.Namespace]:
-    wave_programs_parser = debug_parser.add_subparsers(metavar="WAVE_PROGRAMS", dest="wave_vis", help="Choose how to visualize the bands.")
+def handle_bands_parser(debug_parser: CustomParser) -> Tuple[argparse.Namespace]:
+    bands_programs_parser = debug_parser.add_subparsers(metavar="BANDS_PROGRAMS", dest="bands_vis", help="Choose how to visualize the bands.")
 
     # VIEW CORRECTED
-    wave_corrected_parser = wave_programs_parser.add_parser("corrected", help="Shows the corrected bands.")
+    bands_corrected_parser = bands_programs_parser.add_parser("corrected", help="Shows the corrected bands.")
 
     # VIEW MACHINE
-    wave_machine_parser = wave_programs_parser.add_parser("machine", help="Shows the original bands.")
+    bands_machine_parser = bands_programs_parser.add_parser("machine", help="Shows the original bands.")
 
-    return wave_corrected_parser, wave_machine_parser
+    return bands_corrected_parser, bands_machine_parser
 
 def handle_debug_parser(debug_parser: CustomParser) -> Tuple[argparse.Namespace]:
     debug_programs_parser = debug_parser.add_subparsers(metavar="DEBUG_PROGRAMS", dest="debug_vis", help="Choose a debug program.")
