@@ -237,16 +237,17 @@ class Material:
             self.array_kpoints_index = np.stack([counts % self.nkx, counts//self.nkx],
                                             axis=1)
             return
-        
-        self.mesh_kpoints_index = np.empty((self.nkx, self.nky, self.nkz), int)
-        self.array_kpoints_index = np.empty((self.nks, 3), int)
-        count = -1
-        for k in prange(self.nkz):
-            for j in prange(self.nky):
-                for i in prange(self.nkx):
-                    count += 1
-                    self.mesh_kpoints_index[i, j, k] = count
-                    self.array_kpoints_index[count] = [i, j, k]
+        if self.dimensions == 3: 
+            self.mesh_kpoints_index = np.empty((self.nkx, self.nky, self.nkz), int)
+            self.array_kpoints_index = np.empty((self.nks, 3), int)
+            count = -1
+            for k in prange(self.nkz):
+                for j in prange(self.nky):
+                    for i in prange(self.nkx):
+                        count += 1
+                        self.mesh_kpoints_index[i, j, k] = count
+                        self.array_kpoints_index[count] = [i, j, k]
+            return
         
     def make_bands(self) -> None:
         '''
@@ -560,7 +561,7 @@ class Material:
         best_signal_final = np.zeros((self.nks, self.number_of_bands), dtype=int)
 
         for iter_ in range(max_iter):
-            clusters, iterable_bands = solver_algorithm(components, degenerate_components, degenerate_points, self.connections, self.neighbors, self.mesh_kpoints_index, self.nks, max_band_energies, mask_degenerates, self.bands, n_process=self.n_process, verbose=self.verbose, logger=self.logger, tolerance=initial_tol, energies=self.eigenvalues, alpha=alpha)
+            clusters, iterable_bands = solver_algorithm(components, degenerate_components, degenerate_points, self.connections, self.neighbors, self.mesh_kpoints_index, self.nks, max_band_energies, mask_degenerates, self.bands, n_process=self.n_process, verbose=self.verbose, logger=self.logger, tolerance=initial_tol, energies=self.eigenvalues, alpha=alpha, min_band=self.min_band)
 
             alpha = max(0, alpha - step_alpha)
             
@@ -572,13 +573,13 @@ class Material:
             # Merge bands_final_temp_{bn_i}_{max_band_energies[bn_i]}.npy files into bandsfinal.npy
             bn_i_temp = 0
             while bn_i_temp < self.number_of_bands:
-                bands_temp_file = np.load(f"temp/bands_final_temp_{bn_i_temp}_{max_band_energies[bn_i_temp]}.npy")
+                bands_temp_file = np.load(f"temp/bands_final_temp_{bn_i_temp + self.min_band}_{max_band_energies[bn_i_temp] + self.min_band}.npy")
                 bands_temp = np.arange(bn_i_temp, max_band_energies[bn_i_temp] + 1)
 
                 self.bands_final[:, bands_temp] = bands_temp_file[:, bands_temp]
                 bn_i_temp = max_band_energies[bn_i_temp] + 1
 
-                os.remove(f"temp/bands_final_temp_{bands_temp[0]}_{bands_temp[-1]}.npy")
+                os.remove(f"temp/bands_final_temp_{bands_temp[0] + self.min_band}_{bands_temp[-1] + self.min_band}.npy")
                 
             with open(os.path.join(datadir, 'bandsfinal.npy'), 'wb') as f:
                 np.save(f, self.bands_final)
@@ -702,7 +703,10 @@ class Material:
             for k, bn1 in band.nodes:
                 self.bands_final[k, bn_i] = bn1
                 coord = self.array_kpoints_index[k]
-                energy_band[tuple(coord)] = self.eigenvalues[k, bn1]
+                if self.dimensions == 1:
+                    energy_band[coord] = self.eigenvalues[k, bn1]
+                else:
+                    energy_band[tuple(coord)] = self.eigenvalues[k, bn1]
             
             grad_e = np.gradient(energy_band, axis=tuple(range(self.dimensions)))
             grad_e_magnitude = np.sqrt(np.sum(np.array(grad_e)**2, axis=0))
@@ -715,14 +719,24 @@ class Material:
             for _ in range(3):
                 grad_mistakes_energy = np.zeros_like(mask_mistakes_energy)
                 for k in range(self.nks):
-                    coord = tuple(self.array_kpoints_index[k])
-                    if mask_mistakes_energy[coord] == 1:
-                        grad_mistakes_energy[coord] = 1
-                        for k_neig in self.neighbors[k]:
-                            if k_neig == -1:
-                                continue
-                            coord_neig = tuple(self.array_kpoints_index[k_neig])
-                            grad_mistakes_energy[coord_neig] = 1
+                    coord = self.array_kpoints_index[k] if self.dimensions == 1 else tuple(self.array_kpoints_index[k])
+                    if self.dimensions > 1:
+                        if mask_mistakes_energy[coord] == 1:
+                            grad_mistakes_energy[coord] = 1
+                            for k_neig in self.neighbors[k]:
+                                if k_neig == -1:
+                                    continue
+                                coord_neig = self.array_kpoints_index[k_neig] if self.dimensions == 1 else tuple(self.array_kpoints_index[k_neig])
+                                grad_mistakes_energy[coord_neig] = 1
+                    else:
+                        if mask_mistakes_energy == 1:
+                            grad_mistakes_energy = 1
+                            for k_neig in self.neighbors[k]:
+                                if k_neig == -1:
+                                    continue
+                                coord_neig = self.array_kpoints_index[k_neig] if self.dimensions == 1 else tuple(self.array_kpoints_index[k_neig])
+                                grad_mistakes_energy[coord_neig] = 1
+
                 mask_mistakes_energy = grad_mistakes_energy
             
             
@@ -754,9 +768,12 @@ class Material:
                                                                 self.eigenvalues,)
 
                 self.energy_signal_final[k, bn_i] = signal_energy
-                
-                if self.energy_bands[bn_i][tuple(self.array_kpoints_index[k])] == 0 and signal_energy == MISTAKE:
-                    self.energy_bands[bn_i][tuple(self.array_kpoints_index[k])] = 1
+                if self.dimensions > 1:
+                    if self.energy_bands[bn_i][tuple(self.array_kpoints_index[k])] == 0 and signal_energy == MISTAKE:
+                        self.energy_bands[bn_i][tuple(self.array_kpoints_index[k])] = 1
+                else:
+                    if self.energy_bands[bn_i] == 0 and signal_energy == MISTAKE:
+                        self.energy_bands[bn_i] = 1
 
                 self.energy_score[bn_i] += score_energy
 
@@ -1064,6 +1081,14 @@ class Material:
                 initial_indent='\n\n\t',
                 subsequent_indent='\t  '
             )
+        elif n_recomended == self.min_band:
+            message = textwrap.fill(
+                f"You can use the bands from {self.min_band} up to {n_recomended}.",
+                width=110,
+                initial_indent='\n\n\t',
+                subsequent_indent='\t  '
+            )
+
         else:
             message = textwrap.fill(
                 f"You can use the bands from {self.min_band} up to {n_recomended + self.min_band - 1}.",
