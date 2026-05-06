@@ -8,9 +8,6 @@ import argparse, argcomplete # type: ignore
 
 from berry import __version__
 
-#TODO: Talk about np.savez
-#NOTE: np.savez could help with backwards compatibility 
-
 
 class CustomParser(argparse.ArgumentParser):
     def _check_value(self, action, value):
@@ -18,7 +15,7 @@ class CustomParser(argparse.ArgumentParser):
             if 'preprocess' in action.choices.keys() and value not in action.choices.keys():
                 msg = f"""invalid program choice: {value}.
 This error probably means you are trying to run a program in the incorrect order and therefore do not have the required files.
-Try the program in the following order: 'preprocess', 'wfcgen', 'dot', 'cluster', 'r2k', 'geometry', 'conductivity', 'shg'."""
+Try the program in the following order: 'preprocess', 'wfcgen', 'degenrot', 'dot', 'cluster', 'r2k', 'geometry', 'conductivity', 'shg'."""
                 raise argparse.ArgumentTypeError(msg)
             elif 'both' in action.choices.keys() and value not in action.choices.keys():
                 msg = f"""invalid program choice in geometry program: {value}. Please choose from the following: {action.choices.keys()}"""
@@ -41,7 +38,7 @@ def restricted_float(x):
     return x
 
 
-WFCGEN = DOT = CLUSTER = BASIS = R2K = GEOMETRY = CONDUCTIVITY = SHG = 0
+WFCGEN = DOT = DEGENROT = CLUSTER = BASIS = R2K = GEOMETRY = CONDUCTIVITY = SHG = 0
 
 try:
     import berry._subroutines.loadmeta as m
@@ -53,6 +50,7 @@ try:
         WFCGEN = 1
     if os.path.exists(os.path.join(m.workdir, "data/wfc")):
         DOT = 1
+        DEGENROT = 1
     if os.path.exists(os.path.join(m.workdir, "data/dpc.npy")) or os.path.exists(os.path.join(m.workdir, "data/dpc.npz")):
         CLUSTER = 1
     if os.path.exists(os.path.join(m.workdir, "data/signalfinal.npy")):
@@ -102,9 +100,15 @@ berry [package options] script parameter [script options]
             wfc_parser = main_sub_parser.add_parser("wfcgen", 
                                                     help="Extracts wavefunctions from DFT calculations.", 
                                                     description="Extracts wavefunctions from DFT calculations.")
+        if DEGENROT:
+            degenrot_parser = main_sub_parser.add_parser(
+                "degenrot",
+                help="Finds degenerate subspaces and rotates wavefunctions into a smooth basis.",
+                description="Finds degenerate subspaces in energy, groups neighbouring degenerate k-points into zones, and propagates an SVD-based basis rotation (Procrustes) through each zone. Run after wfcgen and before dot.",
+            )
         if DOT:
-            dot_parser = main_sub_parser.add_parser("dot", 
-                                                    help="Calculates the dot product of Bloch factors of nearby wavefunctions.", 
+            dot_parser = main_sub_parser.add_parser("dot",
+                                                    help="Calculates the dot product of Bloch factors of nearby wavefunctions.",
                                                     description="Calculates the dot product of Bloch factors of nearby wavefunctions.")
         if CLUSTER:
             cluster_parser = main_sub_parser.add_parser("cluster", 
@@ -153,9 +157,39 @@ berry [package options] script parameter [script options]
                                     default="wfc", 
                                     type=str, metavar="file_path", 
                                     help="Name of output log file. Extension will be .log regardless of user input.")
-            wfc_parser.add_argument("-v", 
-                                    action="store_true", 
+            wfc_parser.add_argument("-v",
+                                    action="store_true",
                                     help="Increases output verbosity.")
+        if DEGENROT:
+            degenrot_parser.add_argument(
+                "-ethr",
+                type=float,
+                default=0.0001,
+                metavar="",
+                help="Energy threshold for degeneracy detection in eigenvalue units (default: 0.0001).",
+            )
+            degenrot_parser.add_argument(
+                "-c",
+                action="store_true",
+                help="Compress the output wfc files.",
+            )
+            degenrot_parser.add_argument(
+                "-flush",
+                action="store_true",
+                help="Flushes output into stdout.",
+            )
+            degenrot_parser.add_argument(
+                "-o",
+                default="degenrotation",
+                type=str,
+                metavar="file_path",
+                help="Name of output log file. Extension will be .log regardless of user input.",
+            )
+            degenrot_parser.add_argument(
+                "-v",
+                action="store_true",
+                help="Increases output verbosity.",
+            )
         if DOT:
             dot_parser.add_argument("-np", 
                                     type=int, 
@@ -541,6 +575,7 @@ berry [package options] script parameter [script options]
     program_dict: Dict[str, Callable] = {
         "preprocess": preprocessing_cli,
         "wfcgen": generatewfc_cli,
+        "degenrot": degenrotation_cli,
         "dot": dotproduct_cli,
         "cluster": clustering_cli,
         "basis": basisrotation_cli,
@@ -641,6 +676,18 @@ def generatewfc_cli(args: argparse.Namespace):
     WfcGenerator(**args_dict).run()
 
     return 
+
+# degenerate basis rotation
+def degenrotation_cli(args: argparse.Namespace):
+    from berry.degenrotation import run_degenrotation
+    args_dict = {}
+    args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
+    args_dict["logger_name"]  = args.o
+    args_dict["ethr"]         = args.ethr
+    args_dict["compress"]     = args.c
+    args_dict["flush"]        = args.flush
+    run_degenrotation(**args_dict)
+
 
 # dotproduct
 def dotproduct_cli(args: argparse.Namespace):

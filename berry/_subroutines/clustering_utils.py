@@ -705,7 +705,7 @@ def obtain_energy_difference(sample_points, cluster_points, sigma_E, energies, n
 
 
 
-def solver_iterable(bands_to_solve, components, degenerate_components, degenerate_points, connections, neighbors, mesh_kpoints_index, nks, max_band_energies, mask_degenerates, bands, logger, energies=None, tolerance=0.99, alpha=0.5):
+def solver_iterable(bands_to_solve, components, degenerate_components, degenerate_points, connections, neighbors, mesh_kpoints_index, nks, max_band_energies, mask_degenerates, bands, logger, energies=None, tolerance=0.99, alpha=0.5, min_band=0):
     """
     ----------------------------------------------------------------------------------------------------------------------
     Main loop for solving clusters of components across multiple bands.
@@ -800,16 +800,16 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
             # Check if there is more than one component
             # If there is, add the rest of the components to the next band
             logger.info(
-                    f"[Band {bn_i}] Progress: {1:.2%}"
+                    f"[Band {bn_i + min_band}] Progress: {1:.2%}"
                 )
             if len(components[bn_i][1:]) > 0 and bn_i + 1 <= max_band_energies[bn_i]:
                 components[bn_i + 1] += components[bn_i][1:]
             else:
                 # If the band bn_i + 1 is not in the range of the bands that are being solved, then raise an error
                 if len(components[bn_i][1:]) > 0:
-                    raise ValueError(f"Band {bn_i} has more than one component, but the first one is already the full band")
+                    raise ValueError(f"Band {bn_i + min_band} has more than one component, but the first one is already the full band")
             if bn_i == max_band_energies[bn_i]:
-                logger.info(f"All bands from the group {np.min(bands_to_solve)} - {bn_i} have been solved. | Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                logger.info(f"All bands from the group {np.min(bands_to_solve) + min_band} - {bn_i + min_band} have been solved. | Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
                 bands_final_temp = np.full((nks, np.max(max_band_energies) + 1), -1, dtype=int)
                 for cluster, bn in zip(clusters, bands_to_solve):
@@ -819,8 +819,8 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                 # Save the bands_final_temp to a file
                 if not os.path.exists('temp'):
                     os.makedirs('temp')
-                np.save(f'temp/bands_final_temp_{np.min(bands_to_solve)}_{bn_i}.npy', bands_final_temp)
-                logger.info(f"Temporary file temp/bands_final_temp_{np.min(bands_to_solve)}_{bn_i}.npy saved.")
+                np.save(f'temp/bands_final_temp_{np.min(bands_to_solve) + min_band}_{bn_i + min_band}.npy', bands_final_temp)
+                logger.info(f"Temporary file temp/bands_final_temp_{np.min(bands_to_solve) + min_band}_{bn_i + min_band}.npy saved.")
             continue
         
         attribution_points = np.zeros_like(mesh_kpoints_index, dtype=int)
@@ -898,7 +898,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
             components[bn_i] = []
         else:
             if len(components[bn_i]) > 0:
-                raise ValueError(f"Band {bn_i} has remaining points, but the next band is not in the range of the bands that are being solved")
+                raise ValueError(f"Band {bn_i + min_band} has remaining points, but the next band is not in the range of the bands that are being solved")
 
 
         '''
@@ -982,7 +982,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
 
         remaining_samples_ = [[] for _ in range(len(samples_that_can_be_added))]
         logger.info(
-                    f"[Band {bn_i}] Progress: {0:.2%} | Degenerates are being included: {not check_degenerates_points}"
+                    f"[Band {bn_i + min_band}] Progress: {0:.2%} | Degenerates are being included: {not check_degenerates_points}"
                 )
         while cluster_bn_i.number_of_nodes < nks:
 
@@ -991,7 +991,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
 
             if current_percent % 10 == 0 and current_percent != last_logged_percent:
                 logger.debug(
-                    f"[Band {bn_i}] Progress: {progress:.2%} {cluster_bn_i.number_of_nodes}| Degenerates are being included: {not check_degenerates_points}"
+                    f"[Band {bn_i + min_band}] Progress: {progress:.2%} {cluster_bn_i.number_of_nodes}| Degenerates are being included: {not check_degenerates_points}"
                 )
             #    last_logged_percent = current_percent
 
@@ -1067,7 +1067,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                         )
 
                     for ri, samples in enumerate(remaining_samples):
-                        logger.info(f"Band {bn_i + ri}: {len(samples)} samples, {len(remaining_samples_[ri])} remaining samples.")
+                        logger.info(f"Band {bn_i + ri + min_band}: {len(samples)} samples, {len(remaining_samples_[ri])} remaining samples.")
                     
                     cluster_mesh = np.zeros_like(mesh_kpoints_index, dtype=bool)
                     
@@ -1110,7 +1110,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                             else:
                                 infos_print.append(info_print)
                         total_samples_can_merge += total_can_merge
-                        logger.debug(f"Band {bn_i + ri}: {len(samples)} samples remaining. Can merge with cluster: {total_can_merge}")
+                        logger.debug(f"Band {bn_i + ri + min_band}: {len(samples)} samples remaining. Can merge with cluster: {total_can_merge}")
                         info_print = set(infos_print)
                         for info in info_print:
                             logger.debug(f"  - {info}")
@@ -1187,7 +1187,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
         else:
             if len(components[bn_i]) > 0:
                 logger.info()
-                raise ValueError(f"Band {bn_i} has remaining points, but the next band is not in the range of the bands that are being solved")
+                raise ValueError(f"Band {bn_i + min_band} has remaining points, but the next band is not in the range of the bands that are being solved")
 
             
         number_of_available_points = np.sum(cluster_bn_i.number_of_nodes)
@@ -1210,11 +1210,11 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
         clusters.append(cluster_bn_i)
 
         logger.info(
-            f"[Band {bn_i}] Progress: {1:.2%} | The band is completed | Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            f"[Band {bn_i + min_band}] Progress: {1:.2%} | The band is completed | Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
         if bn_i == max_band_energies[bn_i]:
-            logger.info(f"All bands from the group {np.min(bands_to_solve)} - {bn_i} have been solved. | Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info(f"All bands from the group {np.min(bands_to_solve) + min_band} - {bn_i + min_band} have been solved. | Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
             bands_final_temp = np.full((nks, np.max(max_band_energies) + 1), -1, dtype=int)
             for cluster, bn in zip(clusters, bands_to_solve):
@@ -1224,15 +1224,15 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
             # Save the bands_final_temp to a file
             if not os.path.exists('temp'):
                 os.makedirs('temp')
-            np.save(f'temp/bands_final_temp_{np.min(bands_to_solve)}_{bn_i}.npy', bands_final_temp)
-            logger.info(f"Temporary file temp/bands_final_temp_{np.min(bands_to_solve)}_{bn_i}.npy saved.")
+            np.save(f'temp/bands_final_temp_{np.min(bands_to_solve) + min_band}_{bn_i + min_band}.npy', bands_final_temp)
+            logger.info(f"Temporary file temp/bands_final_temp_{np.min(bands_to_solve) + min_band}_{bn_i + min_band}.npy saved.")
 
 
 
     return clusters
 
 
-def solver_algorithm(components, degenerate_components, degenerate_points, connections, neighbors, mesh_kpoints_index, nks, max_band_energies, mask_degenerates, bands, logger, n_process=1, verbose=False, parallel=True, energies=None, tolerance=0.99, alpha=0.5):
+def solver_algorithm(components, degenerate_components, degenerate_points, connections, neighbors, mesh_kpoints_index, nks, max_band_energies, mask_degenerates, bands, logger, n_process=1, verbose=False, parallel=True, energies=None, tolerance=0.99, alpha=0.5, min_band=0):
     """
     ----------------------------------------------------------------------------------------------------------------------
     Main algorithm for solving clusters of components across multiple bands, with support for parallel processing.
@@ -1249,7 +1249,7 @@ def solver_algorithm(components, degenerate_components, degenerate_points, conne
     ----------------------------------------------------------------------------------------------------------------------
     '''
     clusters = []
-    solver_iterable_partial = partial(solver_iterable, components=components, degenerate_components=degenerate_components, degenerate_points=degenerate_points, connections=connections, neighbors=neighbors, mesh_kpoints_index=mesh_kpoints_index, nks=nks, max_band_energies=max_band_energies, mask_degenerates=mask_degenerates, bands=bands, logger=logger, energies=energies, tolerance = tolerance, alpha=alpha)
+    solver_iterable_partial = partial(solver_iterable, components=components, degenerate_components=degenerate_components, degenerate_points=degenerate_points, connections=connections, neighbors=neighbors, mesh_kpoints_index=mesh_kpoints_index, nks=nks, max_band_energies=max_band_energies, mask_degenerates=mask_degenerates, bands=bands, logger=logger, energies=energies, tolerance = tolerance, alpha=alpha, min_band=min_band)
 
     iterable_bands = []
 
@@ -1262,7 +1262,10 @@ def solver_algorithm(components, degenerate_components, degenerate_points, conne
 
     
     if n_process == 1 or not parallel:
-        return solver_iterable_partial(bands), iterable_bands
+        clusters = []
+        for iterable in iterable_bands:
+            clusters += solver_iterable_partial(iterable)
+        return clusters, iterable_bands
 
     for iterable in iterable_bands:
         logger.debug("Group Bands: " + ", ".join(map(str, iterable)) + " Number of Components: " + ", ".join(map(lambda x:str(len(components[x])), iterable)))
