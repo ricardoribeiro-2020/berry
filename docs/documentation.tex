@@ -95,7 +95,7 @@ as of version 2 of the program.
 \newpage
 \section{People}
 
-The \textbf{berry} suite is coordinated by Ricardo Mendes Ribeiro (University of Minho and INL, Braga, Portugal),
+The \textbf{berry} suite is coordinated by Ricardo Mendes Ribeiro (University of Minho, Braga, Portugal),
 which is also the main developer.\medskip
 
 Other contributors include
@@ -225,6 +225,7 @@ where the \texttt{script} is one of the following
 \begin{verbatim}
  preprocess
  wfcgen
+ degenrot
  dot
  cluster
  basis
@@ -998,6 +999,247 @@ to generate just for a singke k-point or a single wavefunction, for which we hav
 \end{table}
 
 
+% -----------------------------------------------------------------------
+\section{Degenerate subspace basis rotation}\label{sec:degenrot}
+
+After the wavefunctions have been extracted by \texttt{wfcgen}, and before the
+dot products are computed by \texttt{dot}, it is possible to run the optional
+script \texttt{degenrot}.
+
+\begin{verbatim}
+  berry degenrot [script options]
+\end{verbatim}
+
+This script is optional but recommended whenever the band structure contains
+degenerate points, i.e.\ k-points at which two or more bands share the same
+(or numerically indistinguishable) energy eigenvalue.
+Without it, the arbitrary basis chosen by the DFT
+(Density Functional Theory)
+solver at those k-points propagates into the dot products and can degrade the
+quality of the subsequent band classification by \texttt{cluster}.
+
+
+\subsection*{The problem of degenerate subspaces}
+
+At a generic k-point in the Brillouin Zone (BZ), the eigenstates of the
+Kohn-Sham Hamiltonian (see equation \ref{eq:Schrodinger}) are non-degenerate
+and uniquely determined up to an overall complex phase.
+However, at high-symmetry points, or along lines of high symmetry, two or more
+bands can share the same eigenvalue $E_{\pmb{k}}$.
+In that case, any linear combination of the corresponding eigenstates is also
+an eigenstate with the same energy.
+The DFT solver (here {\sc Quantum Espresso}) returns an arbitrary orthonormal
+basis for this degenerate subspace, which in general bears no relation to the
+basis chosen at neighbouring k-points.
+
+As a consequence the Bloch factors $u_{\pmb{k}s}(\pmb{r})$, which should vary
+smoothly with $\pmb{k}$ within each band $s$, can have an arbitrary
+orientation at every degenerate k-point.
+This discontinuity manifests as anomalously small dot products
+$|\langle u_{\pmb{k}s} | u_{\pmb{k}'s}\rangle|$ between a degenerate k-point
+and its neighbours, even when the two k-points belong to the same band.
+
+The goal of \texttt{degenrot} is to rotate the wavefunction basis at every
+degenerate k-point so that it aligns as closely as possible with the basis of
+the surrounding non-degenerate region, restoring continuity before the dot
+products are computed.
+
+
+\subsection*{Algorithm}
+
+The algorithm proceeds in four phases.
+
+\paragraph{Phase 1 --- Detection of degenerate subspaces.}
+
+For every k-point $\pmb{k}$ and every pair of bands $(s, s')$ with $s < s'$,
+the script checks whether
+
+\begin{equation}
+  |E_{\pmb{k},s} - E_{\pmb{k},s'}| < \varepsilon
+  \label{eq:degen_threshold}
+\end{equation}
+
+where $\varepsilon$ is the energy threshold (default $10^{-4}$, in the same
+units as the eigenvalues).
+A union-find algorithm \cite{Cormen2009} groups all mutually-degenerate bands at
+each k-point into a degenerate subspace of dimension $N \ge 2$.
+
+
+\paragraph{Phase 2 --- Formation of degenerate zones.}
+
+For each unique band-group signature (i.e.\ each distinct frozenset of band
+indices), the set of k-points that share that degeneracy is collected and its
+connected components are found by breadth-first search (BFS) over the
+neighbour graph from \emph{neighbors.npy}.
+
+Each connected component is called a \emph{degenerate zone}: a contiguous
+region of k-space in which the same $N$ bands are degenerate.
+A single calculation may contain many independent zones, each treated
+separately.
+
+
+\paragraph{Phase 3 --- Reference selection.}
+
+To define an unambiguous target basis for a zone, \texttt{degenrot} searches
+for a \emph{boundary k-point}: a k-point that belongs to the zone and has at
+least one neighbour outside the zone where the $N$ bands are
+\emph{non}-degenerate (i.e.\ where the minimum pairwise energy gap exceeds
+$\varepsilon$).
+Among all such boundary–neighbour pairs the one with the largest minimum
+pairwise energy separation is chosen as the reference, because it provides the
+most unambiguous basis.
+
+If no non-degenerate external neighbour exists (the zone is \emph{fully
+isolated}), an arbitrary k-point in the zone is chosen as the root.
+A warning is written to the log file and the zone is given an internally
+consistent basis, but the absolute orientation of that basis is arbitrary.
+
+
+\paragraph{Phase 4 --- Propagation of the basis rotation by BFS.}
+
+Starting from the boundary reference k-point, the script propagates the
+rotation outward through the zone via BFS.
+At each k-point $\pmb{k}$ (with BFS parent $\pmb{k}_{\mathrm{ref}}$, which
+has already been rotated):
+
+\begin{enumerate}
+
+\item The $N \times N$ Bloch-phase-corrected overlap matrix is computed:
+\begin{equation}
+  M_{ij} = \langle u^{\mathrm{ref}}_i | u^{\mathrm{cur}}_j \rangle
+          = \frac{1}{N_r}\sum_{\pmb{r}}
+            e^{i(\pmb{k}-\pmb{k}_{\mathrm{ref}})\cdot\pmb{r}}\,
+            u^*_{\pmb{k}_{\mathrm{ref}},i}(\pmb{r})\,
+            u_{\pmb{k},j}(\pmb{r})
+  \label{eq:overlap_matrix}
+\end{equation}
+where $N_r$ is the number of real-space grid points, the sum runs over all
+grid points $\pmb{r}$, and $i,j = 1,\ldots,N$ index the bands in the
+degenerate subspace.
+
+For non-colinear (NC) calculations, each Bloch factor is a two-component
+spinor $u_{\pmb{k}s} = (u_{\pmb{k}s}^{\uparrow}, u_{\pmb{k}s}^{\downarrow})$
+and the inner product sums over both spin components:
+\begin{equation}
+  M_{ij} = \frac{1}{N_r}\sum_{\pmb{r}} e^{i(\pmb{k}-\pmb{k}_{\mathrm{ref}})\cdot\pmb{r}}
+            \left[
+              u^{*\uparrow}_{\pmb{k}_{\mathrm{ref}},i}(\pmb{r})\,
+              u^{\uparrow}_{\pmb{k},j}(\pmb{r})
+            + u^{*\downarrow}_{\pmb{k}_{\mathrm{ref}},i}(\pmb{r})\,
+              u^{\downarrow}_{\pmb{k},j}(\pmb{r})
+            \right]
+  \label{eq:overlap_matrix_nc}
+\end{equation}
+
+\item The Singular Value Decomposition (SVD) \cite{Golub2013} of $M$ is computed:
+\begin{equation}
+  M = U\,\Sigma\,V^{\dagger}
+  \label{eq:svd}
+\end{equation}
+where $U$ and $V$ are $N \times N$ unitary matrices and
+$\Sigma = \mathrm{diag}(\sigma_1, \sigma_2, \ldots, \sigma_N)$
+with $\sigma_i \ge 0$.
+
+\item The optimal rotation matrix is obtained from the
+orthogonal Procrustes problem \cite{Schonemann1966}: find the $N \times N$
+unitary matrix $R$ that maximises $\mathrm{Re}\,\mathrm{Tr}(M R)$.
+The exact solution is
+\begin{equation}
+  R = V\,U^{\dagger}
+  \label{eq:procrustes}
+\end{equation}
+
+\item The new Bloch factors at $\pmb{k}$ are
+\begin{equation}
+  u^{\mathrm{new}}_{\pmb{k},j}(\pmb{r}) = \sum_{i=1}^{N} R_{ij}\, u_{\pmb{k},i}(\pmb{r}),
+  \qquad j = 1, \ldots, N
+  \label{eq:rotation_application}
+\end{equation}
+and they overwrite the corresponding \emph{.wfc} files in-place.
+For NC calculations the same matrix $R$ is applied to each spin component
+independently.
+
+\end{enumerate}
+
+
+\subsection*{Singular values as a quality measure}
+
+The singular values $\sigma_i$ of the overlap matrix $M$ are the cosines of
+the \emph{principal angles} \cite{Bjorck1973} between the $N$-dimensional
+subspace spanned by the reference basis and the $N$-dimensional subspace
+spanned by the current basis:
+
+\begin{equation}
+  \sigma_i = \cos\theta_i, \qquad i = 1, \ldots, N
+\end{equation}
+
+where $0 \le \theta_1 \le \theta_2 \le \ldots \le \theta_N \le \pi/2$ are
+the principal angles.
+If both bases span exactly the same subspace (as is the case when the
+degeneracy is clean and the k-spacing is small), all singular values equal
+one: the two subspaces coincide and the Procrustes rotation is exact.
+
+A singular value significantly below one indicates that one direction in the
+current subspace is tilted away from the reference subspace, which means the
+degenerate bands are mixing with states outside the chosen $N$-dimensional
+model.
+The minimum singular value $\min_i\sigma_i$ is the most sensitive diagnostic:
+it measures the worst-case alignment across all $N$ directions.
+Typical values above $0.99$ indicate a reliable rotation; values below $0.9$
+should prompt the user to check whether additional bands ought to be included
+in the degenerate group.
+
+Note that a permutation of the basis vectors, a sign flip, or any other
+unitary rearrangement of the current basis \emph{within} the same subspace
+gives singular values all equal to one, because the overlap matrix $M$ is
+itself unitary in that case.
+A small singular value therefore strictly means the two subspaces are
+genuinely different, not merely expressed in different bases.
+
+
+\subsection*{Output}
+
+\texttt{degenrot} overwrites the \emph{.wfc} files of the rotated k-points
+in-place and saves one additional file \emph{degenzones.npy} in the
+\emph{data} directory.
+Each row of \emph{degenzones.npy} has the form
+
+\begin{center}
+  \verb|[zone_id,  b_1, b_2, ..., b_N,  k-point]|
+\end{center}
+
+where \verb|zone_id| identifies the degenerate zone, $b_1 \ldots b_N$ are the
+absolute band indices of the degenerate subspace (padded with $-1$ if the
+subspace dimension is smaller than the maximum across all zones), and
+\verb|k-point| is the index of the k-point.
+
+A log file is written to \emph{log/degenrotation.log} (or the name given with
+\texttt{-o}).
+It records, for every zone, the bands involved, the reference k-point chosen,
+the type of reference (\emph{boundary} or \emph{isolated}), the number of
+k-points rotated, and the mean and minimum singular values.
+
+The options for \texttt{degenrot} are shown in table~\ref{tab:options_degenrot}.
+
+\begin{table}[h]
+ \centering
+ \caption{Options for script \texttt{degenrot}.}\label{tab:options_degenrot}
+\begin{tabular}[]{lr}
+\hline
+  \texttt{-h}, \texttt{--help}  & Show a help message and exit \\
+  \texttt{-ethr}                & Energy threshold for degeneracy detection \\
+                                & in eigenvalue units (default: $10^{-4}$) \\
+  \texttt{-c}                   & Compress the output \emph{.wfc} files \\
+  \texttt{-o file\_path}        & Name of output log file \\
+                                & Extension will be \emph{.log} regardless of user input \\
+  \texttt{-flush}               & Flush the output to stdout \\
+  \texttt{-v}                   & Increase output verbosity \\
+\hline
+\end{tabular}
+\end{table}
+
+
+% -----------------------------------------------------------------------
 \section{Dot product}
 
 \texttt{dot} reads the wavefunctions saved in directory \emph{wfc},
@@ -1381,6 +1623,7 @@ The package contains the python scripts in the main berry directory:
 \begin{itemize}
  \item preprocessing.py
  \item generatewfc.py
+ \item degenrotation.py
  \item dotproduct.py
  \item clustering\_bands.py
  \item basisrotation.py
@@ -1881,6 +2124,33 @@ P.~Giannozzi, O.~Andreussi, T.~Brumme, O.~Bunau, M.~Buongiorno~Nardelli,
   of Physics: Condensed Matter 29~(46) (2017) 465901.
 \newblock \href {https://doi.org/10.1088/1361-648X/aa8f79}
   {\path{doi:10.1088/1361-648X/aa8f79}}.
+
+\bibitem{Schonemann1966}
+P.~H. Sch\"{o}nemann,
+  A generalized solution of the orthogonal Procrustes problem,
+  Psychometrika 31~(1) (1966) 1--10.
+\newblock \href{https://doi.org/10.1007/BF02289451}
+  {\path{doi:10.1007/BF02289451}}.
+
+\bibitem{Bjorck1973}
+\r{A}.~Bj\"{o}rck, G.~H. Golub,
+  Numerical methods for computing angles between linear subspaces,
+  Mathematics of Computation 27~(123) (1973) 579--594.
+\newblock \href{https://doi.org/10.1090/S0025-5718-1973-0348991-3}
+  {\path{doi:10.1090/S0025-5718-1973-0348991-3}}.
+
+\bibitem{Golub2013}
+G.~H. Golub, C.~F. Van Loan,
+  Matrix Computations, 4th ed.,
+  Johns Hopkins University Press, Baltimore, 2013.
+  ISBN 978-1-4214-0794-4.
+
+\bibitem{Cormen2009}
+T.~H. Cormen, C.~E. Leiserson, R.~L. Rivest, C.~Stein,
+  Introduction to Algorithms, 3rd ed.,
+  MIT Press, Cambridge MA, 2009.
+  ISBN 978-0-262-03384-8.
+
 %
 %
 % \bibitem{Ventura2019}
