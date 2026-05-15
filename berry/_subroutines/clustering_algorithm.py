@@ -626,7 +626,10 @@ class Material:
                 self._number_of_preserved_mistakes = np.sum(self.signal_final == MISTAKE)
                 self.iterable_bands = iterable_bands
 
-                self.signal_final[np.logical_and(self.signal_final == MISTAKE, self.energy_signal_final != MISTAKE)] = CORRECT
+                # evaluate_point (in clustering_utils) returns 1 for MISTAKE, 3 for OTHER, 4 for CORRECT.
+                # Only correct wavefunction-MISTAKEs that energy says are NOT mistakes (value != 1).
+                ENERGY_MISTAKE = 1
+                self.signal_final[np.logical_and(self.signal_final == MISTAKE, self.energy_signal_final != ENERGY_MISTAKE)] = CORRECT
 
                 break
 
@@ -768,11 +771,12 @@ class Material:
                                                                 self.eigenvalues,)
 
                 self.energy_signal_final[k, bn_i] = signal_energy
+                # evaluate_point returns ENERGY_MISTAKE=1, not MISTAKE=0 (clustering_algorithm.py's constant)
                 if self.dimensions > 1:
-                    if self.energy_bands[bn_i][tuple(self.array_kpoints_index[k])] == 0 and signal_energy == MISTAKE:
+                    if self.energy_bands[bn_i][tuple(self.array_kpoints_index[k])] == 0 and signal_energy == 1:
                         self.energy_bands[bn_i][tuple(self.array_kpoints_index[k])] = 1
                 else:
-                    if self.energy_bands[bn_i] == 0 and signal_energy == MISTAKE:
+                    if self.energy_bands[bn_i] == 0 and signal_energy == 1:
                         self.energy_bands[bn_i] = 1
 
                 self.energy_score[bn_i] += score_energy
