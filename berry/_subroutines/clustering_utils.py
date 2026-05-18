@@ -1412,10 +1412,6 @@ def evaluate_point(dimension:int, k, bn, k_index: np.ndarray, k_matrix: np.ndarr
         (signal, scores): Tuple[int, list[int]]
     '''
     
-    CORRECT = 4
-    MISTAKE = 1
-    OTHER = 3
-
     TOL = 0.9                       # Tolerance to consider that exist energy continuity
     N = 4                           # Number of points to fit the curve
     N_NEIGS = 2 * dimension         # Number of neighbors to consider the continuity
