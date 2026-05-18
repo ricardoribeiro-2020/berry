@@ -687,6 +687,12 @@ def obtain_energy_difference(sample_points, cluster_points, sigma_E, energies, n
     '''
     energy_difference = []
 
+    # Fallback sigma when a boundary point has no in-component neighbors to estimate
+    # its local gradient. Use the mean of all valid boundary gradients so the scale
+    # stays physically meaningful; only drop to the hard-coded 1e-3 if none are finite.
+    finite_sigmas = sigma_E[np.isfinite(sigma_E) & (sigma_E > 0)]
+    fallback_sigma = np.mean(finite_sigmas) if len(finite_sigmas) > 0 else 1e-3
+
     for k_s, b_s in sample_points:
         E_ks_bs = energies[k_s, b_s]
         for i_neigh, k in enumerate(neighbors[k_s]):
@@ -697,7 +703,7 @@ def obtain_energy_difference(sample_points, cluster_points, sigma_E, energies, n
             E_kc_bc = energies[k, b_c]
             sigma_E_kc = sigma_E[k_c]
             if not np.isfinite(sigma_E_kc) or sigma_E_kc == 0:
-                energy_difference.append(np.exp(- (np.abs(E_kc_bc - E_ks_bs))**2 / (1e-3**2)))
+                energy_difference.append(np.exp(- (np.abs(E_kc_bc - E_ks_bs) - fallback_sigma)**2 / (2 * fallback_sigma**2)))
             else:
                 energy_difference.append(np.exp(- (np.abs(E_kc_bc - E_ks_bs) - sigma_E_kc)**2 / ( 2 * sigma_E_kc**2)))
 
