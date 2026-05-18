@@ -104,7 +104,7 @@ DEGENERATE = 1
 MISTAKE = 0
 
 DEGENERATE_TOLERANCE = 0.71
-MINIMUM_TOLERANCE = 0.5
+MINIMUM_TOLERANCE = 0.2
 
 EVALUATE_RESULT_HELP = '''
     ---------------------- Report considering dot-product information ----------------------------
