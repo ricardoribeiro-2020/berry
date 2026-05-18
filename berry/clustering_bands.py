@@ -34,7 +34,7 @@ This package is used for clustering components in band structure analysis and ca
         -np [1-112]     Number of processes to use (default: 1).
         -t [0.0-1.0]    Tolerance used for graph construction (default: 0.99).
         -iterations N   Number of clustering iterations (default: 5).
-        -step F         Step for alpha update (default: 0.01) : alpha = alpha + step * iteration.
+        -step F         Step for alpha update (default: 0.1) : alpha = alpha + step * iteration.
         -alpha F        Initial alpha parameter (default: 1) : score = dot_product * alpha + (1 - alpha) * energy_diff.
         -flush          Flushes output into stdout.
         -o file_path    Name of output log file. Extension will be .log regardless of user input.
@@ -65,7 +65,7 @@ except:
 
 
 def run_clustering( max_band: int, min_band: int = 0, tol: float = 0.99, 
-                    iterations: int = 5, step: float = 0.01, alpha: float = 1,
+                    iterations: int = 5, step: float = 0.1, alpha: float = 1,
                     npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False, verbose=False):
     logger = log(logger_name, "CLUSTER", level=logger_level, flush=flush)
 

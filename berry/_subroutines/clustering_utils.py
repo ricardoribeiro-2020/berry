@@ -1586,7 +1586,7 @@ def evaluate_point(dimension:int, k, bn, k_index: np.ndarray, k_matrix: np.ndarr
 
 
     energy_vals = np.array(energy_vals)
-    score = np.mean(energy_vals) if len(energy_vals) > 0 else 0
+    score = np.median(energy_vals) if len(energy_vals) > 0 else 0
     min_score = np.min(energy_vals) if len(energy_vals) > 0 else 0
 
     if score >= TOL and min_score >= 0.6:

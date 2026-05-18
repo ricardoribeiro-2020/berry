@@ -320,7 +320,7 @@ class Material:
 
         self.vectors = np.stack(stack_aux, axis=1)
 
-    def solver(self, initial_tol=0.99, max_iter=5, step_alpha=0.01, alpha=1, datadir='data/') -> None:
+    def solver(self, initial_tol=0.99, max_iter=5, step_alpha=0.1, alpha=1, datadir='data/') -> None:
         """
         Perform the full band structure analysis, identifying energy-connected components
         and degenerate regions across a k-point mesh.
@@ -652,6 +652,18 @@ class Material:
                 
                 mistakes[marked_indexes] = 1
 
+                # Expand re-examination by 1 step: also include neighbors of MISTAKE
+                # k-points.  Wrong assignments rarely affect a single isolated k-point;
+                # the surrounding context needs to be re-solved too.
+                for k_flat in np.where(self.signal_final[:, bn_i] == MISTAKE)[0]:
+                    for k_neig in self.neighbors[k_flat]:
+                        if k_neig == -1:
+                            continue
+                        if self.dimensions > 1:
+                            mistakes[tuple(self.array_kpoints_index[k_neig])] = 1
+                        else:
+                            mistakes[self.array_kpoints_index[k_neig]] = 1
+
                 grad_E = self.energy_bands[bn_i]
                 mesh_with_mistakes[bn_i] = np.logical_or(mesh_with_mistakes[bn_i], mistakes)
                 mesh_with_mistakes[bn_i] = np.logical_or(mesh_with_mistakes[bn_i], grad_E)
@@ -665,7 +677,7 @@ class Material:
                 #for bn_j in self.bands[bn_i + 1: max_band_energies[bn_i] + 1]:
                 #    mesh_with_mistakes[bn_i] = np.logical_or(self.energy_bands[bn_j], mesh_with_mistakes[bn_i])
 
-                if np.sum(self.signal_final[:, bn_i] == MISTAKE) == 0:
+                if np.sum(self.signal_final[:, bn_i] == MISTAKE) == 0 and np.sum(self.energy_bands[bn_i]) == 0:
                     components.append([band])
                     continue
 
