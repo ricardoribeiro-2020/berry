@@ -669,7 +669,7 @@ class Material:
                 mesh_with_mistakes[bn_i] = np.logical_or(mesh_with_mistakes[bn_i], grad_E)
 
                 for bn_j in self.bands[bn_i + 1: max_band_energies[bn_i] + 1]:
-                    mesh_with_mistakes[bn_j] = np.logical_or(mesh_with_mistakes[bn_j], mesh_with_mistakes[bn_i])
+                    mesh_with_mistakes[bn_j] = np.logical_or(mesh_with_mistakes[bn_j], mistakes)
 
             for bn_i, band in enumerate(self.cluster_bands):
                 edges = []
@@ -677,7 +677,7 @@ class Material:
                 #for bn_j in self.bands[bn_i + 1: max_band_energies[bn_i] + 1]:
                 #    mesh_with_mistakes[bn_i] = np.logical_or(self.energy_bands[bn_j], mesh_with_mistakes[bn_i])
 
-                if np.sum(self.signal_final[:, bn_i] == MISTAKE) == 0 and np.sum(self.energy_bands[bn_i]) == 0:
+                if np.sum(mesh_with_mistakes[bn_i]) == 0:
                     components.append([band])
                     continue
 
