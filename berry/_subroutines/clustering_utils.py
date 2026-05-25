@@ -287,10 +287,11 @@ class Component:
                 for offset in (-1, +1):
                     neighbor_coord = list(coord) if Component.dimensions > 1 else [coord]
                     neighbor_coord[dim] += offset
-                    # Periodic boundary: the BZ wraps in all directions.
-                    # For a degenerate axis (grid_shape[dim] == 1) both offsets map back
-                    # to the same cell, so neither direction ever leaves the component.
-                    neighbor_coord[dim] = neighbor_coord[dim] % grid_shape[dim]
+                    # Open boundary: the k-point grid is not periodic in general.
+                    # A neighbour index outside [0, N) means there is no neighbour
+                    # in that direction — skip it rather than wrapping.
+                    if neighbor_coord[dim] < 0 or neighbor_coord[dim] >= grid_shape[dim]:
+                        continue
                     neighbor_coord = tuple(neighbor_coord) if Component.dimensions > 1 else neighbor_coord[0]
 
                     if neighbor_coord not in self.coord_tuples:
@@ -298,7 +299,7 @@ class Component:
                         boundary[i] = True
 
             if not boundary[i]:
-                # All 2*D neighbours (including periodic ones) are in the component.
+                # All in-grid neighbours are in the component.
                 interior[i] = True
 
 

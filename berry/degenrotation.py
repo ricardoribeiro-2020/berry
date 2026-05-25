@@ -186,7 +186,7 @@ def run_degenrotation(
     logger = log(logger_name, "DEGENERATE BASIS ROTATION", level=logger_level, flush=flush)
     logger.header()
 
-    initial_band = m.initial_band if m.initial_band != "dummy" else 0
+    initial_band = m.initial_band
     final_band   = m.final_band
     band_range   = list(range(initial_band, final_band + 1))
 
@@ -361,10 +361,9 @@ def run_degenrotation(
 
                 M = _overlap_matrix(ref_wfcs, cur_wfcs, dphase, m.nr, m.noncolin)
 
-                U, sigma, Vh = svd(M)
+                _, sigma, _ = svd(M)
                 sigma_log.append(sigma)
-                # Procrustes optimal rotation: R = V U†  (maximises Re Tr(M R))
-                R        = Vh.conj().T @ U.conj().T
+                R        = _procrustes_rotation(M)
                 new_wfcs = _apply_rotation(cur_wfcs, R, m.noncolin)
 
                 logger.debug(f"\t  k={nk} (ref={ref_nk}): singular values {np.round(sigma, 5)}")
