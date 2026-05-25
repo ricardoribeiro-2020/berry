@@ -12,8 +12,10 @@
   N×N unitary rotation is applied to both spinor components simultaneously.
 """
 import os
+import time
 import logging
 from collections import deque, defaultdict
+from itertools import combinations
 
 import numpy as np
 from numpy.linalg import svd
@@ -176,12 +178,133 @@ def _degenerate_groups(energies: np.ndarray, band_indices: list, ethr: float) ->
 # Main entry point
 # ---------------------------------------------------------------------------
 
+def _refine_zone_gauge(
+    zone: set,
+    bands: list,
+    n_dir: int,
+    neighbors: np.ndarray,
+    d_phase: np.ndarray,
+    eigenvalues: np.ndarray,
+    ethr: float,
+    noncolin: bool,
+    wfcdir: str,
+    nr: int,
+    compress: bool,
+    max_iter: int,
+    tol: float,
+    logger,
+) -> tuple:
+    """Iterative multi-neighbour Procrustes gauge refinement for one zone.
+
+    Each sweep re-rotates every zone k-point to best align with ALL its valid
+    neighbours simultaneously: zone-internal k-points (currently being refined)
+    and external non-degenerate k-points (fixed anchors that prevent global
+    phase drift).  The overlap matrices from every direction are summed before
+    the Procrustes step so all neighbours contribute to the new rotation.
+
+    Stops when the maximum per-k-point rotation change in a sweep drops below
+    `tol` (Frobenius norm of R − I) or `max_iter` sweeps are exhausted.
+
+    Quality metric: Re(Tr(M_total @ R)) / N = sum(svd(M_total)) / N, averaged
+    over all zone k-points.  This is gauge-dependent (unlike boundary spread)
+    and rises as neighbours agree on a common rotation direction.
+
+    Returns (n_iter_done, mean_quality).
+    """
+    N = len(bands)
+
+    # Pre-compute valid neighbours for each zone k-point to avoid
+    # recomputing energy gaps in the inner loop.
+    valid_nbrs: dict = {}
+    for nk in zone:
+        nbrs = []
+        for j in range(n_dir):
+            nb = neighbors[nk, j]
+            if nb == -1:
+                continue
+            if nb in zone:
+                nbrs.append(nb)
+            else:
+                gap = min(
+                    abs(eigenvalues[nb, bands[a]] - eigenvalues[nb, bands[b]])
+                    for a in range(N) for b in range(a + 1, N)
+                )
+                if gap > ethr:
+                    nbrs.append(nb)
+        valid_nbrs[nk] = nbrs
+
+    t0 = time.time()
+    max_rot_change_0: float = 0.0
+    mean_quality_0:   float = 0.0
+    mean_quality:     float = 0.0
+
+    for it in range(1, max_iter + 1):
+        max_rot_change = 0.0
+        total_quality  = 0.0
+        n_active       = 0
+
+        for nk in zone:
+            cur_w   = [_load_wfc(nk, b, noncolin, wfcdir) for b in bands]
+            M_total = None
+
+            for nb in valid_nbrs[nk]:
+                ref_w  = [_load_wfc(nb, b, noncolin, wfcdir) for b in bands]
+                dph    = d_phase[:, nk] * d_phase[:, nb].conj()
+                M_nb   = _overlap_matrix(ref_w, cur_w, dph, nr, noncolin)
+                M_total = M_nb if M_total is None else M_total + M_nb
+
+            if M_total is None:
+                continue
+
+            R = _procrustes_rotation(M_total)
+            # Re(Tr(M @ R)) = sum of singular values of M (gauge-dependent quality)
+            total_quality += float(np.real(np.trace(M_total @ R))) / N
+            n_active      += 1
+            max_rot_change = max(
+                max_rot_change,
+                float(np.linalg.norm(R - np.eye(N, dtype=complex))),
+            )
+            new_w = _apply_rotation(cur_w, R, noncolin)
+            for i, b in enumerate(bands):
+                _save_wfc(new_w[i], nk, b, noncolin, wfcdir, compress)
+
+        mean_quality = total_quality / n_active if n_active > 0 else 0.0
+
+        if it == 1:
+            max_rot_change_0 = max_rot_change if max_rot_change > 0.0 else 1.0
+            mean_quality_0   = mean_quality
+
+        pct_iter = 100.0 * it / max_iter
+        pct_conv = 100.0 * (1.0 - max_rot_change / max_rot_change_0)
+        pct_qual = (
+            100.0 * (mean_quality - mean_quality_0) / abs(mean_quality_0)
+            if mean_quality_0 != 0.0 else 0.0
+        )
+        elapsed = time.time() - t0
+
+        logger.info(
+            f"\t    [{pct_iter:5.1f}%]  iter {it:>3}/{max_iter}  "
+            f"max_ΔR={max_rot_change:.2e}  ΔR_reduced={pct_conv:+.1f}%  "
+            f"quality={mean_quality:.6f} ({pct_qual:+.1f}%)  elapsed={elapsed:.1f}s"
+        )
+
+        if max_rot_change < tol:
+            logger.info(
+                f"\t    Converged: max_ΔR={max_rot_change:.2e} < tol={tol:.1e}"
+            )
+            return it, mean_quality
+
+    return max_iter, mean_quality
+
+
 def run_degenrotation(
     ethr: float = ENERGY_THRESHOLD,
     logger_name: str = "degenrotation",
     logger_level: int = logging.INFO,
     compress: bool = False,
     flush: bool = False,
+    max_refinement_iter: int = 50,
+    refinement_tol: float = 1e-4,
 ) -> None:
     logger = log(logger_name, "DEGENERATE BASIS ROTATION", level=logger_level, flush=flush)
     logger.header()
@@ -250,13 +373,27 @@ def run_degenrotation(
     logger.info("\t****  Phase 2: Forming degenerate zones  ****")
     logger.info()
 
+    # Collect every signature that appears as the exact degenerate group at some k-point.
+    actual_sigs: set = {grp for groups in degen_at_k.values() for grp in groups}
+
+    # A k-point with signature T contributes to every sub-signature S ⊆ T that is
+    # itself a real signature elsewhere in the BZ.  This bridges gaps where the
+    # degeneracy dimension increases (e.g. a doublet region flanked by a triplet
+    # region): the doublet zone now includes the triplet k-points, keeping the zone
+    # connected rather than split into two disconnected pieces.
     sig_kpoints: dict = defaultdict(set)
     for nk, groups in degen_at_k.items():
         for grp in groups:
-            sig_kpoints[grp].add(nk)
+            for size in range(2, len(grp) + 1):
+                for sub in combinations(sorted(grp), size):
+                    sub_frozen = frozenset(sub)
+                    if sub_frozen in actual_sigs:
+                        sig_kpoints[sub_frozen].add(nk)
 
+    # Process signatures in ascending size order so that a sub-zone (e.g. {0,1})
+    # is fully rotated before the enclosing super-zone ({0,1,2}) runs on top of it.
     zones = []  # list of (frozenset_of_bands, set_of_kpoints)
-    for sig, kpoints_set in sig_kpoints.items():
+    for sig, kpoints_set in sorted(sig_kpoints.items(), key=lambda kv: len(kv[0])):
         visited: set = set()
         for start in kpoints_set:
             if start in visited:
@@ -386,6 +523,79 @@ def run_degenrotation(
         logger.info(f"\t  Rotated {n_rotated} / {len(zone)} k-point(s)")
         logger.info(f"\t  Mean singular value : {mean_sigma:.6f}  (1.0 = perfect alignment)")
         logger.info(f"\t  Min singular value  : {min_sigma:.6f}")
+
+        # ------------------------------------------------------------------
+        # Boundary consistency check — after BFS, verify that the rotated
+        # zone aligns well with every non-degenerate external neighbour, not
+        # only the chosen reference.  A large spread in min_sigma means the
+        # gauge drifts across the zone: a different reference k-point would
+        # have anchored a substantially different rotation.
+        # ------------------------------------------------------------------
+        boundary_edges: list = []   # (nk_zone, nb_external, min_sigma)
+        for nk in zone:
+            for j in range(2 * m.dimensions):
+                nb = neighbors[nk, j]
+                if nb == -1 or nb in zone:
+                    continue
+                gap = min(
+                    abs(eigenvalues[nb, bands[a]] - eigenvalues[nb, bands[b]])
+                    for a in range(N) for b in range(a + 1, N)
+                )
+                if gap <= ethr:
+                    continue
+                ref_wfcs_b = [_load_wfc(nb, b, m.noncolin, m.wfcdirectory) for b in bands]
+                cur_wfcs_b = [_load_wfc(nk, b, m.noncolin, m.wfcdirectory) for b in bands]
+                dphase_b   = d_phase[:, nk] * d_phase[:, nb].conj()
+                M_b        = _overlap_matrix(ref_wfcs_b, cur_wfcs_b, dphase_b, m.nr, m.noncolin)
+                _, sigma_b, _ = svd(M_b)
+                boundary_edges.append((nk, nb, float(sigma_b.min())))
+                logger.debug(f"\t    boundary k={nk}→ext={nb}: min_sigma={sigma_b.min():.6f}")
+
+        spread = 0.0
+        if boundary_edges:
+            b_sigmas = [s for _, _, s in boundary_edges]
+            b_min, b_max = min(b_sigmas), max(b_sigmas)
+            spread = b_max - b_min
+            logger.info(
+                f"\t  Boundary consistency : {len(boundary_edges)} edge(s), "
+                f"min_sigma in [{b_min:.6f}, {b_max:.6f}], spread={spread:.6f}"
+            )
+            if spread > 0.1:
+                worst_nk, worst_nb, _ = min(boundary_edges, key=lambda t: t[2])
+                logger.warning(
+                    f"\t  WARNING: boundary spread {spread:.6f} > 0.1 — "
+                    f"zone gauge is not fully consistent across all borders "
+                    f"(worst edge: k={worst_nk}→ext={worst_nb})"
+                )
+
+        # ------------------------------------------------------------------
+        # Iterative multi-neighbour gauge refinement (option C)
+        # ------------------------------------------------------------------
+        if max_refinement_iter > 0 and len(zone) > 1:
+            logger.info(
+                f"\t  --- Iterative gauge refinement "
+                f"(max {max_refinement_iter} iter, tol={refinement_tol:.1e}) ---"
+            )
+            n_ref_iter, final_quality = _refine_zone_gauge(
+                zone=zone,
+                bands=bands,
+                n_dir=2 * m.dimensions,
+                neighbors=neighbors,
+                d_phase=d_phase,
+                eigenvalues=eigenvalues,
+                ethr=ethr,
+                noncolin=m.noncolin,
+                wfcdir=m.wfcdirectory,
+                nr=m.nr,
+                compress=compress,
+                max_iter=max_refinement_iter,
+                tol=refinement_tol,
+                logger=logger,
+            )
+            logger.info(
+                f"\t  Refinement complete: {n_ref_iter} iter(s), "
+                f"final quality={final_quality:.6f}"
+            )
 
         summary_rows.append((zi, bands, len(zone), n_rotated, best_k, ref_type, mean_sigma))
 
