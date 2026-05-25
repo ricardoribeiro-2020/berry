@@ -669,7 +669,15 @@ class Material:
                 mesh_with_mistakes[bn_i] = np.logical_or(mesh_with_mistakes[bn_i], grad_E)
 
                 for bn_j in self.bands[bn_i + 1: max_band_energies[bn_i] + 1]:
-                    mesh_with_mistakes[bn_j] = np.logical_or(mesh_with_mistakes[bn_j], mistakes)
+                    # Cascade wavefunction mistakes to ALL partner bands (they may belong anywhere
+                    # in the degenerate group).  Cascade grad_E only to the immediately adjacent
+                    # band: a crossing between bn_i and bn_i+1 shows an energy anomaly on bn_i
+                    # that the direct partner must reconsider, but distant bands need not.
+                    if bn_j == bn_i + 1:
+                        mesh_with_mistakes[bn_j] = np.logical_or(mesh_with_mistakes[bn_j],
+                                                                  np.logical_or(mistakes, grad_E))
+                    else:
+                        mesh_with_mistakes[bn_j] = np.logical_or(mesh_with_mistakes[bn_j], mistakes)
 
             for bn_i, band in enumerate(self.cluster_bands):
                 edges = []

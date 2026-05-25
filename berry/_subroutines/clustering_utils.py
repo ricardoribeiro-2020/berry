@@ -280,7 +280,6 @@ class Component:
 
         for i in range(n):
             coord = self.active_coords[i]
-            is_interior = True
             for dim in range(D):
                 for offset in (-1, +1):
                     neighbor_coord = list(coord) if Component.dimensions > 1 else [coord]
@@ -290,14 +289,9 @@ class Component:
                     if neighbor_coord not in self.coord_tuples:
                         self.neighbor_coords.add(neighbor_coord)
                         boundary[i] = True
-                        is_interior = False
-                        break
 
-                if not is_interior:
-                    break
-                
             if not boundary[i]:
-                # We never saw a missing neighbor; so it’s truly interior:
+                # All 2*D neighbors are present in the component — truly interior.
                 interior[i] = True
 
 
