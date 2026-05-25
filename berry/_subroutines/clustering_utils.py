@@ -278,12 +278,19 @@ class Component:
         boundary = np.zeros(n, dtype=bool)
         interior = np.zeros(n, dtype=bool)
 
+        # Grid dimensions for periodic BZ wrapping: (Nx, Ny, Nz) or (Nk,)
+        grid_shape = Component.mesh_kpoints_index.shape
+
         for i in range(n):
             coord = self.active_coords[i]
             for dim in range(D):
                 for offset in (-1, +1):
                     neighbor_coord = list(coord) if Component.dimensions > 1 else [coord]
                     neighbor_coord[dim] += offset
+                    # Periodic boundary: the BZ wraps in all directions.
+                    # For a degenerate axis (grid_shape[dim] == 1) both offsets map back
+                    # to the same cell, so neither direction ever leaves the component.
+                    neighbor_coord[dim] = neighbor_coord[dim] % grid_shape[dim]
                     neighbor_coord = tuple(neighbor_coord) if Component.dimensions > 1 else neighbor_coord[0]
 
                     if neighbor_coord not in self.coord_tuples:
@@ -291,7 +298,7 @@ class Component:
                         boundary[i] = True
 
             if not boundary[i]:
-                # All 2*D neighbors are present in the component — truly interior.
+                # All 2*D neighbours (including periodic ones) are in the component.
                 interior[i] = True
 
 
@@ -984,6 +991,8 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
         logger.info(
                     f"[Band {bn_i + min_band}] Progress: {0:.2%} | Degenerates are being included: {not check_degenerates_points}"
                 )
+        _swap_stall_count = 0
+        _prev_cluster_size = 0
         while cluster_bn_i.number_of_nodes < nks:
 
             progress = cluster_bn_i.number_of_nodes / nks
@@ -1115,6 +1124,27 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                         for info in info_print:
                             logger.debug(f"  - {info}")
                     if total_samples_can_merge == 0:
+                        if cluster_bn_i.number_of_nodes == _prev_cluster_size:
+                            _swap_stall_count += 1
+                        else:
+                            _swap_stall_count = 0
+                            _prev_cluster_size = cluster_bn_i.number_of_nodes
+
+                        if _swap_stall_count >= nks:
+                            # Cluster made no progress for nks consecutive swap iterations.
+                            # Purge ghost components (k-flat indices already in the cluster)
+                            # so the remaining real samples flow to the next band.
+                            logger.info(
+                                f"[{bn_i + min_band}] Swap stall limit reached — cluster at "
+                                f"{cluster_bn_i.number_of_nodes}/{nks}. Purging ghosts and stopping."
+                            )
+                            for ri in range(len(remaining_samples)):
+                                remaining_samples[ri] = [
+                                    s for s in remaining_samples[ri]
+                                    if not cluster_bn_i.does_intersect(s)
+                                ]
+                            break
+
                         # sort the remaining samples by number of nodes
                         remaining_samples[0] = [s for s in sorted(remaining_samples[0], key=lambda x: x.number_of_nodes, reverse=True)]
                         cluster_bn_i_swap = remaining_samples[0].pop(0).to_cluster()
