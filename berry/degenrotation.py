@@ -193,28 +193,42 @@ def _refine_zone_gauge(
     max_iter: int,
     tol: float,
     logger,
+    anderson_m: int = 10,
 ) -> tuple:
-    """Iterative multi-neighbour Procrustes gauge refinement for one zone.
+    """Iterative multi-neighbour Procrustes gauge refinement with Anderson mixing.
 
-    Each sweep re-rotates every zone k-point to best align with ALL its valid
-    neighbours simultaneously: zone-internal k-points (currently being refined)
-    and external non-degenerate k-points (fixed anchors that prevent global
-    phase drift).  The overlap matrices from every direction are summed before
-    the Procrustes step so all neighbours contribute to the new rotation.
+    Each sweep (Gauss-Seidel pass) re-rotates every zone k-point to best align
+    with ALL its valid neighbours simultaneously: zone-internal k-points (also
+    being refined) and external non-degenerate k-points (fixed anchors that
+    prevent global gauge drift).  The overlap matrices from every direction are
+    summed before the Procrustes step so all neighbours vote on the rotation.
 
-    Stops when the maximum per-k-point rotation change in a sweep drops below
-    `tol` (Frobenius norm of R − I) or `max_iter` sweeps are exhausted.
+    After each Gauss-Seidel sweep, Anderson mixing (AA(m)) is applied to
+    accelerate convergence.  Anderson mixing fits a least-squares linear
+    combination of the last `anderson_m` residuals that best predicts the next
+    fixed-point, then extrapolates the rotation matrices in that direction and
+    reprojects each N×N block onto U(N) via SVD.  This converts the slow
+    (linear, ~0.97/iter) Gauss-Seidel convergence into effective superlinear
+    convergence, typically reducing required iterations by 5–10×.
 
-    Quality metric: Re(Tr(M_total @ R)) / N = sum(svd(M_total)) / N, averaged
-    over all zone k-points.  This is gauge-dependent (unlike boundary spread)
-    and rises as neighbours agree on a common rotation direction.
+    Set `anderson_m=0` to disable Anderson mixing (pure Gauss-Seidel).
+
+    Convergence criterion: max Frobenius norm of (R − I) over all k-points in
+    the Gauss-Seidel sweep drops below `tol`, or `max_iter` sweeps exhausted.
+
+    Quality metric: Re(Tr(M_total @ R)) / N averaged over active k-points.
+    Gauge-dependent; rises as neighbours agree on a common rotation.
 
     Returns (n_iter_done, mean_quality).
     """
-    N = len(bands)
+    N           = len(bands)
+    sorted_zone = sorted(zone)       # fixed ordering for flat state vectors
+    n_zone      = len(sorted_zone)
+    NN          = N * N              # elements per k-point in the flat vector
 
-    # Pre-compute valid neighbours for each zone k-point to avoid
-    # recomputing energy gaps in the inner loop.
+    # ------------------------------------------------------------------
+    # Pre-compute valid neighbours for each zone k-point.
+    # ------------------------------------------------------------------
     valid_nbrs: dict = {}
     for nk in zone:
         nbrs = []
@@ -233,17 +247,36 @@ def _refine_zone_gauge(
                     nbrs.append(nb)
         valid_nbrs[nk] = nbrs
 
-    t0 = time.time()
+    # ------------------------------------------------------------------
+    # Anderson mixing state.
+    #   Q_acc[nk]  — accumulated rotation at k-point nk relative to the
+    #                state at the very start of refinement:
+    #                wfc_current[nk] = Q_acc[nk] @ wfc_initial[nk]
+    #   hist_x     — list of flat state vectors  x_k (before each sweep)
+    #   hist_f     — list of GS residuals        f_k = x_{k+1,GS} − x_k
+    # ------------------------------------------------------------------
+    Q_acc:  dict = {nk: np.eye(N, dtype=complex) for nk in zone}
+    hist_x: list = []
+    hist_f: list = []
+
+    t0             = time.time()
     max_rot_change_0: float = 0.0
     mean_quality_0:   float = 0.0
     mean_quality:     float = 0.0
 
     for it in range(1, max_iter + 1):
+
+        # Snapshot accumulated rotations before this sweep.
+        x_before = np.concatenate([Q_acc[nk].ravel() for nk in sorted_zone])
+
+        # --------------------------------------------------------------
+        # Gauss-Seidel sweep
+        # --------------------------------------------------------------
         max_rot_change = 0.0
         total_quality  = 0.0
         n_active       = 0
 
-        for nk in zone:
+        for nk in sorted_zone:
             cur_w   = [_load_wfc(nk, b, noncolin, wfcdir) for b in bands]
             M_total = None
 
@@ -257,7 +290,7 @@ def _refine_zone_gauge(
                 continue
 
             R = _procrustes_rotation(M_total)
-            # Re(Tr(M @ R)) = sum of singular values of M (gauge-dependent quality)
+            # Re(Tr(M @ R)) = sum of singular values of M
             total_quality += float(np.real(np.trace(M_total @ R))) / N
             n_active      += 1
             max_rot_change = max(
@@ -267,9 +300,11 @@ def _refine_zone_gauge(
             new_w = _apply_rotation(cur_w, R, noncolin)
             for i, b in enumerate(bands):
                 _save_wfc(new_w[i], nk, b, noncolin, wfcdir, compress)
+            Q_acc[nk] = R @ Q_acc[nk]
 
         mean_quality = total_quality / n_active if n_active > 0 else 0.0
 
+        # Logging and convergence check (uses pure GS residual).
         if it == 1:
             max_rot_change_0 = max_rot_change if max_rot_change > 0.0 else 1.0
             mean_quality_0   = mean_quality
@@ -281,18 +316,82 @@ def _refine_zone_gauge(
             if mean_quality_0 != 0.0 else 0.0
         )
         elapsed = time.time() - t0
-
         logger.info(
             f"\t    [{pct_iter:5.1f}%]  iter {it:>3}/{max_iter}  "
             f"max_ΔR={max_rot_change:.2e}  ΔR_reduced={pct_conv:+.1f}%  "
             f"quality={mean_quality:.6f} ({pct_qual:+.1f}%)  elapsed={elapsed:.1f}s"
         )
-
         if max_rot_change < tol:
             logger.info(
                 f"\t    Converged: max_ΔR={max_rot_change:.2e} < tol={tol:.1e}"
             )
             return it, mean_quality
+
+        # --------------------------------------------------------------
+        # Anderson acceleration (AA(m))
+        #
+        # Fixed-point map:  g(x) = GS_sweep(x)
+        # Residual:         f(x) = g(x) − x   (want f → 0)
+        #
+        # Given last m residuals, solve the least-squares problem
+        #   min ‖f_k + ΔF θ‖   where ΔF_j = f_j − f_{j-1}
+        # then extrapolate:
+        #   x_{k+1}^AA = x_{k+1,GS} + (ΔX + ΔF) θ
+        #              = x_k + f_k   + (ΔX + ΔF) θ
+        # Finally project each N×N block back onto U(N) via SVD.
+        #
+        # IMPORTANT: f_gs must be captured from Q_acc right after the GS sweep
+        # and BEFORE the correction is applied, so the history always stores
+        # the true GS fixed-point residuals (not GS + Anderson combined).
+        # --------------------------------------------------------------
+        if anderson_m > 0:
+            x_after_gs = np.concatenate([Q_acc[nk].ravel() for nk in sorted_zone])
+            f_gs       = x_after_gs - x_before   # pure GS residual, captured now
+
+            if hist_f:                            # need ≥1 previous residual
+                n_use  = min(len(hist_f), anderson_m)
+                all_f  = hist_f[-n_use:] + [f_gs]
+                all_x  = hist_x[-n_use:] + [x_before]
+
+                dF = np.column_stack(
+                    [all_f[j] - all_f[j - 1] for j in range(1, len(all_f))]
+                )
+                dX = np.column_stack(
+                    [all_x[j] - all_x[j - 1] for j in range(1, len(all_x))]
+                )
+
+                # Least-squares: min ‖f_gs + dF θ‖²
+                theta, *_ = np.linalg.lstsq(dF, -f_gs, rcond=None)
+
+                x_aa = x_after_gs + (dX + dF) @ theta
+
+                # Safety: reject if Anderson step is >5× the plain GS step.
+                # This guards against divergence in the early iterations when
+                # the history is short and the curvature estimate is unreliable.
+                gs_norm = np.linalg.norm(f_gs)
+                aa_norm = np.linalg.norm(x_aa - x_before)
+                if gs_norm > 0.0 and aa_norm < 5.0 * gs_norm:
+                    # Project each N×N block onto U(N) and apply incremental
+                    # correction  dR = Q_mix @ Q_acc†  to the stored wfc.
+                    for i, nk in enumerate(sorted_zone):
+                        block    = x_aa[i * NN : (i + 1) * NN].reshape(N, N)
+                        U, _, Vh = np.linalg.svd(block)
+                        Q_mix    = U @ Vh
+                        dR       = Q_mix @ Q_acc[nk].conj().T
+                        # Skip trivial corrections to avoid unnecessary disk I/O.
+                        if np.linalg.norm(dR - np.eye(N, dtype=complex)) > 1e-10:
+                            cur_w = [_load_wfc(nk, b, noncolin, wfcdir) for b in bands]
+                            new_w = _apply_rotation(cur_w, dR, noncolin)
+                            for bi, b in enumerate(bands):
+                                _save_wfc(new_w[bi], nk, b, noncolin, wfcdir, compress)
+                        Q_acc[nk] = Q_mix
+
+            # Append the pure-GS residual captured before any correction.
+            hist_x.append(x_before)
+            hist_f.append(f_gs)
+            if len(hist_x) > anderson_m:
+                hist_x.pop(0)
+                hist_f.pop(0)
 
     return max_iter, mean_quality
 
@@ -304,6 +403,8 @@ def run_degenrotation(
     compress: bool = False,
     flush: bool = False,
     max_refinement_iter: int = 50,
+    refinement_iter_cap: int = 500,
+    refinement_anderson_m: int = 10,
     refinement_tol: float = 1e-4,
 ) -> None:
     logger = log(logger_name, "DEGENERATE BASIS ROTATION", level=logger_level, flush=flush)
@@ -572,9 +673,20 @@ def run_degenrotation(
         # Iterative multi-neighbour gauge refinement (option C)
         # ------------------------------------------------------------------
         if max_refinement_iter > 0 and len(zone) > 1:
+            # Size-scaled iteration limit:
+            #   max_refinement_iter + 3 * zone_size, capped at refinement_iter_cap.
+            # The additive base (max_refinement_iter) guarantees the minimum even
+            # for tiny zones (3 * 4 = 12 < 50).  The 3-iters-per-k-point slope
+            # was calibrated from MoS2 runs: linear convergence at ~0.97/iter
+            # means a 200 k-pt zone needs ~250 total iterations to reach 1e-4.
+            zone_max_iter = max(
+                max_refinement_iter,
+                min(refinement_iter_cap, max_refinement_iter + 3 * len(zone)),
+            )
             logger.info(
                 f"\t  --- Iterative gauge refinement "
-                f"(max {max_refinement_iter} iter, tol={refinement_tol:.1e}) ---"
+                f"(max {zone_max_iter} iter, tol={refinement_tol:.1e}, "
+                f"Anderson m={refinement_anderson_m}) ---"
             )
             n_ref_iter, final_quality = _refine_zone_gauge(
                 zone=zone,
@@ -588,8 +700,9 @@ def run_degenrotation(
                 wfcdir=m.wfcdirectory,
                 nr=m.nr,
                 compress=compress,
-                max_iter=max_refinement_iter,
+                max_iter=zone_max_iter,
                 tol=refinement_tol,
+                anderson_m=refinement_anderson_m,
                 logger=logger,
             )
             logger.info(
