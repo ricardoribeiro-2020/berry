@@ -19,6 +19,7 @@ from itertools import combinations
 
 import numpy as np
 from numpy.linalg import svd
+import scipy.linalg as sp_linalg
 
 from berry import log
 
@@ -139,6 +140,130 @@ def _procrustes_rotation(M: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
+# Gauge correction helpers
+# ---------------------------------------------------------------------------
+
+def _correct_zone_holonomy(
+    zone: set,
+    bands: list,
+    n_dir: int,
+    neighbors: np.ndarray,
+    d_phase: np.ndarray,
+    noncolin: bool,
+    wfcdir: str,
+    nr: int,
+    compress: bool,
+    logger,
+    max_iter: int = 20,
+    tol: float = 1e-4,
+) -> int:
+    """Reduce plaquette holonomy defects before iterative gauge refinement.
+
+    For each elementary 4-cycle (plaquette) nk→na→nc←nb←nk fully inside the
+    zone, computes H = R01 @ R12 @ R23† @ R30†.  When ||H−I||_F > tol,
+    distributes fractional corrections H^(−1/4), H^(−1/2), H^(−3/4) to
+    vertices na, nc, nb respectively, reducing the gauge inconsistency
+    introduced by the BFS path ordering.  Iterates until max ||H−I||_F < tol
+    or max_iter sweeps done.  Returns the number of sweeps performed.
+    """
+    N        = len(bands)
+    zone_set = set(zone)
+    n_half   = n_dir // 2  # directions 0 .. n_half−1 are the forward directions
+
+    # Enumerate all elementary plaquettes fully inside the zone.
+    # Plaquette: nk --(d0)--> na --(d1)--> nc   and   nk --(d1)--> nb --(d0)--> nc.
+    # Using d0 < d1 < n_half enumerates each plaquette exactly once on a periodic grid.
+    plaquettes: list = []
+    seen:       set  = set()
+    for nk in sorted(zone):
+        for d0 in range(n_half):
+            na = neighbors[nk, d0]
+            if na == -1 or na not in zone_set:
+                continue
+            for d1 in range(d0 + 1, n_half):
+                nb = neighbors[nk, d1]
+                if nb == -1 or nb not in zone_set:
+                    continue
+                nc_via_a = neighbors[na, d1]
+                nc_via_b = neighbors[nb, d0]
+                if (nc_via_a == -1 or nc_via_b == -1
+                        or nc_via_a != nc_via_b
+                        or nc_via_a not in zone_set):
+                    continue
+                nc  = nc_via_a
+                key = tuple(sorted((nk, na, nc, nb)))
+                if key not in seen:
+                    seen.add(key)
+                    plaquettes.append((nk, na, nc, nb))
+
+    if not plaquettes:
+        logger.info("\t    [Holonomy] No internal plaquettes found — skipping.")
+        return 0
+
+    logger.info(f"\t    [Holonomy] {len(plaquettes)} plaquette(s),  tol={tol:.1e}")
+
+    def _w(nk_):
+        return [_load_wfc(nk_, b, noncolin, wfcdir) for b in bands]
+
+    def _proj_u(A: np.ndarray) -> np.ndarray:
+        U, _, Vh = np.linalg.svd(A)
+        return U @ Vh
+
+    def _R(ref_k: int, cur_k: int, ref_wfcs, cur_wfcs) -> np.ndarray:
+        dph = d_phase[:, cur_k] * d_phase[:, ref_k].conj()
+        return _procrustes_rotation(_overlap_matrix(ref_wfcs, cur_wfcs, dph, nr, noncolin))
+
+    max_defect = float("inf")
+    for sweep in range(1, max_iter + 1):
+        max_defect = 0.0
+
+        for nk, na, nc, nb in plaquettes:
+            w_nk = _w(nk);  w_na = _w(na);  w_nc = _w(nc);  w_nb = _w(nb)
+
+            R01 = _R(nk, na, w_nk, w_na)  # rotate na to align with nk
+            R12 = _R(na, nc, w_na, w_nc)  # rotate nc to align with na
+            R23 = _R(nb, nc, w_nb, w_nc)  # rotate nc to align with nb (reversed edge)
+            R30 = _R(nk, nb, w_nk, w_nb)  # rotate nb to align with nk (reversed edge)
+
+            # Holonomy going nk → na → nc ← nb ← nk
+            H      = R01 @ R12 @ R23.conj().T @ R30.conj().T
+            defect = float(np.linalg.norm(H - np.eye(N, dtype=complex)))
+            max_defect = max(max_defect, defect)
+            if defect < tol:
+                continue
+
+            # H† ≈ H^{-1} since H is a product of near-unitary Procrustes rotations.
+            # C1 = H^{-1/4} via two matrix square roots; project each onto U(N).
+            try:
+                C1 = _proj_u(sp_linalg.sqrtm(sp_linalg.sqrtm(H.conj().T)))  # H^{-1/4}
+                C2 = _proj_u(C1 @ C1)                                         # H^{-1/2}
+                C3 = _proj_u(C2 @ C1)                                         # H^{-3/4}
+            except Exception:
+                continue
+
+            # Rotating wfcs at p by G changes R(ref, p) → G† @ R(ref, p),
+            # distributing the holonomy accumulation evenly around the cycle.
+            for p, G in ((na, C1), (nc, C2), (nb, C3)):
+                new_w = _apply_rotation(_w(p), G, noncolin)
+                for i, b in enumerate(bands):
+                    _save_wfc(new_w[i], p, b, noncolin, wfcdir, compress)
+
+        logger.info(
+            f"\t    [Holonomy] sweep {sweep:>3}/{max_iter}  "
+            f"max ||H−I||_F = {max_defect:.4e}"
+        )
+        if max_defect < tol:
+            logger.info(f"\t    [Holonomy] Converged in {sweep} sweep(s).")
+            return sweep
+
+    logger.warning(
+        f"\t    [Holonomy] Did not converge in {max_iter} sweep(s) "
+        f"(final max ||H−I||_F = {max_defect:.4e})."
+    )
+    return max_iter
+
+
+# ---------------------------------------------------------------------------
 # Degeneracy detection
 # ---------------------------------------------------------------------------
 
@@ -223,7 +348,6 @@ def _refine_zone_gauge(
     """
     N           = len(bands)
     sorted_zone = sorted(zone)       # fixed ordering for flat state vectors
-    n_zone      = len(sorted_zone)
     NN          = N * N              # elements per k-point in the flat vector
 
     # ------------------------------------------------------------------
@@ -406,6 +530,9 @@ def run_degenrotation(
     refinement_iter_cap: int = 500,
     refinement_anderson_m: int = 10,
     refinement_tol: float = 1e-4,
+    holonomy_correction: bool = True,
+    holonomy_max_iter: int = 20,
+    holonomy_tol: float = 1e-4,
 ) -> None:
     logger = log(logger_name, "DEGENERATE BASIS ROTATION", level=logger_level, flush=flush)
     logger.header()
@@ -426,6 +553,10 @@ def run_degenrotation(
     logger.info(f"\tNoncolinear: {m.noncolin}")
     logger.info(f"\tLSDA: {m.lsda}")
     logger.info(f"\tEnergy degeneracy threshold: {ethr}")
+    logger.info(
+        f"\tHolonomy correction: {holonomy_correction}  "
+        f"(max_iter={holonomy_max_iter}, tol={holonomy_tol:.1e})"
+    )
     logger.info()
 
     # ------------------------------------------------------------------
@@ -632,6 +763,7 @@ def run_degenrotation(
         # gauge drifts across the zone: a different reference k-point would
         # have anchored a substantially different rotation.
         # ------------------------------------------------------------------
+        n_holo_sweeps = 0
         boundary_edges: list = []   # (nk_zone, nb_external, min_sigma)
         for nk in zone:
             for j in range(2 * m.dimensions):
@@ -662,15 +794,46 @@ def run_degenrotation(
                 f"min_sigma in [{b_min:.6f}, {b_max:.6f}], spread={spread:.6f}"
             )
             if spread > 0.1:
-                worst_nk, worst_nb, _ = min(boundary_edges, key=lambda t: t[2])
+                worst_nk, worst_nb, worst_sigma = min(boundary_edges, key=lambda t: t[2])
                 logger.warning(
                     f"\t  WARNING: boundary spread {spread:.6f} > 0.1 — "
                     f"zone gauge is not fully consistent across all borders "
-                    f"(worst edge: k={worst_nk}→ext={worst_nb})"
+                    f"(worst edge: k={worst_nk}→ext={worst_nb}, "
+                    f"worst_sigma={worst_sigma:.6f})"
                 )
+                # Option B: smooth gauge drift — redistribute BFS holonomy before refinement.
+                # Triggered when spread > 0.1 and there is no clear topological discontinuity.
+                # Option C (zone split) would apply at spread > 0.5 and worst_sigma < 0.6
+                # but is not yet implemented.
+                if holonomy_correction and not (spread > 0.5 and worst_sigma < 0.6):
+                    logger.info(
+                        f"\t  [Option B] Applying holonomy correction "
+                        f"(spread={spread:.3f}, worst_sigma={worst_sigma:.3f})"
+                    )
+                    n_holo_sweeps = _correct_zone_holonomy(
+                        zone=zone,
+                        bands=bands,
+                        n_dir=2 * m.dimensions,
+                        neighbors=neighbors,
+                        d_phase=d_phase,
+                        noncolin=m.noncolin,
+                        wfcdir=m.wfcdirectory,
+                        nr=m.nr,
+                        compress=compress,
+                        logger=logger,
+                        max_iter=holonomy_max_iter,
+                        tol=holonomy_tol,
+                    )
+                    logger.info(f"\t  [Option B] Done: {n_holo_sweeps} sweep(s)")
+                elif spread > 0.5 and worst_sigma < 0.6:
+                    logger.warning(
+                        f"\t  [Option C not implemented] Topological discontinuity likely "
+                        f"(spread={spread:.3f} > 0.5, worst_sigma={worst_sigma:.3f} < 0.6). "
+                        f"Zone split skipped; refinement may not converge."
+                    )
 
         # ------------------------------------------------------------------
-        # Iterative multi-neighbour gauge refinement (option C)
+        # Iterative multi-neighbour gauge refinement
         # ------------------------------------------------------------------
         if max_refinement_iter > 0 and len(zone) > 1:
             # Size-scaled iteration limit:
@@ -710,7 +873,7 @@ def run_degenrotation(
                 f"final quality={final_quality:.6f}"
             )
 
-        summary_rows.append((zi, bands, len(zone), n_rotated, best_k, ref_type, mean_sigma))
+        summary_rows.append((zi, bands, len(zone), n_rotated, best_k, ref_type, mean_sigma, n_holo_sweeps))
 
     # ==================================================================
     # Phase 5 — Final report and output file
@@ -724,14 +887,14 @@ def run_degenrotation(
 
     hdr = (
         f"\t{'Zone':>5}  {'Bands':>24}  {'Type':>9}  "
-        f"{'Size':>5}  {'Rotated':>7}  {'Root-k':>7}  {'<Sigma>':>9}"
+        f"{'Size':>5}  {'Rotated':>7}  {'Root-k':>7}  {'<Sigma>':>9}  {'Holo':>5}"
     )
     logger.info(hdr)
     logger.info("\t" + "-" * (len(hdr) - 1))
-    for zi, bands, zone_sz, n_rot, root_k, ref_type, ms in summary_rows:
+    for zi, bands, zone_sz, n_rot, root_k, ref_type, ms, n_holo in summary_rows:
         logger.info(
             f"\t{zi:>5}  {str(bands):>24}  {ref_type:>9}  "
-            f"{zone_sz:>5}  {n_rot:>7}  {root_k:>7}  {ms:>9.6f}"
+            f"{zone_sz:>5}  {n_rot:>7}  {root_k:>7}  {ms:>9.6f}  {n_holo:>5}"
         )
 
     # Save degenzones.npy — each row: [zone_id, b1 ... bN (−1 padded), k-point]
