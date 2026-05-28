@@ -15,6 +15,8 @@ import os
 import time
 import logging
 from collections import deque, defaultdict
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from itertools import combinations
 
 import numpy as np
@@ -71,6 +73,32 @@ def _save_wfc(wfc, nk: int, band: int, noncolin: bool, wfcdir: str, compress: bo
         _write(os.path.join(wfcdir, f"k0{nk}b0{band}-1.wfc"), wfc[1])
     else:
         _write(os.path.join(wfcdir, f"k0{nk}b0{band}.wfc"), wfc)
+
+
+# ---------------------------------------------------------------------------
+# Memory helpers
+# ---------------------------------------------------------------------------
+
+def _available_memory_bytes() -> int:
+    """Return available system RAM in bytes, or 0 if it cannot be determined.
+
+    Tries psutil first (cross-platform), then /proc/meminfo (Linux fallback).
+    Returns 0 when neither is available so callers can apply a conservative
+    hard limit rather than crashing.
+    """
+    try:
+        import psutil
+        return psutil.virtual_memory().available
+    except ImportError:
+        pass
+    try:
+        with open('/proc/meminfo') as fh:
+            for line in fh:
+                if line.startswith('MemAvailable:'):
+                    return int(line.split()[1]) * 1024  # kB → bytes
+    except OSError:
+        pass
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +184,7 @@ def _correct_zone_holonomy(
     logger,
     max_iter: int = 20,
     tol: float = 1e-4,
+    wfc_cache: dict | None = None,
 ) -> int:
     """Reduce plaquette holonomy defects before iterative gauge refinement.
 
@@ -203,6 +232,8 @@ def _correct_zone_holonomy(
     logger.info(f"\t    [Holonomy] {len(plaquettes)} plaquette(s),  tol={tol:.1e}")
 
     def _w(nk_):
+        if wfc_cache is not None:
+            return [wfc_cache[(nk_, b)] for b in bands]
         return [_load_wfc(nk_, b, noncolin, wfcdir) for b in bands]
 
     def _proj_u(A: np.ndarray) -> np.ndarray:
@@ -247,6 +278,8 @@ def _correct_zone_holonomy(
                 new_w = _apply_rotation(_w(p), G, noncolin)
                 for i, b in enumerate(bands):
                     _save_wfc(new_w[i], p, b, noncolin, wfcdir, compress)
+                    if wfc_cache is not None:
+                        wfc_cache[(p, b)] = new_w[i]
 
         logger.info(
             f"\t    [Holonomy] sweep {sweep:>3}/{max_iter}  "
@@ -299,6 +332,16 @@ def _degenerate_groups(energies: np.ndarray, band_indices: list, ethr: float) ->
     return [frozenset(g) for g in groups.values() if len(g) >= 2]
 
 
+def _detect_kpt(args: tuple) -> tuple:
+    """Phase 1 worker: detect degenerate groups at one k-point.
+
+    Packed-tuple interface is required for ProcessPoolExecutor.map pickling.
+    Returns (nk, groups) where groups is [] when the k-point is non-degenerate.
+    """
+    nk, energies_nk, band_range, ethr = args
+    return nk, _degenerate_groups(energies_nk, band_range, ethr)
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -319,6 +362,8 @@ def _refine_zone_gauge(
     tol: float,
     logger,
     anderson_m: int = 10,
+    wfc_cache: dict | None = None,
+    n_workers: int = 1,
 ) -> tuple:
     """Iterative multi-neighbour Procrustes gauge refinement with Anderson mixing.
 
@@ -372,6 +417,24 @@ def _refine_zone_gauge(
         valid_nbrs[nk] = nbrs
 
     # ------------------------------------------------------------------
+    # Wfc I/O helpers — route reads through the cache when available so
+    # the sweep loop does not hit the disk on every neighbour access.
+    # Writes always go to both the cache and disk to preserve GS semantics
+    # (later k-points in the same sweep see the freshly updated state) and
+    # to ensure the files on disk are always consistent.
+    # ------------------------------------------------------------------
+    def _get(nk_: int) -> list:
+        if wfc_cache is not None:
+            return [wfc_cache[(nk_, b)] for b in bands]
+        return [_load_wfc(nk_, b, noncolin, wfcdir) for b in bands]
+
+    def _put(nk_: int, new_wfcs: list) -> None:
+        for i, b in enumerate(bands):
+            _save_wfc(new_wfcs[i], nk_, b, noncolin, wfcdir, compress)
+            if wfc_cache is not None:
+                wfc_cache[(nk_, b)] = new_wfcs[i]
+
+    # ------------------------------------------------------------------
     # Anderson mixing state.
     #   Q_acc[nk]  — accumulated rotation at k-point nk relative to the
     #                state at the very start of refinement:
@@ -388,43 +451,90 @@ def _refine_zone_gauge(
     mean_quality_0:   float = 0.0
     mean_quality:     float = 0.0
 
+    # Jacobi mode requires the wfc cache so all workers read the same
+    # pre-sweep state from RAM.  Fall back to Gauss-Seidel if unavailable.
+    use_jacobi = n_workers > 1 and wfc_cache is not None
+    if n_workers > 1 and wfc_cache is None:
+        logger.warning(
+            f"\t    Jacobi parallel sweep (n_workers={n_workers}) requires "
+            "wfc_cache; falling back to Gauss-Seidel "
+            "(pass use_wfc_cache=True to enable)."
+        )
+
     for it in range(1, max_iter + 1):
 
         # Snapshot accumulated rotations before this sweep.
         x_before = np.concatenate([Q_acc[nk].ravel() for nk in sorted_zone])
 
         # --------------------------------------------------------------
-        # Gauss-Seidel sweep
+        # Sweep — Jacobi (parallel) or Gauss-Seidel (serial)
         # --------------------------------------------------------------
         max_rot_change = 0.0
         total_quality  = 0.0
         n_active       = 0
 
-        for nk in sorted_zone:
-            cur_w   = [_load_wfc(nk, b, noncolin, wfcdir) for b in bands]
-            M_total = None
+        if use_jacobi:
+            # Freeze the current wfc state so every worker reads the same
+            # pre-sweep snapshot.  Shallow copy is sufficient because _put
+            # replaces cache values (dict[key] = new_array) rather than
+            # mutating arrays in-place, so snap entries stay unchanged.
+            snap = dict(wfc_cache)
 
-            for nb in valid_nbrs[nk]:
-                ref_w  = [_load_wfc(nb, b, noncolin, wfcdir) for b in bands]
-                dph    = d_phase[:, nk] * d_phase[:, nb].conj()
-                M_nb   = _overlap_matrix(ref_w, cur_w, dph, nr, noncolin)
-                M_total = M_nb if M_total is None else M_total + M_nb
+            def _jacobi_worker(nk):
+                cur_w   = [snap[(nk, b)] for b in bands]
+                M_total = None
+                for nb in valid_nbrs[nk]:
+                    ref_w   = [snap[(nb, b)] for b in bands]
+                    dph     = d_phase[:, nk] * d_phase[:, nb].conj()
+                    M_nb    = _overlap_matrix(ref_w, cur_w, dph, nr, noncolin)
+                    M_total = M_nb if M_total is None else M_total + M_nb
+                if M_total is None:
+                    return nk, None, None, 0.0, 0.0
+                R       = _procrustes_rotation(M_total)
+                new_w   = _apply_rotation(cur_w, R, noncolin)
+                quality = float(np.real(np.trace(M_total @ R))) / N
+                rot_chg = float(np.linalg.norm(R - np.eye(N, dtype=complex)))
+                return nk, R, new_w, quality, rot_chg
 
-            if M_total is None:
-                continue
+            with ThreadPoolExecutor(max_workers=n_workers) as ex:
+                updates = list(ex.map(_jacobi_worker, sorted_zone))
 
-            R = _procrustes_rotation(M_total)
-            # Re(Tr(M @ R)) = sum of singular values of M
-            total_quality += float(np.real(np.trace(M_total @ R))) / N
-            n_active      += 1
-            max_rot_change = max(
-                max_rot_change,
-                float(np.linalg.norm(R - np.eye(N, dtype=complex))),
-            )
-            new_w = _apply_rotation(cur_w, R, noncolin)
-            for i, b in enumerate(bands):
-                _save_wfc(new_w[i], nk, b, noncolin, wfcdir, compress)
-            Q_acc[nk] = R @ Q_acc[nk]
+            for nk, R, new_w, q, rc in updates:
+                if R is None:
+                    continue
+                total_quality  += q
+                n_active       += 1
+                max_rot_change  = max(max_rot_change, rc)
+                _put(nk, new_w)
+                Q_acc[nk] = R @ Q_acc[nk]
+
+        else:
+            # Gauss-Seidel: each nk sees the freshly written state of
+            # neighbours that were updated earlier in the same sweep.
+            for nk in sorted_zone:
+                cur_w   = _get(nk)
+                M_total = None
+
+                for nb in valid_nbrs[nk]:
+                    ref_w   = _get(nb)
+                    dph     = d_phase[:, nk] * d_phase[:, nb].conj()
+                    M_nb    = _overlap_matrix(ref_w, cur_w, dph, nr, noncolin)
+                    M_total = M_nb if M_total is None else M_total + M_nb
+
+                if M_total is None:
+                    continue
+
+                R = _procrustes_rotation(M_total)
+                # Re(Tr(M @ R)) = sum of singular values of M
+                total_quality += float(np.real(np.trace(M_total @ R))) / N
+                n_active      += 1
+                max_rot_change = max(
+                    max_rot_change,
+                    float(np.linalg.norm(R - np.eye(N, dtype=complex))),
+                )
+                new_w = _apply_rotation(cur_w, R, noncolin)
+                _put(nk, new_w)
+                Q_acc[nk] = R @ Q_acc[nk]
 
         mean_quality = total_quality / n_active if n_active > 0 else 0.0
 
@@ -504,10 +614,8 @@ def _refine_zone_gauge(
                         dR       = Q_mix @ Q_acc[nk].conj().T
                         # Skip trivial corrections to avoid unnecessary disk I/O.
                         if np.linalg.norm(dR - np.eye(N, dtype=complex)) > 1e-10:
-                            cur_w = [_load_wfc(nk, b, noncolin, wfcdir) for b in bands]
-                            new_w = _apply_rotation(cur_w, dR, noncolin)
-                            for bi, b in enumerate(bands):
-                                _save_wfc(new_w[bi], nk, b, noncolin, wfcdir, compress)
+                            new_w = _apply_rotation(_get(nk), dR, noncolin)
+                            _put(nk, new_w)
                         Q_acc[nk] = Q_mix
 
             # Append the pure-GS residual captured before any correction.
@@ -518,6 +626,328 @@ def _refine_zone_gauge(
                 hist_f.pop(0)
 
     return max_iter, mean_quality
+
+
+# ---------------------------------------------------------------------------
+# Per-zone processing — extracted so parallel zone workers can call it
+# ---------------------------------------------------------------------------
+
+# Module-level shared context populated by run_degenrotation before forking.
+# Workers read this dict (never write to it); large arrays are inherited via
+# copy-on-write when using the fork start method on Linux / macOS.
+_zone_ctx: dict = {}
+
+
+def _process_zone(
+    zi: int,
+    sig: frozenset,
+    zone: set,
+    d_phase: np.ndarray,
+    eigenvalues: np.ndarray,
+    neighbors: np.ndarray,
+    noncolin: bool,
+    wfcdir: str,
+    nr: int,
+    n_dir: int,
+    compress: bool,
+    ethr: float,
+    max_refinement_iter: int,
+    refinement_iter_cap: int,
+    refinement_anderson_m: int,
+    refinement_tol: float,
+    holonomy_correction: bool,
+    holonomy_max_iter: int,
+    holonomy_tol: float,
+    use_wfc_cache: bool,
+    n_workers: int,
+    logger,
+) -> tuple:
+    """Run Phases 3–4 plus boundary check, holonomy, and refinement for one zone.
+
+    Returns a summary_row tuple:
+        (zi, bands, zone_size, n_rotated, best_k, ref_type, mean_sigma, n_holo_sweeps)
+    """
+    bands = sorted(sig)
+    N     = len(bands)
+
+    logger.info()
+    logger.info(f"\t--- Zone {zi}: bands {bands},  {len(zone)} k-point(s),  subspace dim = {N} ---")
+
+    # ------------------------------------------------------------------
+    # Phase 3 — Find the boundary k-point with the best external reference
+    # ------------------------------------------------------------------
+    best_k, best_nb, best_gap = None, None, -1.0
+
+    for nk in zone:
+        for j in range(n_dir):
+            nb = neighbors[nk, j]
+            if nb == -1 or nb in zone:
+                continue
+            gap = min(
+                abs(eigenvalues[nb, bands[a]] - eigenvalues[nb, bands[b]])
+                for a in range(N)
+                for b in range(a + 1, N)
+            )
+            if gap <= ethr:
+                continue
+            if gap > best_gap:
+                best_gap, best_k, best_nb = gap, nk, nb
+
+    if best_k is not None:
+        ref_type = "boundary"
+        logger.info(f"\t  Boundary reference k-point : {best_k}")
+        logger.info(f"\t  External reference k-point : {best_nb}")
+        logger.info(f"\t  Min energy gap at external reference : {best_gap:.6f}")
+    else:
+        ref_type = "isolated"
+        best_k   = sorted(zone)[0]
+        best_nb  = None
+        logger.info(f"\t  WARNING: Zone {zi} is fully isolated — no non-degenerate external neighbor found.")
+        logger.info(f"\t           Choosing k={best_k} as arbitrary root.")
+        logger.info(f"\t           Internal consistency is enforced but the absolute basis is arbitrary.")
+
+    # ------------------------------------------------------------------
+    # Phase 4 — BFS propagation of the Procrustes rotation
+    # ------------------------------------------------------------------
+    bfs_parent: dict  = {best_k: best_nb}
+    queue: deque      = deque([best_k])
+    visited_zone: set = set()
+    n_rotated         = 0
+    sigma_log         = []
+
+    while queue:
+        nk = queue.popleft()
+        if nk in visited_zone:
+            continue
+        visited_zone.add(nk)
+
+        ref_nk = bfs_parent[nk]
+
+        if ref_nk is None:
+            logger.debug(f"\t  k={nk}: isolated zone root, wavefunctions kept as-is")
+        else:
+            ref_wfcs = [_load_wfc(ref_nk, b, noncolin, wfcdir) for b in bands]
+            cur_wfcs = [_load_wfc(nk,     b, noncolin, wfcdir) for b in bands]
+
+            dphase = d_phase[:, nk] * d_phase[:, ref_nk].conj()
+
+            M = _overlap_matrix(ref_wfcs, cur_wfcs, dphase, nr, noncolin)
+
+            _, sigma, _ = svd(M)
+            sigma_log.append(sigma)
+            R        = _procrustes_rotation(M)
+            new_wfcs = _apply_rotation(cur_wfcs, R, noncolin)
+
+            logger.debug(f"\t  k={nk} (ref={ref_nk}): singular values {np.round(sigma, 5)}")
+
+            for i, b in enumerate(bands):
+                _save_wfc(new_wfcs[i], nk, b, noncolin, wfcdir, compress)
+
+            n_rotated += 1
+
+        for j in range(n_dir):
+            nb = neighbors[nk, j]
+            if nb != -1 and nb in zone and nb not in bfs_parent:
+                bfs_parent[nb] = nk
+                queue.append(nb)
+
+    mean_sigma = float(np.mean([s.mean() for s in sigma_log])) if sigma_log else 1.0
+    min_sigma  = float(np.concatenate(sigma_log).min())         if sigma_log else 1.0
+
+    logger.info(f"\t  Rotated {n_rotated} / {len(zone)} k-point(s)")
+    logger.info(f"\t  Mean singular value : {mean_sigma:.6f}  (1.0 = perfect alignment)")
+    logger.info(f"\t  Min singular value  : {min_sigma:.6f}")
+
+    # ------------------------------------------------------------------
+    # Per-zone wfc cache
+    # ------------------------------------------------------------------
+    wfc_cache = None
+    if use_wfc_cache:
+        all_cache_kpts: set = set(zone)
+        for nk in zone:
+            for j in range(n_dir):
+                nb = neighbors[nk, j]
+                if nb != -1:
+                    all_cache_kpts.add(nb)
+        n_arrays  = len(all_cache_kpts) * len(bands) * (2 if noncolin else 1)
+        est_bytes = n_arrays * nr * 16
+        avail     = _available_memory_bytes()
+        over_limit = (
+            (avail > 0 and est_bytes > avail * 0.8) or
+            (avail == 0 and est_bytes > 4 * 1024 ** 3)
+        )
+        if over_limit:
+            logger.warning(
+                f"\t  Wfc cache disabled: {est_bytes / 1e9:.2f} GB needed"
+                + (f", {avail / 1e9:.2f} GB available" if avail > 0
+                   else ", available memory unknown")
+            )
+        else:
+            avail_str = (f"{avail / 1e9:.1f} GB available"
+                         if avail > 0 else "available memory unknown")
+            logger.info(
+                f"\t  Building wfc cache: {len(all_cache_kpts)} k-point(s), "
+                f"{est_bytes / 1e6:.1f} MB ({avail_str})"
+            )
+            t_cache = time.time()
+            wfc_cache = {}
+            for nk_c in all_cache_kpts:
+                for b in bands:
+                    wfc_cache[(nk_c, b)] = _load_wfc(nk_c, b, noncolin, wfcdir)
+            logger.info(f"\t  Cache ready in {time.time() - t_cache:.1f}s")
+
+    # ------------------------------------------------------------------
+    # Boundary consistency check
+    # ------------------------------------------------------------------
+    n_holo_sweeps = 0
+    boundary_edges: list = []
+    for nk in zone:
+        for j in range(n_dir):
+            nb = neighbors[nk, j]
+            if nb == -1 or nb in zone:
+                continue
+            gap = min(
+                abs(eigenvalues[nb, bands[a]] - eigenvalues[nb, bands[b]])
+                for a in range(N) for b in range(a + 1, N)
+            )
+            if gap <= ethr:
+                continue
+            if wfc_cache is not None:
+                ref_wfcs_b = [wfc_cache[(nb, b)] for b in bands]
+                cur_wfcs_b = [wfc_cache[(nk, b)] for b in bands]
+            else:
+                ref_wfcs_b = [_load_wfc(nb, b, noncolin, wfcdir) for b in bands]
+                cur_wfcs_b = [_load_wfc(nk, b, noncolin, wfcdir) for b in bands]
+            dphase_b   = d_phase[:, nk] * d_phase[:, nb].conj()
+            M_b        = _overlap_matrix(ref_wfcs_b, cur_wfcs_b, dphase_b, nr, noncolin)
+            _, sigma_b, _ = svd(M_b)
+            boundary_edges.append((nk, nb, float(sigma_b.min())))
+            logger.debug(f"\t    boundary k={nk}→ext={nb}: min_sigma={sigma_b.min():.6f}")
+
+    spread = 0.0
+    if boundary_edges:
+        b_sigmas = [s for _, _, s in boundary_edges]
+        b_min, b_max = min(b_sigmas), max(b_sigmas)
+        spread = b_max - b_min
+        logger.info(
+            f"\t  Boundary consistency : {len(boundary_edges)} edge(s), "
+            f"min_sigma in [{b_min:.6f}, {b_max:.6f}], spread={spread:.6f}"
+        )
+        if spread > 0.1:
+            worst_nk, worst_nb, worst_sigma = min(boundary_edges, key=lambda t: t[2])
+            logger.warning(
+                f"\t  WARNING: boundary spread {spread:.6f} > 0.1 — "
+                f"zone gauge is not fully consistent across all borders "
+                f"(worst edge: k={worst_nk}→ext={worst_nb}, "
+                f"worst_sigma={worst_sigma:.6f})"
+            )
+            if holonomy_correction and not (spread > 0.5 and worst_sigma < 0.6):
+                logger.info(
+                    f"\t  [Option B] Applying holonomy correction "
+                    f"(spread={spread:.3f}, worst_sigma={worst_sigma:.3f})"
+                )
+                n_holo_sweeps = _correct_zone_holonomy(
+                    zone=zone,
+                    bands=bands,
+                    n_dir=n_dir,
+                    neighbors=neighbors,
+                    d_phase=d_phase,
+                    noncolin=noncolin,
+                    wfcdir=wfcdir,
+                    nr=nr,
+                    compress=compress,
+                    logger=logger,
+                    max_iter=holonomy_max_iter,
+                    tol=holonomy_tol,
+                    wfc_cache=wfc_cache,
+                )
+                logger.info(f"\t  [Option B] Done: {n_holo_sweeps} sweep(s)")
+            elif spread > 0.5 and worst_sigma < 0.6:
+                logger.warning(
+                    f"\t  [Option C not implemented] Topological discontinuity likely "
+                    f"(spread={spread:.3f} > 0.5, worst_sigma={worst_sigma:.3f} < 0.6). "
+                    f"Zone split skipped; refinement may not converge."
+                )
+
+    # ------------------------------------------------------------------
+    # Iterative multi-neighbour gauge refinement
+    # ------------------------------------------------------------------
+    if max_refinement_iter > 0 and len(zone) > 1:
+        zone_max_iter = max(
+            max_refinement_iter,
+            min(refinement_iter_cap, max_refinement_iter + 3 * len(zone)),
+        )
+        sweep_label = (f"Jacobi n={n_workers}" if n_workers > 1 else "Gauss-Seidel")
+        logger.info(
+            f"\t  --- Iterative gauge refinement "
+            f"(max {zone_max_iter} iter, tol={refinement_tol:.1e}, "
+            f"Anderson m={refinement_anderson_m}, sweep={sweep_label}) ---"
+        )
+        n_ref_iter, final_quality = _refine_zone_gauge(
+            zone=zone,
+            bands=bands,
+            n_dir=n_dir,
+            neighbors=neighbors,
+            d_phase=d_phase,
+            eigenvalues=eigenvalues,
+            ethr=ethr,
+            noncolin=noncolin,
+            wfcdir=wfcdir,
+            nr=nr,
+            compress=compress,
+            max_iter=zone_max_iter,
+            tol=refinement_tol,
+            anderson_m=refinement_anderson_m,
+            logger=logger,
+            wfc_cache=wfc_cache,
+            n_workers=n_workers,
+        )
+        logger.info(
+            f"\t  Refinement complete: {n_ref_iter} iter(s), "
+            f"final quality={final_quality:.6f}"
+        )
+
+    return (zi, bands, len(zone), n_rotated, best_k, ref_type, mean_sigma, n_holo_sweeps)
+
+
+def _process_zone_worker(args: tuple) -> tuple:
+    """Fork-based parallel zone worker.
+
+    Reads all shared data from the module-level _zone_ctx dict, which is
+    populated by run_degenrotation before the ProcessPoolExecutor is created.
+    With the fork start method (Linux/macOS), child processes inherit the
+    parent's address space via copy-on-write — large arrays (d_phase,
+    eigenvalues, neighbors) are shared without pickling.
+
+    Logging uses the inherited logger from the parent; log lines from
+    concurrent zones may interleave in the output file.
+    """
+    zi, sig, zone = args
+    ctx    = _zone_ctx
+    import logging as _logging
+    logger = _logging.getLogger(ctx['logger_name'])
+    return _process_zone(
+        zi=zi, sig=sig, zone=zone,
+        d_phase         = ctx['d_phase'],
+        eigenvalues     = ctx['eigenvalues'],
+        neighbors       = ctx['neighbors'],
+        noncolin        = ctx['noncolin'],
+        wfcdir          = ctx['wfcdir'],
+        nr              = ctx['nr'],
+        n_dir           = ctx['n_dir'],
+        compress        = ctx['compress'],
+        ethr            = ctx['ethr'],
+        max_refinement_iter   = ctx['max_refinement_iter'],
+        refinement_iter_cap   = ctx['refinement_iter_cap'],
+        refinement_anderson_m = ctx['refinement_anderson_m'],
+        refinement_tol        = ctx['refinement_tol'],
+        holonomy_correction   = ctx['holonomy_correction'],
+        holonomy_max_iter     = ctx['holonomy_max_iter'],
+        holonomy_tol          = ctx['holonomy_tol'],
+        use_wfc_cache         = ctx['use_wfc_cache'],
+        n_workers             = 1,  # avoid nested parallelism inside a worker
+        logger                = logger,
+    )
 
 
 def run_degenrotation(
@@ -533,6 +963,8 @@ def run_degenrotation(
     holonomy_correction: bool = True,
     holonomy_max_iter: int = 20,
     holonomy_tol: float = 1e-4,
+    use_wfc_cache: bool = True,
+    n_workers: int = 1,
 ) -> None:
     logger = log(logger_name, "DEGENERATE BASIS ROTATION", level=logger_level, flush=flush)
     logger.header()
@@ -557,6 +989,12 @@ def run_degenrotation(
         f"\tHolonomy correction: {holonomy_correction}  "
         f"(max_iter={holonomy_max_iter}, tol={holonomy_tol:.1e})"
     )
+    logger.info(f"\tIn-memory wfc cache: {use_wfc_cache}")
+    logger.info(
+        f"\tParallelism: n_workers={n_workers}"
+        + (" (Jacobi sweep within a zone; zone-level parallelism when >1 same-sig zone exists)"
+           if n_workers > 1 else " (serial Gauss-Seidel)")
+    )
     logger.info()
 
     # ------------------------------------------------------------------
@@ -577,10 +1015,20 @@ def run_degenrotation(
     logger.info()
 
     degen_at_k: dict = {}
-    for nk in range(m.nks):
-        groups = _degenerate_groups(eigenvalues[nk], band_range, ethr)
-        if groups:
-            degen_at_k[nk] = groups
+    if n_workers > 1:
+        # Each task is cheap (union-find on n_bands elements), so use a
+        # generous chunksize to amortise inter-process communication cost.
+        chunksize = max(1, m.nks // (n_workers * 4))
+        _args = [(nk, eigenvalues[nk], band_range, ethr) for nk in range(m.nks)]
+        with ProcessPoolExecutor(max_workers=n_workers) as ex:
+            for nk, groups in ex.map(_detect_kpt, _args, chunksize=chunksize):
+                if groups:
+                    degen_at_k[nk] = groups
+    else:
+        for nk in range(m.nks):
+            groups = _degenerate_groups(eigenvalues[nk], band_range, ethr)
+            if groups:
+                degen_at_k[nk] = groups
 
     n_degen_kpts = len(degen_at_k)
     logger.info(f"\tFound {n_degen_kpts} k-point(s) with at least one degenerate subspace")
@@ -654,226 +1102,90 @@ def run_degenrotation(
     # ==================================================================
     logger.info("\t****  Phases 3 & 4: Reference selection and BFS rotation propagation  ****")
 
+    # Populate the shared context so fork-based workers inherit it.
+    _zone_ctx.update({
+        'd_phase':               d_phase,
+        'eigenvalues':           eigenvalues,
+        'neighbors':             neighbors,
+        'noncolin':              m.noncolin,
+        'wfcdir':                m.wfcdirectory,
+        'nr':                    m.nr,
+        'n_dir':                 2 * m.dimensions,
+        'compress':              compress,
+        'ethr':                  ethr,
+        'max_refinement_iter':   max_refinement_iter,
+        'refinement_iter_cap':   refinement_iter_cap,
+        'refinement_anderson_m': refinement_anderson_m,
+        'refinement_tol':        refinement_tol,
+        'holonomy_correction':   holonomy_correction,
+        'holonomy_max_iter':     holonomy_max_iter,
+        'holonomy_tol':          holonomy_tol,
+        'use_wfc_cache':         use_wfc_cache,
+        'logger_name':           logger_name,
+        'logger_level':          logger_level,
+    })
+
+    # Group consecutive zones by signature.  Same-signature zones have
+    # disjoint k-point sets (guaranteed by BFS in Phase 2) and can run
+    # in parallel.  Different signatures at the same band-set size may
+    # share k-points via sub-signature expansion and must stay sequential.
+    zone_groups: list = []
+    for zi, (sig, zone) in enumerate(zones):
+        if zone_groups and zone_groups[-1][0] == sig:
+            zone_groups[-1][1].append((zi, zone))
+        else:
+            zone_groups.append((sig, [(zi, zone)]))
+
+    # Check for fork availability once (not on Windows).
+    try:
+        _fork_ctx = mp.get_context('fork')
+    except ValueError:
+        _fork_ctx = None
+        if n_workers > 1:
+            logger.warning(
+                "\tParallel zone processing requires the 'fork' start method "
+                "(Linux/macOS); falling back to serial processing."
+            )
+
     summary_rows = []
 
-    for zi, (sig, zone) in enumerate(zones):
-        bands = sorted(sig)
-        N     = len(bands)
-
-        logger.info()
-        logger.info(f"\t--- Zone {zi}: bands {bands},  {len(zone)} k-point(s),  subspace dim = {N} ---")
-
-        # ------------------------------------------------------------------
-        # Phase 3 — Find the boundary k-point with the best external reference
-        # ------------------------------------------------------------------
-        best_k, best_nb, best_gap = None, None, -1.0
-
-        for nk in zone:
-            for j in range(2 * m.dimensions):
-                nb = neighbors[nk, j]
-                if nb == -1 or nb in zone:
-                    continue
-                # Minimum pairwise energy separation of the target bands at the external neighbor
-                gap = min(
-                    abs(eigenvalues[nb, bands[a]] - eigenvalues[nb, bands[b]])
-                    for a in range(N)
-                    for b in range(a + 1, N)
+    try:
+        for _sig, _sig_zone_list in zone_groups:
+            _n_zones = len(_sig_zone_list)
+            if _n_zones > 1 and n_workers > 1 and _fork_ctx is not None:
+                _n_pool = min(n_workers, _n_zones)
+                logger.info(
+                    f"\t  [Parallel zones] bands {sorted(_sig)}: "
+                    f"{_n_zones} zone(s) → {_n_pool} worker(s)"
                 )
-                # Skip external neighbors that are themselves degenerate for these bands:
-                # using such a point as reference would yield a near-singular overlap matrix.
-                if gap <= ethr:
-                    continue
-                if gap > best_gap:
-                    best_gap, best_k, best_nb = gap, nk, nb
-
-        if best_k is not None:
-            ref_type = "boundary"
-            logger.info(f"\t  Boundary reference k-point : {best_k}")
-            logger.info(f"\t  External reference k-point : {best_nb}")
-            logger.info(f"\t  Min energy gap at external reference : {best_gap:.6f}")
-        else:
-            ref_type = "isolated"
-            best_k   = sorted(zone)[0]
-            best_nb  = None
-            logger.info(f"\t  WARNING: Zone {zi} is fully isolated — no non-degenerate external neighbor found.")
-            logger.info(f"\t           Choosing k={best_k} as arbitrary root.")
-            logger.info(f"\t           Internal consistency is enforced but the absolute basis is arbitrary.")
-
-        # ------------------------------------------------------------------
-        # Phase 4 — BFS propagation of the Procrustes rotation
-        # ------------------------------------------------------------------
-        # bfs_parent[nk] = the already-rotated k-point used as reference for nk.
-        #                   None means 'isolated zone root; no rotation applied'.
-        bfs_parent: dict  = {best_k: best_nb}
-        queue: deque      = deque([best_k])
-        visited_zone: set = set()
-        n_rotated         = 0
-        sigma_log         = []
-
-        while queue:
-            nk = queue.popleft()
-            if nk in visited_zone:
-                continue
-            visited_zone.add(nk)
-
-            ref_nk = bfs_parent[nk]
-
-            if ref_nk is None:
-                # Root of an isolated zone — wavefunctions are kept as-is
-                logger.debug(f"\t  k={nk}: isolated zone root, wavefunctions kept as-is")
+                _args = [(_zi, _sig, _zone) for _zi, _zone in _sig_zone_list]
+                with ProcessPoolExecutor(max_workers=_n_pool, mp_context=_fork_ctx) as _ex:
+                    _rows = list(_ex.map(_process_zone_worker, _args))
+                summary_rows.extend(_rows)
             else:
-                ref_wfcs = [_load_wfc(ref_nk, b, m.noncolin, m.wfcdirectory) for b in bands]
-                cur_wfcs = [_load_wfc(nk,     b, m.noncolin, m.wfcdirectory) for b in bands]
-
-                # Phase factor: exp(i(k_nk − k_ref)·r)
-                dphase = d_phase[:, nk] * d_phase[:, ref_nk].conj()
-
-                M = _overlap_matrix(ref_wfcs, cur_wfcs, dphase, m.nr, m.noncolin)
-
-                _, sigma, _ = svd(M)
-                sigma_log.append(sigma)
-                R        = _procrustes_rotation(M)
-                new_wfcs = _apply_rotation(cur_wfcs, R, m.noncolin)
-
-                logger.debug(f"\t  k={nk} (ref={ref_nk}): singular values {np.round(sigma, 5)}")
-
-                for i, b in enumerate(bands):
-                    _save_wfc(new_wfcs[i], nk, b, m.noncolin, m.wfcdirectory, compress)
-
-                n_rotated += 1
-
-            # Enqueue unvisited zone neighbors
-            for j in range(2 * m.dimensions):
-                nb = neighbors[nk, j]
-                if nb != -1 and nb in zone and nb not in bfs_parent:
-                    bfs_parent[nb] = nk
-                    queue.append(nb)
-
-        mean_sigma = float(np.mean([s.mean() for s in sigma_log])) if sigma_log else 1.0
-        min_sigma  = float(np.concatenate(sigma_log).min())         if sigma_log else 1.0
-
-        logger.info(f"\t  Rotated {n_rotated} / {len(zone)} k-point(s)")
-        logger.info(f"\t  Mean singular value : {mean_sigma:.6f}  (1.0 = perfect alignment)")
-        logger.info(f"\t  Min singular value  : {min_sigma:.6f}")
-
-        # ------------------------------------------------------------------
-        # Boundary consistency check — after BFS, verify that the rotated
-        # zone aligns well with every non-degenerate external neighbour, not
-        # only the chosen reference.  A large spread in min_sigma means the
-        # gauge drifts across the zone: a different reference k-point would
-        # have anchored a substantially different rotation.
-        # ------------------------------------------------------------------
-        n_holo_sweeps = 0
-        boundary_edges: list = []   # (nk_zone, nb_external, min_sigma)
-        for nk in zone:
-            for j in range(2 * m.dimensions):
-                nb = neighbors[nk, j]
-                if nb == -1 or nb in zone:
-                    continue
-                gap = min(
-                    abs(eigenvalues[nb, bands[a]] - eigenvalues[nb, bands[b]])
-                    for a in range(N) for b in range(a + 1, N)
-                )
-                if gap <= ethr:
-                    continue
-                ref_wfcs_b = [_load_wfc(nb, b, m.noncolin, m.wfcdirectory) for b in bands]
-                cur_wfcs_b = [_load_wfc(nk, b, m.noncolin, m.wfcdirectory) for b in bands]
-                dphase_b   = d_phase[:, nk] * d_phase[:, nb].conj()
-                M_b        = _overlap_matrix(ref_wfcs_b, cur_wfcs_b, dphase_b, m.nr, m.noncolin)
-                _, sigma_b, _ = svd(M_b)
-                boundary_edges.append((nk, nb, float(sigma_b.min())))
-                logger.debug(f"\t    boundary k={nk}→ext={nb}: min_sigma={sigma_b.min():.6f}")
-
-        spread = 0.0
-        if boundary_edges:
-            b_sigmas = [s for _, _, s in boundary_edges]
-            b_min, b_max = min(b_sigmas), max(b_sigmas)
-            spread = b_max - b_min
-            logger.info(
-                f"\t  Boundary consistency : {len(boundary_edges)} edge(s), "
-                f"min_sigma in [{b_min:.6f}, {b_max:.6f}], spread={spread:.6f}"
-            )
-            if spread > 0.1:
-                worst_nk, worst_nb, worst_sigma = min(boundary_edges, key=lambda t: t[2])
-                logger.warning(
-                    f"\t  WARNING: boundary spread {spread:.6f} > 0.1 — "
-                    f"zone gauge is not fully consistent across all borders "
-                    f"(worst edge: k={worst_nk}→ext={worst_nb}, "
-                    f"worst_sigma={worst_sigma:.6f})"
-                )
-                # Option B: smooth gauge drift — redistribute BFS holonomy before refinement.
-                # Triggered when spread > 0.1 and there is no clear topological discontinuity.
-                # Option C (zone split) would apply at spread > 0.5 and worst_sigma < 0.6
-                # but is not yet implemented.
-                if holonomy_correction and not (spread > 0.5 and worst_sigma < 0.6):
-                    logger.info(
-                        f"\t  [Option B] Applying holonomy correction "
-                        f"(spread={spread:.3f}, worst_sigma={worst_sigma:.3f})"
-                    )
-                    n_holo_sweeps = _correct_zone_holonomy(
-                        zone=zone,
-                        bands=bands,
-                        n_dir=2 * m.dimensions,
-                        neighbors=neighbors,
-                        d_phase=d_phase,
-                        noncolin=m.noncolin,
-                        wfcdir=m.wfcdirectory,
-                        nr=m.nr,
-                        compress=compress,
+                for _zi, _zone in _sig_zone_list:
+                    _row = _process_zone(
+                        zi=_zi, sig=_sig, zone=_zone,
+                        d_phase=d_phase, eigenvalues=eigenvalues, neighbors=neighbors,
+                        noncolin=m.noncolin, wfcdir=m.wfcdirectory, nr=m.nr,
+                        n_dir=2 * m.dimensions, compress=compress, ethr=ethr,
+                        max_refinement_iter=max_refinement_iter,
+                        refinement_iter_cap=refinement_iter_cap,
+                        refinement_anderson_m=refinement_anderson_m,
+                        refinement_tol=refinement_tol,
+                        holonomy_correction=holonomy_correction,
+                        holonomy_max_iter=holonomy_max_iter,
+                        holonomy_tol=holonomy_tol,
+                        use_wfc_cache=use_wfc_cache,
+                        n_workers=n_workers,
                         logger=logger,
-                        max_iter=holonomy_max_iter,
-                        tol=holonomy_tol,
                     )
-                    logger.info(f"\t  [Option B] Done: {n_holo_sweeps} sweep(s)")
-                elif spread > 0.5 and worst_sigma < 0.6:
-                    logger.warning(
-                        f"\t  [Option C not implemented] Topological discontinuity likely "
-                        f"(spread={spread:.3f} > 0.5, worst_sigma={worst_sigma:.3f} < 0.6). "
-                        f"Zone split skipped; refinement may not converge."
-                    )
+                    summary_rows.append(_row)
+    finally:
+        _zone_ctx.clear()
 
-        # ------------------------------------------------------------------
-        # Iterative multi-neighbour gauge refinement
-        # ------------------------------------------------------------------
-        if max_refinement_iter > 0 and len(zone) > 1:
-            # Size-scaled iteration limit:
-            #   max_refinement_iter + 3 * zone_size, capped at refinement_iter_cap.
-            # The additive base (max_refinement_iter) guarantees the minimum even
-            # for tiny zones (3 * 4 = 12 < 50).  The 3-iters-per-k-point slope
-            # was calibrated from MoS2 runs: linear convergence at ~0.97/iter
-            # means a 200 k-pt zone needs ~250 total iterations to reach 1e-4.
-            zone_max_iter = max(
-                max_refinement_iter,
-                min(refinement_iter_cap, max_refinement_iter + 3 * len(zone)),
-            )
-            logger.info(
-                f"\t  --- Iterative gauge refinement "
-                f"(max {zone_max_iter} iter, tol={refinement_tol:.1e}, "
-                f"Anderson m={refinement_anderson_m}) ---"
-            )
-            n_ref_iter, final_quality = _refine_zone_gauge(
-                zone=zone,
-                bands=bands,
-                n_dir=2 * m.dimensions,
-                neighbors=neighbors,
-                d_phase=d_phase,
-                eigenvalues=eigenvalues,
-                ethr=ethr,
-                noncolin=m.noncolin,
-                wfcdir=m.wfcdirectory,
-                nr=m.nr,
-                compress=compress,
-                max_iter=zone_max_iter,
-                tol=refinement_tol,
-                anderson_m=refinement_anderson_m,
-                logger=logger,
-            )
-            logger.info(
-                f"\t  Refinement complete: {n_ref_iter} iter(s), "
-                f"final quality={final_quality:.6f}"
-            )
-
-        summary_rows.append((zi, bands, len(zone), n_rotated, best_k, ref_type, mean_sigma, n_holo_sweeps))
+    # sort by zi so the final report appears in zone-list order
+    summary_rows.sort(key=lambda r: r[0])
 
     # ==================================================================
     # Phase 5 — Final report and output file
