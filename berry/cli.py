@@ -190,6 +190,68 @@ berry [package options] script parameter [script options]
                 action="store_true",
                 help="Increases output verbosity.",
             )
+            degenrot_parser.add_argument(
+                "-max-ref-iter",
+                type=int,
+                default=50,
+                metavar="N",
+                help="Minimum refinement iterations per zone (default: 50).",
+            )
+            degenrot_parser.add_argument(
+                "-ref-iter-cap",
+                type=int,
+                default=500,
+                metavar="N",
+                help="Hard cap on refinement iterations per zone (default: 500).",
+            )
+            degenrot_parser.add_argument(
+                "-anderson-m",
+                type=int,
+                default=10,
+                metavar="M",
+                help="Anderson mixing history window; 0 to disable (default: 10).",
+            )
+            degenrot_parser.add_argument(
+                "-ref-tol",
+                type=float,
+                default=1e-4,
+                metavar="TOL",
+                help="Refinement convergence tolerance (default: 1e-4).",
+            )
+            degenrot_parser.add_argument(
+                "-no-holonomy",
+                action="store_false",
+                dest="holonomy_correction",
+                help="Disable Option B holonomy correction (enabled by default).",
+            )
+            degenrot_parser.add_argument(
+                "-holonomy-max-iter",
+                type=int,
+                default=20,
+                metavar="N",
+                help="Maximum holonomy correction sweeps per zone (default: 20).",
+            )
+            degenrot_parser.add_argument(
+                "-holonomy-tol",
+                type=float,
+                default=1e-4,
+                metavar="TOL",
+                help="Holonomy convergence tolerance (default: 1e-4).",
+            )
+            degenrot_parser.add_argument(
+                "-no-cache",
+                action="store_false",
+                dest="use_wfc_cache",
+                help="Disable in-memory wavefunction cache (enabled by default).",
+            )
+            degenrot_parser.add_argument(
+                "-n-workers",
+                type=int,
+                default=1,
+                metavar=f"[1-{os.cpu_count()}]",
+                choices=range(1, os.cpu_count() + 1),
+                help="Number of parallel workers for Phase 1, zone-level, and Jacobi sweep parallelism (default: 1).",
+            )
         if DOT:
             dot_parser.add_argument("-np", 
                                     type=int, 
@@ -681,11 +743,20 @@ def generatewfc_cli(args: argparse.Namespace):
 def degenrotation_cli(args: argparse.Namespace):
     from berry.degenrotation import run_degenrotation
     args_dict = {}
-    args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
-    args_dict["logger_name"]  = args.o
-    args_dict["ethr"]         = args.ethr
-    args_dict["compress"]     = args.c
-    args_dict["flush"]        = args.flush
+    args_dict["logger_level"]           = logging.DEBUG if args.v else logging.INFO
+    args_dict["logger_name"]            = args.o
+    args_dict["ethr"]                   = args.ethr
+    args_dict["compress"]               = args.c
+    args_dict["flush"]                  = args.flush
+    args_dict["max_refinement_iter"]    = args.max_ref_iter
+    args_dict["refinement_iter_cap"]    = args.ref_iter_cap
+    args_dict["refinement_anderson_m"]  = args.anderson_m
+    args_dict["refinement_tol"]         = args.ref_tol
+    args_dict["holonomy_correction"]    = args.holonomy_correction
+    args_dict["holonomy_max_iter"]      = args.holonomy_max_iter
+    args_dict["holonomy_tol"]           = args.holonomy_tol
+    args_dict["use_wfc_cache"]          = args.use_wfc_cache
+    args_dict["n_workers"]              = args.n_workers
     run_degenrotation(**args_dict)
 
 

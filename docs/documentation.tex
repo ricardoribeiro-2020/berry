@@ -1197,6 +1197,207 @@ A small singular value therefore strictly means the two subspaces are
 genuinely different, not merely expressed in different bases.
 
 
+\subsection*{Boundary consistency check}
+
+After the BFS rotation has been applied to all k-points in the zone, the
+script checks whether the resulting gauge is \emph{globally consistent} across
+the zone boundary.
+For every zone k-point $\pmb{k}$ that has a non-degenerate external neighbour
+$\pmb{k}'$ (i.e.\ a grid neighbour outside the zone where the $N$ bands are
+split), the minimum singular value $\sigma_{\min}(\pmb{k},\pmb{k}')$ is
+computed from the overlap matrix between the rotated basis at $\pmb{k}$ and
+the unmodified basis at $\pmb{k}'$.
+
+The \emph{boundary spread}
+\begin{equation}
+  \Delta\sigma = \max_{\text{boundary edges}}\sigma_{\min} -
+                 \min_{\text{boundary edges}}\sigma_{\min}
+\end{equation}
+measures how uniformly the rotated zone aligns with its external neighbourhood.
+A large spread indicates that the BFS tree imposed a path-dependent gauge
+choice, so that different boundary k-points align well or poorly depending on
+which BFS path was used to reach them.
+
+An important invariant: boundary singular values are \emph{gauge-invariant}.
+Iterative refinement cannot reduce the spread; the two gauge-repair options
+described below must act before refinement.
+
+
+\subsection*{Gauge repair --- Option~B: holonomy correction}
+
+\textbf{Trigger:} boundary spread $> 0.1$ \emph{and not} a topological
+discontinuity (see Option~C below).
+
+\textbf{Physical meaning:} The BFS tree forced a path-dependent gauge choice.
+No topological obstruction prevents a smooth consistent gauge, but the BFS
+did not find it.
+
+\textbf{Algorithm:} The script walks all \emph{elementary plaquettes},
+i.e.\ minimal 4-cycles $\pmb{k}_0 \to \pmb{k}_1 \to \pmb{k}_2 \leftarrow
+\pmb{k}_3 \leftarrow \pmb{k}_0$ in the zone graph, and computes for each
+plaquette the \emph{holonomy}
+
+\begin{equation}
+  H = R_{01}\, R_{12}\, R_{23}^{\dagger}\, R_{30}^{\dagger}
+\end{equation}
+
+where each $R_{ij}$ is the Procrustes rotation of equation~\eqref{eq:procrustes}
+evaluated between the current Bloch factors at $\pmb{k}_i$ and $\pmb{k}_j$.
+A perfectly consistent gauge gives $H = \mathbf{1}$; the departure from
+identity is the \emph{loop defect}.
+
+The defect is distributed by applying fractional corrections
+$H^{-1/4}$, $H^{-1/2}$, $H^{-3/4}$ to the three non-anchor vertices of the
+plaquette.
+The fractional power is computed via two successive matrix square roots
+(using \texttt{scipy.linalg.sqrtm}) followed by projection onto
+$\mathrm{U}(N)$.
+The procedure iterates over all plaquettes until the maximum holonomy defect
+$\|H - \mathbf{1}\|_F$ falls below a tolerance (default~$10^{-4}$) or a
+maximum number of sweeps is reached (default~$20$).
+
+\textbf{Effect:} The internal gauge consistency improves, giving the
+subsequent iterative refinement a better starting point and allowing it to
+converge more quickly.
+The boundary spread (being gauge-invariant) is not changed by this step.
+
+
+\subsection*{Gauge repair --- Option~C: topological zone splitting}
+
+\textbf{Trigger:} boundary spread $> 0.5$ \emph{and} the minimum boundary
+singular value $\sigma_{\min}^{\text{worst}} < 0.6$.
+
+\textbf{Physical meaning:} There is a genuine topological discontinuity in the
+U($N$) gauge bundle over the Brillouin Zone (e.g.\ a Berry phase of $\pi$
+or a non-zero Chern number).
+No smooth gauge exists across the whole zone.
+The worst boundary edge marks the physical branch cut.
+
+\textbf{Algorithm:}
+\begin{enumerate}
+  \item The zone k-point $\pmb{k}^*$ with the worst boundary alignment
+        (lowest $\sigma_{\min}$) is identified.
+  \item All internal zone edges adjacent to $\pmb{k}^*$ are considered as
+        candidate cut edges.
+        For each candidate $(\pmb{k}^*, \pmb{k}_c)$, a BFS is run from the
+        original root $\pmb{k}_{\mathrm{root}}$ with that edge removed.
+        If $\pmb{k}^*$ becomes unreachable, the candidate is a valid cut.
+  \item Among valid candidates, the edge with the \emph{lowest} internal
+        overlap $\sigma_{\min}(\pmb{k}^*, \pmb{k}_c)$ is chosen as the
+        physical branch cut, because it marks the point where the two-sided
+        wavefunctions are most nearly orthogonal.
+  \item The zone is split into \textbf{zone$_a$} (contains
+        $\pmb{k}_{\mathrm{root}}$, already correctly rotated) and
+        \textbf{zone$_b$} (contains $\pmb{k}^*$, gauge from the original BFS
+        is incorrect).
+  \item Phases~3 and~4 are repeated independently on zone$_b$ to give it a
+        fresh, self-consistent gauge anchored to its own best external
+        reference.
+  \item Both zone$_a$ and zone$_b$ then proceed independently through the
+        boundary check and iterative refinement.
+\end{enumerate}
+
+\textbf{Effect:} Each sub-zone converges cleanly.
+The physical Berry-phase discontinuity at the cut edge is preserved, and
+downstream programs (dot product, Berry connections) see a genuine gauge
+discontinuity that correctly contributes to the Chern number integral.
+The file \emph{degenzones.npy} assigns the two sub-zones distinct
+zone identifiers.
+
+
+\subsection*{Iterative gauge refinement}
+
+After any gauge repair (or directly if the spread is small), all zone
+k-points are refined simultaneously by a multi-neighbour Procrustes sweep.
+
+Each sweep (a Gauss-Seidel pass, or a Jacobi pass when parallelism is
+enabled) re-rotates every zone k-point to best align with \emph{all} its
+valid neighbours simultaneously: both zone-internal neighbours (also being
+refined) and external non-degenerate neighbours (fixed anchors that prevent
+global gauge drift).
+The overlap matrices from every neighbour are summed before the Procrustes
+step so all neighbours vote on the rotation:
+
+\begin{equation}
+  M_{\text{total}}(\pmb{k}) = \sum_{\pmb{k}' \in \mathcal{N}(\pmb{k})}
+  M(\pmb{k}', \pmb{k})
+\end{equation}
+
+where $\mathcal{N}(\pmb{k})$ includes all zone-internal neighbours and all
+non-degenerate external neighbours.
+
+Convergence is declared when $\max_{\pmb{k}} \|R_{\pmb{k}} - \mathbf{1}\|_F$
+falls below the refinement tolerance (default~$10^{-4}$) or the maximum
+iteration count is reached.
+The iteration limit scales with zone size:
+$\max(N_{\mathrm{base}},\, N_{\mathrm{base}} + 3\,|\text{zone}|)$,
+capped at a hard maximum (defaults: base~50, cap~500).
+
+\paragraph{Anderson acceleration.}
+Each Gauss-Seidel sweep is followed by an Anderson mixing
+step~\cite{Walker2011} that fits a least-squares linear combination of the
+last $m$ sweep residuals (default $m = 10$) to predict the fixed point and
+extrapolates the rotation matrices in that direction.
+Each $N \times N$ block of the extrapolated flat state vector is
+projected back onto $\mathrm{U}(N)$ via SVD\@.
+The safety criterion rejects any Anderson step that would exceed five
+times the plain Gauss-Seidel step.
+This acceleration converts the slow linear convergence ($\rho \approx 0.97$
+per iteration without acceleration) into effective superlinear convergence,
+typically reducing the required iteration count by a factor of 5--10.
+
+\paragraph{Jacobi parallel sweep.}
+When the \texttt{n-workers} option is greater than one and the in-memory
+wavefunction cache is active, the Gauss-Seidel sweep is replaced by a
+\emph{Jacobi} parallel sweep: a snapshot of the current wavefunction state
+is taken at the start of each sweep, all k-points compute their rotation
+independently (using the snapshot), and the updates are applied after all
+workers have finished.
+This parallelises the most expensive part of the refinement at the cost of
+approximately twice as many iterations to converge (Jacobi converges at
+$\rho \approx 0.97$ vs.\ $\rho^2 \approx 0.94$ for Gauss-Seidel).
+The break-even is four or more workers; beyond that Jacobi gives a net
+speedup.
+
+
+\subsection*{Parallelism}
+
+\texttt{degenrot} supports three levels of parallelism, all controlled by the
+single \texttt{n-workers} option:
+
+\begin{enumerate}
+  \item \textbf{Phase~1 (k-point detection):} the degeneracy check for each
+        k-point is independent and dispatched to a process pool
+        (\texttt{ProcessPoolExecutor}).
+
+  \item \textbf{Zone-level:} multiple degenerate zones that share the same
+        band signature (and thus have disjoint k-point sets) are processed
+        simultaneously using separate processes with copy-on-write memory
+        sharing (fork start method; Linux and macOS only).
+
+  \item \textbf{Sweep-level (Jacobi):} within a single zone's iterative
+        refinement, the per-k-point rotation computation is parallelised
+        using a thread pool (\texttt{ThreadPoolExecutor}); requires the
+        in-memory wavefunction cache to be active.
+\end{enumerate}
+
+These three levels are mutually compatible and engage automatically based on
+the available zone structure and cache state.
+
+
+\subsection*{In-memory wavefunction cache}
+
+By default, \texttt{degenrot} pre-loads all wavefunction files for a zone
+(zone k-points plus their grid neighbours) into a RAM dictionary before
+starting the boundary check and iterative refinement.
+All subsequent reads come from RAM instead of disk, which can reduce I/O
+by a factor of 100 or more for large zones.
+Writes always go to both RAM and disk to maintain consistency.
+The cache is skipped automatically when its estimated memory footprint would
+exceed 80\% of available RAM (or 4~GB when the available memory cannot be
+determined).
+
+
 \subsection*{Output}
 
 \texttt{degenrot} overwrites the \emph{.wfc} files of the rotated k-points
@@ -1212,12 +1413,17 @@ where \verb|zone_id| identifies the degenerate zone, $b_1 \ldots b_N$ are the
 absolute band indices of the degenerate subspace (padded with $-1$ if the
 subspace dimension is smaller than the maximum across all zones), and
 \verb|k-point| is the index of the k-point.
+If an Option~C split occurs, the two sub-zones are assigned distinct zone
+identifiers; downstream programs iterate over zone identifiers
+transparently.
 
 A log file is written to \emph{log/degenrotation.log} (or the name given with
 \texttt{-o}).
-It records, for every zone, the bands involved, the reference k-point chosen,
-the type of reference (\emph{boundary} or \emph{isolated}), the number of
-k-points rotated, and the mean and minimum singular values.
+The final summary table records, for every zone, the bands involved, the
+type of reference (\emph{boundary} or \emph{isolated}), the total number of
+k-points in the zone, the number of k-points rotated in Phase~4, the BFS
+root k-point, the mean BFS singular value, and the number of holonomy
+correction sweeps performed (column \emph{Holo}).
 
 The options for \texttt{degenrot} are shown in table~\ref{tab:options_degenrot}.
 
@@ -1226,14 +1432,23 @@ The options for \texttt{degenrot} are shown in table~\ref{tab:options_degenrot}.
  \caption{Options for script \texttt{degenrot}.}\label{tab:options_degenrot}
 \begin{tabular}[]{lr}
 \hline
-  \texttt{-h}, \texttt{--help}  & Show a help message and exit \\
-  \texttt{-ethr}                & Energy threshold for degeneracy detection \\
-                                & in eigenvalue units (default: $10^{-4}$) \\
-  \texttt{-c}                   & Compress the output \emph{.wfc} files \\
-  \texttt{-o file\_path}        & Name of output log file \\
-                                & Extension will be \emph{.log} regardless of user input \\
-  \texttt{-flush}               & Flush the output to stdout \\
-  \texttt{-v}                   & Increase output verbosity \\
+  \texttt{-h}, \texttt{--help}       & Show a help message and exit \\
+  \texttt{-ethr}                     & Energy threshold for degeneracy detection \\
+                                     & in eigenvalue units (default: $10^{-4}$) \\
+  \texttt{-c}                        & Compress the output \emph{.wfc} files \\
+  \texttt{-max-ref-iter}             & Minimum refinement iterations per zone (default: 50) \\
+  \texttt{-ref-iter-cap}             & Hard cap on refinement iterations (default: 500) \\
+  \texttt{-anderson-m}               & Anderson mixing history window; 0 to disable (default: 10) \\
+  \texttt{-ref-tol}                  & Refinement convergence tolerance (default: $10^{-4}$) \\
+  \texttt{-no-holonomy}              & Disable Option~B holonomy correction \\
+  \texttt{-holonomy-max-iter}        & Maximum holonomy correction sweeps (default: 20) \\
+  \texttt{-holonomy-tol}             & Holonomy convergence tolerance (default: $10^{-4}$) \\
+  \texttt{-no-cache}                 & Disable in-memory wavefunction cache \\
+  \texttt{-n-workers}                & Number of parallel workers (default: 1) \\
+  \texttt{-o file\_path}             & Name of output log file \\
+                                     & Extension will be \emph{.log} regardless of user input \\
+  \texttt{-flush}                    & Flush the output to stdout \\
+  \texttt{-v}                        & Increase output verbosity \\
 \hline
 \end{tabular}
 \end{table}
@@ -2150,6 +2365,13 @@ T.~H. Cormen, C.~E. Leiserson, R.~L. Rivest, C.~Stein,
   Introduction to Algorithms, 3rd ed.,
   MIT Press, Cambridge MA, 2009.
   ISBN 978-0-262-03384-8.
+
+\bibitem{Walker2011}
+H.~F. Walker, P.~Ni,
+  Anderson acceleration for fixed-point iterations,
+  SIAM Journal on Numerical Analysis 49~(4) (2011) 1715--1735.
+\newblock \href{https://doi.org/10.1137/10078356X}
+  {\path{doi:10.1137/10078356X}}.
 
 %
 %
