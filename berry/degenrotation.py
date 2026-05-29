@@ -1014,7 +1014,7 @@ def _process_zone(
     bands = sorted(sig)
     N     = len(bands)
 
-    logger.info()
+    logger.info("")
     logger.info(f"\t--- Zone {zi}: bands {bands},  {len(zone)} k-point(s),  subspace dim = {N} ---")
 
     # Phase 3 + Phase 4 -- reference selection + BFS rotation
