@@ -1219,14 +1219,18 @@ choice, so that different boundary k-points align well or poorly depending on
 which BFS path was used to reach them.
 
 An important invariant: boundary singular values are \emph{gauge-invariant}.
-Iterative refinement cannot reduce the spread; the two gauge-repair options
-described below must act before refinement.
+Iterative refinement cannot reduce the spread; the holonomy correction
+described below must act before refinement when the spread is large.
 
 
-\subsection*{Gauge repair --- Option~B: holonomy correction}
+\subsection*{Gauge repair --- holonomy correction}
 
-\textbf{Trigger:} boundary spread $> 0.1$ \emph{and not} a topological
-discontinuity (see Option~C below).
+\textbf{Trigger:} boundary spread $> 0.1$ and the zone contains at least
+\texttt{-holonomy-min-plaquettes} internal plaquettes (default: 2).
+When the spread is very large ($> 0.5$) and the worst boundary singular value
+is below 0.6 --- indicating a topological discontinuity --- the correction is
+skipped and a warning is logged, because the holonomy cannot be reduced in
+that case (see below).
 
 \textbf{Physical meaning:} The BFS tree forced a path-dependent gauge choice.
 No topological obstruction prevents a smooth consistent gauge, but the BFS
@@ -1256,53 +1260,18 @@ The procedure iterates over all plaquettes until the maximum holonomy defect
 $\|H - \mathbf{1}\|_F$ falls below a tolerance (default~$10^{-4}$) or a
 maximum number of sweeps is reached (default~$20$).
 
+\textbf{Early exit on topological holonomy:} If the maximum defect does not
+decrease between two consecutive sweeps (relative change $< 10^{-8}$), the
+zone carries an \emph{irreducible} Berry-phase holonomy: the total holonomy
+around the zone boundary is a topological invariant that cannot be eliminated
+by local plaquette corrections.
+The correction exits immediately with a warning; iterative refinement proceeds
+but may not fully converge.
+
 \textbf{Effect:} The internal gauge consistency improves, giving the
 subsequent iterative refinement a better starting point and allowing it to
 converge more quickly.
 The boundary spread (being gauge-invariant) is not changed by this step.
-
-
-\subsection*{Gauge repair --- Option~C: topological zone splitting}
-
-\textbf{Trigger:} boundary spread $> 0.5$ \emph{and} the minimum boundary
-singular value $\sigma_{\min}^{\text{worst}} < 0.6$.
-
-\textbf{Physical meaning:} There is a genuine topological discontinuity in the
-U($N$) gauge bundle over the Brillouin Zone (e.g.\ a Berry phase of $\pi$
-or a non-zero Chern number).
-No smooth gauge exists across the whole zone.
-The worst boundary edge marks the physical branch cut.
-
-\textbf{Algorithm:}
-\begin{enumerate}
-  \item The zone k-point $\pmb{k}^*$ with the worst boundary alignment
-        (lowest $\sigma_{\min}$) is identified.
-  \item All internal zone edges adjacent to $\pmb{k}^*$ are considered as
-        candidate cut edges.
-        For each candidate $(\pmb{k}^*, \pmb{k}_c)$, a BFS is run from the
-        original root $\pmb{k}_{\mathrm{root}}$ with that edge removed.
-        If $\pmb{k}^*$ becomes unreachable, the candidate is a valid cut.
-  \item Among valid candidates, the edge with the \emph{lowest} internal
-        overlap $\sigma_{\min}(\pmb{k}^*, \pmb{k}_c)$ is chosen as the
-        physical branch cut, because it marks the point where the two-sided
-        wavefunctions are most nearly orthogonal.
-  \item The zone is split into \textbf{zone$_a$} (contains
-        $\pmb{k}_{\mathrm{root}}$, already correctly rotated) and
-        \textbf{zone$_b$} (contains $\pmb{k}^*$, gauge from the original BFS
-        is incorrect).
-  \item Phases~3 and~4 are repeated independently on zone$_b$ to give it a
-        fresh, self-consistent gauge anchored to its own best external
-        reference.
-  \item Both zone$_a$ and zone$_b$ then proceed independently through the
-        boundary check and iterative refinement.
-\end{enumerate}
-
-\textbf{Effect:} Each sub-zone converges cleanly.
-The physical Berry-phase discontinuity at the cut edge is preserved, and
-downstream programs (dot product, Berry connections) see a genuine gauge
-discontinuity that correctly contributes to the Chern number integral.
-The file \emph{degenzones.npy} assigns the two sub-zones distinct
-zone identifiers.
 
 
 \subsection*{Iterative gauge refinement}
@@ -1332,6 +1301,13 @@ iteration count is reached.
 The iteration limit scales with zone size:
 $\max(N_{\mathrm{base}},\, N_{\mathrm{base}} + 3\,|\text{zone}|)$,
 capped at a hard maximum (defaults: base~50, cap~500).
+
+\textbf{Stagnation early exit.}
+If the residual is still more than ten times the tolerance but has improved by
+less than a factor of two over the last 30 iterations, the solver has reached a
+topological floor and further iterations are wasteful.
+Refinement exits early with a warning; the final rotations are still written
+and the zone is marked in the log.
 
 \paragraph{Anderson acceleration.}
 Each Gauss-Seidel sweep is followed by an Anderson mixing
@@ -1392,10 +1368,19 @@ By default, \texttt{degenrot} pre-loads all wavefunction files for a zone
 starting the boundary check and iterative refinement.
 All subsequent reads come from RAM instead of disk, which can reduce I/O
 by a factor of 100 or more for large zones.
-Writes always go to both RAM and disk to maintain consistency.
-The cache is skipped automatically when its estimated memory footprint would
-exceed 80\% of available RAM (or 4~GB when the available memory cannot be
-determined).
+
+When the cache is active, \emph{all writes during holonomy correction and
+iterative refinement are deferred to RAM only}.
+A single disk flush at the end of each zone replaces the thousands of
+per-iteration file writes that would otherwise occur.
+For a zone of 1600 k-points and two non-collinear bands this reduces disk
+traffic per zone from tens of gigabytes (one full write per iteration) to a
+single pass of roughly 35~GB written once.
+
+Available RAM is queried via \texttt{psutil} (a required dependency).
+The cache is skipped automatically when its estimated footprint would exceed
+80\% of available RAM; a conservative 4~GB hard limit applies only if
+\texttt{psutil} fails at runtime.
 
 
 \subsection*{Output}
@@ -1413,9 +1398,6 @@ where \verb|zone_id| identifies the degenerate zone, $b_1 \ldots b_N$ are the
 absolute band indices of the degenerate subspace (padded with $-1$ if the
 subspace dimension is smaller than the maximum across all zones), and
 \verb|k-point| is the index of the k-point.
-If an Option~C split occurs, the two sub-zones are assigned distinct zone
-identifiers; downstream programs iterate over zone identifiers
-transparently.
 
 A log file is written to \emph{log/degenrotation.log} (or the name given with
 \texttt{-o}).
@@ -1440,9 +1422,10 @@ The options for \texttt{degenrot} are shown in table~\ref{tab:options_degenrot}.
   \texttt{-ref-iter-cap}             & Hard cap on refinement iterations (default: 500) \\
   \texttt{-anderson-m}               & Anderson mixing history window; 0 to disable (default: 10) \\
   \texttt{-ref-tol}                  & Refinement convergence tolerance (default: $10^{-4}$) \\
-  \texttt{-no-holonomy}              & Disable Option~B holonomy correction \\
+  \texttt{-no-holonomy}              & Disable holonomy correction \\
   \texttt{-holonomy-max-iter}        & Maximum holonomy correction sweeps (default: 20) \\
   \texttt{-holonomy-tol}             & Holonomy convergence tolerance (default: $10^{-4}$) \\
+  \texttt{-holonomy-min-plaquettes}  & Min.\ internal plaquettes to attempt correction (default: 2) \\
   \texttt{-no-cache}                 & Disable in-memory wavefunction cache \\
   \texttt{-n-workers}                & Number of parallel workers (default: 1) \\
   \texttt{-o file\_path}             & Name of output log file \\

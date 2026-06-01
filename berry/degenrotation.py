@@ -22,6 +22,7 @@ from itertools import combinations
 import numpy as np
 from numpy.linalg import svd
 import scipy.linalg as sp_linalg
+import psutil
 
 from berry import log
 
@@ -80,25 +81,15 @@ def _save_wfc(wfc, nk: int, band: int, noncolin: bool, wfcdir: str, compress: bo
 # ---------------------------------------------------------------------------
 
 def _available_memory_bytes() -> int:
-    """Return available system RAM in bytes, or 0 if it cannot be determined.
+    """Return available system RAM in bytes.
 
-    Tries psutil first (cross-platform), then /proc/meminfo (Linux fallback).
-    Returns 0 when neither is available so callers can apply a conservative
-    hard limit rather than crashing.
+    Returns 0 only if psutil raises unexpectedly; callers treat 0 as
+    'unknown' and apply a conservative hard limit in that case.
     """
     try:
-        import psutil
         return psutil.virtual_memory().available
-    except ImportError:
-        pass
-    try:
-        with open('/proc/meminfo') as fh:
-            for line in fh:
-                if line.startswith('MemAvailable:'):
-                    return int(line.split()[1]) * 1024  # kB → bytes
-    except OSError:
-        pass
-    return 0
+    except Exception:
+        return 0
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +176,8 @@ def _correct_zone_holonomy(
     max_iter: int = 20,
     tol: float = 1e-4,
     wfc_cache: dict | None = None,
+    min_plaquettes: int = 2,
+    write_to_disk: bool = True,
 ) -> int:
     """Reduce plaquette holonomy defects before iterative gauge refinement.
 
@@ -229,6 +222,12 @@ def _correct_zone_holonomy(
         logger.info("\t    [Holonomy] No internal plaquettes found — skipping.")
         return 0
 
+    if len(plaquettes) < min_plaquettes:
+        logger.info(
+            f"\t    [Holonomy] Only {len(plaquettes)} plaquette(s) < min={min_plaquettes} — skipping."
+        )
+        return 0
+
     logger.info(f"\t    [Holonomy] {len(plaquettes)} plaquette(s),  tol={tol:.1e}")
 
     def _w(nk_):
@@ -244,7 +243,9 @@ def _correct_zone_holonomy(
         dph = d_phase[:, cur_k] * d_phase[:, ref_k].conj()
         return _procrustes_rotation(_overlap_matrix(ref_wfcs, cur_wfcs, dph, nr, noncolin))
 
-    max_defect = float("inf")
+    prev_defect = float("inf")
+    stall_count = 0
+    max_defect  = float("inf")
     for sweep in range(1, max_iter + 1):
         max_defect = 0.0
 
@@ -277,7 +278,8 @@ def _correct_zone_holonomy(
             for p, G in ((na, C1), (nc, C2), (nb, C3)):
                 new_w = _apply_rotation(_w(p), G, noncolin)
                 for i, b in enumerate(bands):
-                    _save_wfc(new_w[i], p, b, noncolin, wfcdir, compress)
+                    if write_to_disk:
+                        _save_wfc(new_w[i], p, b, noncolin, wfcdir, compress)
                     if wfc_cache is not None:
                         wfc_cache[(p, b)] = new_w[i]
 
@@ -288,6 +290,22 @@ def _correct_zone_holonomy(
         if max_defect < tol:
             logger.info(f"\t    [Holonomy] Converged in {sweep} sweep(s).")
             return sweep
+
+        # Stagnation: residual not changing → irreducible topological holonomy.
+        if prev_defect < float("inf"):
+            rel_change = abs(prev_defect - max_defect) / max(prev_defect, 1e-30)
+            if rel_change < 1e-8:
+                stall_count += 1
+                if stall_count >= 2:
+                    logger.warning(
+                        f"\t    [Holonomy] Topological holonomy defect: residual stuck at "
+                        f"{max_defect:.4e} (rel. change < 1e-8). "
+                        f"Berry-phase winding is irreducible — stopping early."
+                    )
+                    return sweep
+            else:
+                stall_count = 0
+        prev_defect = max_defect
 
     logger.warning(
         f"\t    [Holonomy] Did not converge in {max_iter} sweep(s) "
@@ -364,6 +382,9 @@ def _refine_zone_gauge(
     anderson_m: int = 10,
     wfc_cache: dict | None = None,
     n_workers: int = 1,
+    write_to_disk: bool = True,
+    stall_window: int = 30,
+    stall_factor: float = 2.0,
 ) -> tuple:
     """Iterative multi-neighbour Procrustes gauge refinement with Anderson mixing.
 
@@ -430,7 +451,8 @@ def _refine_zone_gauge(
 
     def _put(nk_: int, new_wfcs: list) -> None:
         for i, b in enumerate(bands):
-            _save_wfc(new_wfcs[i], nk_, b, noncolin, wfcdir, compress)
+            if write_to_disk:
+                _save_wfc(new_wfcs[i], nk_, b, noncolin, wfcdir, compress)
             if wfc_cache is not None:
                 wfc_cache[(nk_, b)] = new_wfcs[i]
 
@@ -450,6 +472,7 @@ def _refine_zone_gauge(
     max_rot_change_0: float = 0.0
     mean_quality_0:   float = 0.0
     mean_quality:     float = 0.0
+    stall_history:    list  = []
 
     # Jacobi mode requires the wfc cache so all workers read the same
     # pre-sweep state from RAM.  Fall back to Gauss-Seidel if unavailable.
@@ -561,6 +584,23 @@ def _refine_zone_gauge(
             )
             return it, mean_quality
 
+        # Stagnation: if improvement over the last stall_window iters is less
+        # than stall_factor× AND we are still far from tol, the solver has
+        # hit a topological floor and further iterations are wasteful.
+        stall_history.append(max_rot_change)
+        if len(stall_history) > stall_window:
+            stall_history.pop(0)
+        if (len(stall_history) == stall_window
+                and max_rot_change > tol * 10
+                and stall_history[0] / max_rot_change < stall_factor):
+            logger.warning(
+                f"\t    Early exit: stagnation after {it} iter(s) — only "
+                f"{stall_history[0]/max_rot_change:.2f}× improvement over last "
+                f"{stall_window} iters (need {stall_factor:.1f}×). "
+                f"max_ΔR={max_rot_change:.2e} >> tol={tol:.1e}."
+            )
+            return it, mean_quality
+
         # --------------------------------------------------------------
         # Anderson acceleration (AA(m))
         #
@@ -637,89 +677,6 @@ def _refine_zone_gauge(
 # Workers read this dict (never write to it); large arrays are inherited via
 # copy-on-write when using the fork start method on Linux / macOS.
 _zone_ctx: dict = {}
-
-
-def _split_zone(
-    zone: set,
-    root_k: int,
-    worst_nk: int,
-    n_dir: int,
-    neighbors: np.ndarray,
-    d_phase: np.ndarray,
-    bands: list,
-    noncolin: bool,
-    wfcdir: str,
-    nr: int,
-    logger,
-) -> tuple | None:
-    """Split zone at the topological branch cut nearest to worst_nk.
-
-    Searches internal zone edges adjacent to worst_nk for one whose removal
-    disconnects worst_nk from root_k.  Among valid candidates the edge with
-    the lowest internal overlap min-sigma (most orthogonal across the
-    discontinuity) is chosen as the physical cut.
-
-    Returns (zone_a, zone_b) where zone_a contains root_k and zone_b contains
-    worst_nk, or None if no single adjacent edge disconnects worst_nk from
-    root_k (zone is too densely connected to cut at this point).
-    """
-    N = len(bands)
-
-    int_nbrs = [
-        neighbors[worst_nk, j]
-        for j in range(n_dir)
-        if neighbors[worst_nk, j] != -1 and neighbors[worst_nk, j] in zone
-    ]
-    if not int_nbrs:
-        logger.warning(
-            f"\t  [Option C] k={worst_nk} has no internal zone neighbours; split skipped."
-        )
-        return None
-
-    candidates = []  # (cut_partner, zone_a, zone_b, min_sigma_internal)
-    for nb_int in int_nbrs:
-        # BFS from root_k with the candidate cut edge removed (both directions)
-        visited: set = {root_k}
-        q: deque     = deque([root_k])
-        while q:
-            nk = q.popleft()
-            for j in range(n_dir):
-                nb = neighbors[nk, j]
-                if nb == -1 or nb not in zone or nb in visited:
-                    continue
-                if (nk == worst_nk and nb == nb_int) or (nk == nb_int and nb == worst_nk):
-                    continue  # skip the candidate cut edge
-                visited.add(nb)
-                q.append(nb)
-        if worst_nk in visited:
-            continue  # this edge does not disconnect worst_nk from root_k
-        zone_a = visited
-        zone_b = zone - zone_a
-        if not zone_b:
-            continue  # degenerate: zone_b is empty
-
-        # Rank by internal overlap quality at the cut edge
-        w_a   = [_load_wfc(worst_nk, b, noncolin, wfcdir) for b in bands]
-        w_b   = [_load_wfc(nb_int,   b, noncolin, wfcdir) for b in bands]
-        dph   = d_phase[:, nb_int] * d_phase[:, worst_nk].conj()
-        M_cut = _overlap_matrix(w_a, w_b, dph, nr, noncolin)
-        _, s_cut, _ = svd(M_cut)
-        candidates.append((nb_int, zone_a, zone_b, float(s_cut.min())))
-
-    if not candidates:
-        logger.warning(
-            f"\t  [Option C] No single edge adjacent to k={worst_nk} disconnects it "
-            "from the BFS root; zone split skipped."
-        )
-        return None
-
-    cut_nb, zone_a, zone_b, ms_cut = min(candidates, key=lambda t: t[3])
-    logger.info(
-        f"\t  [Option C] Cut edge: k={worst_nk} ↔ k={cut_nb}  "
-        f"internal min_sigma={ms_cut:.4f}  "
-        f"zone_a={len(zone_a)} k-pt(s)  zone_b={len(zone_b)} k-pt(s)"
-    )
-    return zone_a, zone_b
 
 
 def _run_bfs_rotation(
@@ -845,11 +802,12 @@ def _process_zone_suffix(
     n_workers: int,
     logger,
     pre_boundary_edges: list | None = None,
+    holonomy_min_plaquettes: int = 2,
 ) -> tuple:
     """Boundary check -> Option B -> refinement -> 9-tuple summary row.
 
     If pre_boundary_edges is provided it is used directly (avoids recomputing
-    after an Option C split where zone_a edges are a known subset).
+    when the boundary edges are already known from the calling context).
     Returns:
         (zi, bands, zone_size, n_rotated, best_k, ref_type, mean_sigma,
          n_holo_sweeps, zone_set)
@@ -858,6 +816,9 @@ def _process_zone_suffix(
     """
     N = len(bands)
     n_holo_sweeps = 0
+    # When a wfc cache is available all iterative modifications go to RAM;
+    # a single flush to disk happens at the very end of this function.
+    defer_disk = wfc_cache is not None
 
     # ------------------------------------------------------------------
     # Boundary consistency check
@@ -925,14 +886,15 @@ def _process_zone_suffix(
                     max_iter=holonomy_max_iter,
                     tol=holonomy_tol,
                     wfc_cache=wfc_cache,
+                    min_plaquettes=holonomy_min_plaquettes,
+                    write_to_disk=not defer_disk,
                 )
                 logger.info(f"\t  [Option B] Done: {n_holo_sweeps} sweep(s)")
             elif spread > 0.5 and worst_sigma < 0.6:
-                # Option C would apply here but we do not recurse into sub-splits.
                 logger.warning(
-                    f"\t  [Option C] Sub-zone still shows topological discontinuity "
+                    f"\t  WARNING: severe topological discontinuity "
                     f"(spread={spread:.3f}, worst_sigma={worst_sigma:.3f}). "
-                    f"Further splitting not attempted; refinement may not converge."
+                    f"Holonomy correction skipped; refinement may not converge."
                 )
 
     # ------------------------------------------------------------------
@@ -967,11 +929,21 @@ def _process_zone_suffix(
             logger=logger,
             wfc_cache=wfc_cache,
             n_workers=n_workers,
+            write_to_disk=not defer_disk,
         )
         logger.info(
             f"\t  Refinement complete: {n_ref_iter} iter(s), "
             f"final quality={final_quality:.6f}"
         )
+
+    # Flush all zone wfc files from RAM cache to disk in one pass, replacing
+    # the per-iteration disk writes that were skipped when defer_disk=True.
+    if defer_disk:
+        for nk_ in zone:
+            for b in bands:
+                arr = wfc_cache.get((nk_, b))
+                if arr is not None:
+                    _save_wfc(arr, nk_, b, noncolin, wfcdir, compress)
 
     # zone_set at position 8 is consumed by the degenzones.npy writer
     return (zi, bands, len(zone), n_rotated, best_k, ref_type, mean_sigma,
@@ -1001,15 +973,13 @@ def _process_zone(
     use_wfc_cache: bool,
     n_workers: int,
     logger,
-    next_zi: int = -1,
+    holonomy_min_plaquettes: int = 2,
 ) -> list:
     """Run Phases 3-4 + boundary check + holonomy + refinement for one zone.
 
-    Returns a list of 9-tuples, normally one element.  Two elements are
-    returned when Option C (topological zone split) fires:
+    Returns a list containing one 9-tuple:
         (zi, bands, zone_size, n_rotated, best_k, ref_type, mean_sigma,
          n_holo_sweeps, zone_set)
-    next_zi is the zone ID assigned to zone_b on a split; pass -1 to disable.
     """
     bands = sorted(sig)
     N     = len(bands)
@@ -1050,7 +1020,7 @@ def _process_zone(
         avail     = _available_memory_bytes()
         over_limit = (
             (avail > 0 and est_bytes > avail * 0.8) or
-            (avail == 0 and est_bytes > 4 * 1024 ** 3)
+            (avail == 0 and est_bytes > 4 * 1024 ** 3)  # psutil failed; conservative cap
         )
         if over_limit:
             logger.warning(
@@ -1072,8 +1042,8 @@ def _process_zone(
                     wfc_cache[(nk_c, b)] = _load_wfc(nk_c, b, noncolin, wfcdir)
             logger.info(f"\t  Cache ready in {time.time() - t_cache:.1f}s")
 
-    # Compute boundary edges once -- used for Option C check AND forwarded to
-    # the suffix for zone_a so it does not recompute them.
+    # Pre-compute boundary edges here so _process_zone_suffix does not repeat
+    # the work; passed via pre_boundary_edges.
     boundary_edges: list = []
     for nk in zone:
         for j in range(n_dir):
@@ -1097,109 +1067,6 @@ def _process_zone(
             _, sigma_b, _ = svd(M_b)
             boundary_edges.append((nk, nb, float(sigma_b.min())))
 
-    # ------------------------------------------------------------------
-    # Option C -- topological discontinuity: split zone before suffix
-    # ------------------------------------------------------------------
-    extra_row: tuple | None = None
-
-    if boundary_edges:
-        _b_sigmas = [s for _, _, s in boundary_edges]
-        _spread   = max(_b_sigmas) - min(_b_sigmas)
-        if _spread > 0.5:
-            _worst_nk, _worst_nb, _worst_sigma = min(boundary_edges, key=lambda t: t[2])
-            if _worst_sigma < 0.6:
-                if next_zi < 0:
-                    logger.warning(
-                        f"\t  [Option C] Topological discontinuity detected "
-                        f"(spread={_spread:.3f}, worst_sigma={_worst_sigma:.3f}) "
-                        "but next_zi not set -- zone split disabled."
-                    )
-                else:
-                    logger.info(
-                        f"\t  [Option C] Topological discontinuity "
-                        f"(spread={_spread:.3f}, worst_sigma={_worst_sigma:.3f}). "
-                        f"Splitting zone {zi} -> zones {zi} + {next_zi}."
-                    )
-                    _split = _split_zone(
-                        zone=zone,
-                        root_k=best_k,
-                        worst_nk=_worst_nk,
-                        n_dir=n_dir,
-                        neighbors=neighbors,
-                        d_phase=d_phase,
-                        bands=bands,
-                        noncolin=noncolin,
-                        wfcdir=wfcdir,
-                        nr=nr,
-                        logger=logger,
-                    )
-                    if _split is not None:
-                        zone_a, zone_b = _split
-
-                        # zone_b: find new reference + BFS re-rotation
-                        logger.info(
-                            f"\t  [Option C] Re-rotating zone_b "
-                            f"({len(zone_b)} k-pt(s)) under zone id {next_zi} ..."
-                        )
-                        bk_b, bnb_b, rt_b, nr_b, ms_b, _ = _run_bfs_rotation(
-                            zi_label=str(next_zi),
-                            zone=zone_b,
-                            bands=bands,
-                            d_phase=d_phase,
-                            eigenvalues=eigenvalues,
-                            neighbors=neighbors,
-                            noncolin=noncolin,
-                            wfcdir=wfcdir,
-                            nr=nr,
-                            n_dir=n_dir,
-                            compress=compress,
-                            ethr=ethr,
-                            wfc_cache=wfc_cache,  # updated in-place for zone_b k-pts
-                            logger=logger,
-                        )
-
-                        # zone_b: boundary + holonomy + refinement
-                        logger.info(f"\t  --- Processing zone_b (id={next_zi}) ---")
-                        extra_row = _process_zone_suffix(
-                            zi=next_zi,
-                            bands=bands,
-                            zone=zone_b,
-                            best_k=bk_b,
-                            ref_type=rt_b,
-                            n_rotated=nr_b,
-                            mean_sigma=ms_b,
-                            d_phase=d_phase,
-                            eigenvalues=eigenvalues,
-                            neighbors=neighbors,
-                            noncolin=noncolin,
-                            wfcdir=wfcdir,
-                            nr=nr,
-                            n_dir=n_dir,
-                            compress=compress,
-                            ethr=ethr,
-                            max_refinement_iter=max_refinement_iter,
-                            refinement_iter_cap=refinement_iter_cap,
-                            refinement_anderson_m=refinement_anderson_m,
-                            refinement_tol=refinement_tol,
-                            holonomy_correction=holonomy_correction,
-                            holonomy_max_iter=holonomy_max_iter,
-                            holonomy_tol=holonomy_tol,
-                            wfc_cache=wfc_cache,
-                            n_workers=n_workers,
-                            logger=logger,
-                            pre_boundary_edges=None,  # recompute after re-rotation
-                        )
-
-                        # Restrict main processing to zone_a only
-                        zone           = zone_a
-                        boundary_edges = [(nk, nb, s) for nk, nb, s in boundary_edges
-                                          if nk in zone_a]
-
-    # ------------------------------------------------------------------
-    # zone_a (or full zone if no split): boundary + holonomy + refinement
-    # ------------------------------------------------------------------
-    if extra_row is not None:
-        logger.info(f"\t  --- Processing zone_a (id={zi}) ---")
     row_a = _process_zone_suffix(
         zi=zi,
         bands=bands,
@@ -1228,9 +1095,10 @@ def _process_zone(
         n_workers=n_workers,
         logger=logger,
         pre_boundary_edges=boundary_edges,
+        holonomy_min_plaquettes=holonomy_min_plaquettes,
     )
 
-    return [row_a] if extra_row is None else [row_a, extra_row]
+    return [row_a]
 
 
 def _process_zone_worker(args: tuple) -> list:
@@ -1242,7 +1110,6 @@ def _process_zone_worker(args: tuple) -> list:
     parent's address space via copy-on-write -- large arrays (d_phase,
     eigenvalues, neighbors) are shared without pickling.
 
-    next_zi_base + zi guarantees a unique split-zone ID across parallel workers.
     """
     zi, sig, zone = args
     ctx    = _zone_ctx
@@ -1263,13 +1130,13 @@ def _process_zone_worker(args: tuple) -> list:
         refinement_iter_cap   = ctx['refinement_iter_cap'],
         refinement_anderson_m = ctx['refinement_anderson_m'],
         refinement_tol        = ctx['refinement_tol'],
-        holonomy_correction   = ctx['holonomy_correction'],
-        holonomy_max_iter     = ctx['holonomy_max_iter'],
-        holonomy_tol          = ctx['holonomy_tol'],
-        use_wfc_cache         = ctx['use_wfc_cache'],
-        n_workers             = 1,  # avoid nested parallelism inside a worker
-        logger                = logger,
-        next_zi               = ctx['next_zi_base'] + zi,
+        holonomy_correction      = ctx['holonomy_correction'],
+        holonomy_max_iter        = ctx['holonomy_max_iter'],
+        holonomy_tol             = ctx['holonomy_tol'],
+        use_wfc_cache            = ctx['use_wfc_cache'],
+        n_workers                = 1,  # avoid nested parallelism inside a worker
+        logger                   = logger,
+        holonomy_min_plaquettes  = ctx.get('holonomy_min_plaquettes', 2),
     )
 
 
@@ -1286,6 +1153,7 @@ def run_degenrotation(
     holonomy_correction: bool = True,
     holonomy_max_iter: int = 20,
     holonomy_tol: float = 1e-4,
+    holonomy_min_plaquettes: int = 2,
     use_wfc_cache: bool = True,
     n_workers: int = 1,
 ) -> None:
@@ -1310,7 +1178,8 @@ def run_degenrotation(
     logger.info(f"\tEnergy degeneracy threshold: {ethr}")
     logger.info(
         f"\tHolonomy correction: {holonomy_correction}  "
-        f"(max_iter={holonomy_max_iter}, tol={holonomy_tol:.1e})"
+        f"(max_iter={holonomy_max_iter}, tol={holonomy_tol:.1e}, "
+        f"min_plaquettes={holonomy_min_plaquettes})"
     )
     logger.info(f"\tIn-memory wfc cache: {use_wfc_cache}")
     logger.info(
@@ -1440,13 +1309,13 @@ def run_degenrotation(
         'refinement_iter_cap':   refinement_iter_cap,
         'refinement_anderson_m': refinement_anderson_m,
         'refinement_tol':        refinement_tol,
-        'holonomy_correction':   holonomy_correction,
-        'holonomy_max_iter':     holonomy_max_iter,
-        'holonomy_tol':          holonomy_tol,
-        'use_wfc_cache':         use_wfc_cache,
+        'holonomy_correction':      holonomy_correction,
+        'holonomy_max_iter':        holonomy_max_iter,
+        'holonomy_tol':             holonomy_tol,
+        'holonomy_min_plaquettes':  holonomy_min_plaquettes,
+        'use_wfc_cache':            use_wfc_cache,
         'logger_name':           logger_name,
         'logger_level':          logger_level,
-        'next_zi_base':          len(zones),  # workers compute next_zi = base + zi
     })
 
     # Group consecutive zones by signature.  Same-signature zones have
@@ -1472,12 +1341,6 @@ def run_degenrotation(
             )
 
     summary_rows = []
-
-    # Serial split counter — declared once so it accumulates across all signature
-    # groups and never resets.  Parallel workers use next_zi_base + zi which maps
-    # to [len(zones), 2*len(zones)-1]; the serial counter starts at 2*len(zones)
-    # so the two ranges never overlap and zone IDs are globally unique.
-    _serial_next_zi = 2 * len(zones)
 
     try:
         for _sig, _sig_zone_list in zone_groups:
@@ -1509,10 +1372,9 @@ def run_degenrotation(
                         use_wfc_cache=use_wfc_cache,
                         n_workers=n_workers,
                         logger=logger,
-                        next_zi=_serial_next_zi,
+                        holonomy_min_plaquettes=holonomy_min_plaquettes,
                     )
                     summary_rows.extend(_rows)
-                    _serial_next_zi += len(_rows) - 1  # stays put if no split, +1 per split
     finally:
         _zone_ctx.clear()
 
@@ -1525,11 +1387,8 @@ def run_degenrotation(
     logger.info()
     logger.info("\t****  Final Report  ****")
     logger.info()
-    # summary_rows may contain extra entries from Option C splits
     n_zones_out = len(summary_rows)
-    logger.info(f"\tTotal zones processed             : {n_zones_out}"
-                + (f"  ({n_zones_out - len(zones)} from Option C split(s))"
-                   if n_zones_out > len(zones) else ""))
+    logger.info(f"\tTotal zones processed             : {n_zones_out}")
     logger.info(f"\tTotal k-points with degenerate bands : {n_degen_kpts}")
     logger.info()
 

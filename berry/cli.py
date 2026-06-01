@@ -222,7 +222,7 @@ berry [package options] script parameter [script options]
                 "-no-holonomy",
                 action="store_false",
                 dest="holonomy_correction",
-                help="Disable Option B holonomy correction (enabled by default).",
+                help="Disable holonomy correction (enabled by default).",
             )
             degenrot_parser.add_argument(
                 "-holonomy-max-iter",
@@ -237,6 +237,13 @@ berry [package options] script parameter [script options]
                 default=1e-4,
                 metavar="TOL",
                 help="Holonomy convergence tolerance (default: 1e-4).",
+            )
+            degenrot_parser.add_argument(
+                "-holonomy-min-plaquettes",
+                type=int,
+                default=2,
+                metavar="N",
+                help="Minimum number of internal plaquettes required to attempt holonomy correction (default: 2).",
             )
             degenrot_parser.add_argument(
                 "-no-cache",
@@ -752,10 +759,11 @@ def degenrotation_cli(args: argparse.Namespace):
     args_dict["refinement_iter_cap"]    = args.ref_iter_cap
     args_dict["refinement_anderson_m"]  = args.anderson_m
     args_dict["refinement_tol"]         = args.ref_tol
-    args_dict["holonomy_correction"]    = args.holonomy_correction
-    args_dict["holonomy_max_iter"]      = args.holonomy_max_iter
-    args_dict["holonomy_tol"]           = args.holonomy_tol
-    args_dict["use_wfc_cache"]          = args.use_wfc_cache
+    args_dict["holonomy_correction"]        = args.holonomy_correction
+    args_dict["holonomy_max_iter"]          = args.holonomy_max_iter
+    args_dict["holonomy_tol"]               = args.holonomy_tol
+    args_dict["holonomy_min_plaquettes"]    = args.holonomy_min_plaquettes
+    args_dict["use_wfc_cache"]              = args.use_wfc_cache
     args_dict["n_workers"]              = args.n_workers
     run_degenrotation(**args_dict)
 
