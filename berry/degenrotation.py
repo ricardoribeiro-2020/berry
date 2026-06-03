@@ -178,6 +178,8 @@ def _correct_zone_holonomy(
     wfc_cache: dict | None = None,
     min_plaquettes: int = 2,
     write_to_disk: bool = True,
+    stall_rtol: float = 1e-3,
+    stall_patience: int = 3,
 ) -> int:
     """Reduce plaquette holonomy defects before iterative gauge refinement.
 
@@ -243,8 +245,8 @@ def _correct_zone_holonomy(
         dph = d_phase[:, cur_k] * d_phase[:, ref_k].conj()
         return _procrustes_rotation(_overlap_matrix(ref_wfcs, cur_wfcs, dph, nr, noncolin))
 
-    prev_defect = float("inf")
-    stall_count = 0
+    best_defect = float("inf")
+    no_improve  = 0
     max_defect  = float("inf")
     for sweep in range(1, max_iter + 1):
         max_defect = 0.0
@@ -291,21 +293,28 @@ def _correct_zone_holonomy(
             logger.info(f"\t    [Holonomy] Converged in {sweep} sweep(s).")
             return sweep
 
-        # Stagnation: residual not changing → irreducible topological holonomy.
-        if prev_defect < float("inf"):
-            rel_change = abs(prev_defect - max_defect) / max(prev_defect, 1e-30)
-            if rel_change < 1e-8:
-                stall_count += 1
-                if stall_count >= 2:
-                    logger.warning(
-                        f"\t    [Holonomy] Topological holonomy defect: residual stuck at "
-                        f"{max_defect:.4e} (rel. change < 1e-8). "
-                        f"Berry-phase winding is irreducible — stopping early."
-                    )
-                    return sweep
-            else:
-                stall_count = 0
-        prev_defect = max_defect
+        # Stagnation: a sweep that fails to reduce the defect by at least
+        # `stall_rtol` relative to the best seen so far is making no real
+        # progress.  The H^{-1/4} redistribution numerically jitters the
+        # residual at the ~1e-5 level, so the old test (near-bit-identical
+        # consecutive sweeps, rel_change < 1e-8) never fired on irreducible
+        # windings — the residual was flat to 4 digits yet jittered above
+        # 1e-8, so the zone ground through all max_iter sweeps.  Track
+        # improvement against the best instead.
+        if max_defect < best_defect * (1.0 - stall_rtol):
+            best_defect = max_defect
+            no_improve  = 0
+        else:
+            best_defect = min(best_defect, max_defect)
+            no_improve += 1
+            if no_improve >= stall_patience:
+                logger.warning(
+                    f"\t    [Holonomy] Topological holonomy defect: residual "
+                    f"stuck near {max_defect:.4e} (no >{stall_rtol:.0e} relative "
+                    f"improvement for {stall_patience} sweep(s)). Berry-phase "
+                    f"winding is irreducible — stopping early."
+                )
+                return sweep
 
     logger.warning(
         f"\t    [Holonomy] Did not converge in {max_iter} sweep(s) "
@@ -585,19 +594,24 @@ def _refine_zone_gauge(
             return it, mean_quality
 
         # Stagnation: if improvement over the last stall_window iters is less
-        # than stall_factor× AND we are still far from tol, the solver has
-        # hit a topological floor and further iterations are wasteful.
+        # than stall_factor×, the solver has hit a topological floor and
+        # further iterations are wasteful.  We are guaranteed max_rot_change ≥
+        # tol here (the < tol case returned above).  The old guard additionally
+        # required max_rot_change > tol*10, which created a dead-band [tol,
+        # 10·tol]: a zone stuck there converged by neither test and ground to
+        # the iteration cap (observed in MoS2 — early-exit fired 0× while zones
+        # hit 500 iters).  Dropping that gate closes the dead-band; a genuinely
+        # converging zone still improves by >stall_factor× and won't trip.
         stall_history.append(max_rot_change)
         if len(stall_history) > stall_window:
             stall_history.pop(0)
         if (len(stall_history) == stall_window
-                and max_rot_change > tol * 10
                 and stall_history[0] / max_rot_change < stall_factor):
             logger.warning(
                 f"\t    Early exit: stagnation after {it} iter(s) — only "
                 f"{stall_history[0]/max_rot_change:.2f}× improvement over last "
                 f"{stall_window} iters (need {stall_factor:.1f}×). "
-                f"max_ΔR={max_rot_change:.2e} >> tol={tol:.1e}."
+                f"max_ΔR={max_rot_change:.2e} (tol={tol:.1e})."
             )
             return it, mean_quality
 
@@ -702,9 +716,28 @@ def _run_bfs_rotation(
     """
     N = len(bands)
 
-    # Phase 3 — best non-degenerate external reference
-    best_k, best_nb, best_gap = None, None, -1.0
+    # Phase 3 — best non-degenerate external reference.
+    #
+    # Selection is by SUBSPACE OVERLAP quality, not energy gap.  The old
+    # "largest energy gap" heuristic systematically picked the *worst* anchor:
+    # a large gap at the neighbour means the band character has changed (far
+    # side of an avoided crossing), so the degenerate subspace at nk maps onto
+    # the wrong pair there.  For single-k zones (which get neither holonomy nor
+    # refinement) this froze the gauge at min_sigma ~0.2-0.4 — the dominant
+    # quality cap in entangled bands (MoS2 bands 8-15).  The singular values of
+    # the overlap matrix are gauge-invariant, so they rank the genuinely best-
+    # aligned reference.  Candidates are still restricted to gap > ethr so the
+    # reference bands are themselves non-degenerate.  We stop as soon as a
+    # near-perfect anchor (min_sigma > 0.99) is found to bound the cost on large
+    # zones (where refinement dominates and the anchor barely matters anyway).
+    best_k, best_nb = None, None
+    best_score      = (-1.0, -1.0)   # (min singular value, mean singular value)
+    best_gap        = 0.0
+    wfc_nk_cache: dict = {}
+    found_excellent = False
     for nk in zone:
+        if found_excellent:
+            break
         for j in range(n_dir):
             nb = neighbors[nk, j]
             if nb == -1 or nb in zone:
@@ -715,14 +748,29 @@ def _run_bfs_rotation(
             )
             if gap <= ethr:
                 continue
-            if gap > best_gap:
-                best_gap, best_k, best_nb = gap, nk, nb
+            if nk not in wfc_nk_cache:
+                wfc_nk_cache[nk] = [_load_wfc(nk, b, noncolin, wfcdir) for b in bands]
+            cur_wfcs = wfc_nk_cache[nk]
+            ref_wfcs = [_load_wfc(nb, b, noncolin, wfcdir) for b in bands]
+            dphase   = d_phase[:, nk] * d_phase[:, nb].conj()
+            M        = _overlap_matrix(ref_wfcs, cur_wfcs, dphase, nr, noncolin)
+            sigma    = svd(M, compute_uv=False)
+            score    = (float(sigma.min()), float(sigma.mean()))
+            if score > best_score:
+                best_score, best_k, best_nb, best_gap = score, nk, nb, gap
+            if best_score[0] > 0.99:
+                found_excellent = True
+                break
 
     if best_k is not None:
         ref_type = "boundary"
         logger.info(f"\t  [{zi_label}] Boundary reference k-point : {best_k}")
         logger.info(f"\t  [{zi_label}] External reference k-point : {best_nb}")
-        logger.info(f"\t  [{zi_label}] Min energy gap at external reference : {best_gap:.6f}")
+        logger.info(
+            f"\t  [{zi_label}] Reference overlap quality : "
+            f"min_sigma={best_score[0]:.6f}, mean_sigma={best_score[1]:.6f} "
+            f"(energy gap {best_gap:.6f})"
+        )
     else:
         ref_type = "isolated"
         best_k   = sorted(zone)[0]
