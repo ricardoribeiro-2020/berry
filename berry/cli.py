@@ -111,9 +111,12 @@ berry [package options] script parameter [script options]
                                                     help="Calculates the dot product of Bloch factors of nearby wavefunctions.",
                                                     description="Calculates the dot product of Bloch factors of nearby wavefunctions.")
         if CLUSTER:
-            cluster_parser = main_sub_parser.add_parser("cluster", 
-                                                        help="Classifies the eigenstates in bands.", 
+            cluster_parser = main_sub_parser.add_parser("cluster",
+                                                        help="Classifies the eigenstates in bands.",
                                                         description="Classifies the eigenstates in bands.")
+            cluster0_parser = main_sub_parser.add_parser("cluster0",
+                                                         help="Classifies the eigenstates in bands (alternative algorithm).",
+                                                         description="Classifies the eigenstates in bands (alternative algorithm).")
         if BASIS:
             basis_parser = main_sub_parser.add_parser("basis", 
                                                       help="Finds problematic cases and make a local basis rotation of the wavefunctions.", 
@@ -266,8 +269,13 @@ berry [package options] script parameter [script options]
                                     metavar=f"[1-{os.cpu_count()}]", 
                                     choices=range(1, os.cpu_count()+1), 
                                     help="Number of processes to use (default: 1)")
-            dot_parser.add_argument("-c", 
-                                    action="store_true", 
+            dot_parser.add_argument("-bs",
+                                    type=int,
+                                    default=0,
+                                    metavar="n_bands",
+                                    help="Band-block size for the tiled dot product (0 = auto-size from free RAM). Lower it to cap per-worker memory.")
+            dot_parser.add_argument("-c",
+                                    action="store_true",
                                     help="Compress the output files.")
             dot_parser.add_argument("-flush", 
                                     action="store_true", 
@@ -325,9 +333,48 @@ berry [package options] script parameter [script options]
                                         default="cluster", 
                                         type=str, metavar="file_path", 
                                         help="Name of output log file. Extension will be .log regardless of user input.")
-            cluster_parser.add_argument("-v", 
-                                        action="store_true", 
+            cluster_parser.add_argument("-v",
+                                        action="store_true",
                                         help="Increases output verbosity.")
+            cluster0_parser.add_argument("Mb",
+                                         type=int, nargs='?',
+                                         default=-1,
+                                         metavar=f"Mb (0-{m.nbnd-1})",
+                                         choices=range(m.nbnd),
+                                         help="Maximum band to consider.")
+            cluster0_parser.add_argument("-mb",
+                                         type=int,
+                                         default=0,
+                                         metavar=f"[0-{m.nbnd-1}]",
+                                         choices=range(m.nbnd),
+                                         help="Minimum band to consider (default: 0).")
+            cluster0_parser.add_argument("-np",
+                                         type=int,
+                                         default=1,
+                                         metavar=f"[1-{os.cpu_count()}]",
+                                         choices=range(1, os.cpu_count()+1),
+                                         help="Number of processes to use (default: 1).")
+            cluster0_parser.add_argument("-t",
+                                         type=restricted_float,
+                                         default=0.80, metavar="[0.0-1.0]",
+                                         help="Tolerance used for graph construction (default: 0.80).")
+            cluster0_parser.add_argument("-step",
+                                         type=float,
+                                         default=0.1,
+                                         metavar="[0.0-1.0]",
+                                         help="Step size for alpha adjustment (default: 0.1).")
+            cluster0_parser.add_argument("-alpha",
+                                         type=float,
+                                         default=0.5,
+                                         metavar="[0.0-1.0]",
+                                         help="Initial alpha value (default: 0.5).")
+            cluster0_parser.add_argument("-flush",
+                                         action="store_true",
+                                         help="Flushes output into stdout.")
+            cluster0_parser.add_argument("-o",
+                                         default="cluster0",
+                                         type=str, metavar="file_path",
+                                         help="Name of output log file. Extension will be .log regardless of user input.")
         if BASIS:
             if m.initial_band != "dummy": # for backward compatibility
                 basis_parser.add_argument("Mb" , 
@@ -647,6 +694,7 @@ berry [package options] script parameter [script options]
         "degenrot": degenrotation_cli,
         "dot": dotproduct_cli,
         "cluster": clustering_cli,
+        "cluster0": clustering0_cli,
         "basis": basisrotation_cli,
         "r2k": r2k_cli,
         "geometry": berry_props_cli,
@@ -784,6 +832,7 @@ def dotproduct_cli(args: argparse.Namespace):
     args_dict["npr"] = args.np
     args_dict["compress"] = args.c
     args_dict["flush"] = args.flush
+    args_dict["band_block"] = args.bs
 
     run_dot(**args_dict)
 
@@ -805,6 +854,22 @@ def clustering_cli(args: argparse.Namespace):
     args_dict["alpha"] = args.alpha
     args_dict["flush"] = args.flush
     args_dict["verbose"] = args.v
+
+    run_clustering(**args_dict)
+
+# clustering (alternative algorithm)
+def clustering0_cli(args: argparse.Namespace):
+    from berry.clustering_bands0 import run_clustering
+    args_dict = {}
+    args_dict["logger_level"] = logging.INFO
+    args_dict["logger_name"] = args.o
+    args_dict["npr"] = args.np
+    args_dict["max_band"] = args.Mb
+    args_dict["min_band"] = args.mb
+    args_dict["tol"] = args.t
+    args_dict["step"] = args.step
+    args_dict["alpha"] = args.alpha
+    args_dict["flush"] = args.flush
 
     run_clustering(**args_dict)
 

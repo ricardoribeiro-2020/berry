@@ -46,3 +46,4 @@ wcwidth==0.2.5
 tqdm==4.67.1
 zipp>=3.6.0
 psutil>=7.0.0
+threadpoolctl>=3.0.0
