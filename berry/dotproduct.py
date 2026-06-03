@@ -81,9 +81,6 @@ def dot(nk: int, j: int, neighbor: int, jNeighbor: Tuple[np.ndarray]) -> None:
                 dpc[nk, j, b0, b1] = np.einsum("k,k,k->", dphase, wfc0, wfc1)
                 dpc[neighbor, jNeighbor, b1, b0] = dpc[nk, j, b0, b1].conj()
                 logger.debug(f"\t{nk}\t{band0}\t{j}\t{band1}\t",str(dpc[nk, j, b0, b1]))
-                dpc[nk, j, b0, b1] = np.einsum("k,k,k->", dphase, wfc0, wfc1)
-                dpc[neighbor, jNeighbor, b1, b0] = dpc[nk, j, b0, b1].conj()
-                logger.debug(f"\t{nk}\t{band0}\t{j}\t{band1}\t",str(dpc[nk, j, b0, b1]))
 
     logger.debug(f"\tFinished of nk: {nk:>4}\tneighbor: {neighbor:>4}\tin: {(time() - start):>4.2f} seconds")
 
