@@ -16,12 +16,11 @@ TODO:
 
 
 from __future__ import annotations
-from multiprocessing import Process, Manager
+from multiprocessing import get_context
 import random
 import string
 import textwrap
 from typing import Tuple, Union, Callable
-from functools import partial
 
 import logging
 
@@ -55,6 +54,26 @@ POTENTIAL_MISTAKE = 3
 DEGENERATE = 2
 MISTAKE = 1
 NOT_SOLVED = 0
+
+###########################################################################
+# Parallelization helpers (Pool workers)
+###########################################################################
+# The worker function and its extra arguments are published here just before
+# the Pool is forked, so the workers inherit them (and the large read-only
+# arrays captured by the worker closures) via copy-on-write, instead of
+# pickling those arrays on every task.
+_PARALLEL_FN: Union[Callable, None] = None
+_PARALLEL_ARGS: tuple = ()
+
+def _parallel_dispatch(chunk):
+    '''
+    Module-level entry point executed by the Pool workers.
+    It forwards each chunk to the currently published worker function.
+    Being module-level, it (unlike a closure) is picklable so it can be
+    dispatched to the Pool, while the actual worker function is read from the
+    fork-inherited module global.
+    '''
+    return _PARALLEL_FN(chunk, *_PARALLEL_ARGS)
 
 
 EVALUATE_RESULT_HELP = '''
@@ -876,7 +895,18 @@ class MATERIAL:
 
     def parallelize(self, process_name: str, f: Callable, iterator: Union[list, np.ndarray], per_actual:int=0, N_total:int=None,*args) -> np.ndarray:
         '''
-        Create processes for some function f over an iterator.
+        Apply the function f to an iterator in parallel using a process Pool.
+
+        The iterator is split into one chunk per worker. Each chunk is processed
+        by f in a separate process and the per-chunk results are returned
+        directly by the Pool (no shared-memory Manager) and concatenated in
+        input order.
+
+        A fresh fork-context Pool is created on each call so that the workers
+        inherit the current process state (self and its arrays) copy-on-write.
+        This is required because the worker closures capture mutable state that
+        changes between calls (e.g. signal_final, the samples/clusters lists),
+        so a Pool reused across calls would operate on a stale snapshot.
 
         Parameters
             process_name : string
@@ -886,74 +916,77 @@ class MATERIAL:
                 This function gets another iterator as a parameter and will compute the result for each element in the iterator.
             iterator : array_like
                 The function f is applied to elements in the iterator array.
-            verbose : bool
-                If this flag is true the progress bar is shown.
-        
+            per_actual : int
+                Number of elements already processed (for a cumulative progress bar).
+            N_total : int
+                Total number of elements across several calls (for a cumulative progress bar).
+
         Return
-            result : array_like
-                It contains the result for each value inside the iterator.
-                The information is not sorted.
+            result : list
+                It contains the result for each value inside the iterator,
+                concatenated in input order.
         '''
-        process = []
+        global _PARALLEL_FN, _PARALLEL_ARGS
+
         iterator = list(iterator)
         N = len(iterator) if N_total is None else N_total
 
         ###########################################################################
         # Debug information and Progress bar
         ###########################################################################
-        
         self.logger.debug(f'Starting Parallelization for {process_name} with {len(iterator)} values. Number of processes: {self.n_process}. Starting at {per_actual}/{N_total}')
-        
         self.logger.percent_complete(per_actual, N, title=process_name)
 
+        def finish_progress():
+            if N_total is None:
+                self.logger.percent_complete(N, N, title=process_name)
+                if self.logger.level == logging.DEBUG:
+                    print()
+            else:
+                self.logger.percent_complete(per_actual, N, title=process_name)
+
+        result = []
+        if len(iterator) == 0:
+            finish_progress()
+            return result
+
         ###########################################################################
-        # Processes management
+        # Split the work into one chunk per worker
         ###########################################################################
-        def parallel_f(result: np.ndarray, per: list[int], iterator: Union[list, np.ndarray], *args) -> None:
-            '''
-            Auxiliar function to help the parallelization
+        n_proc = max(1, min(self.n_process, len(iterator)))
+        chunk_size = (len(iterator) + n_proc - 1) // n_proc
+        chunks = [iterator[i:i + chunk_size] for i in range(0, len(iterator), chunk_size)]
 
-            Parameters:
-                result : array_like
-                    It is a shared memory list where each result is stored.
-                per : list[int]
-                    It is a shared memory list that contais the number of elements solved.
-                iterator : array_like
-                    The function f is applied to elements in the iterator array.
-            '''
-            value = f(iterator, *args)              # The function f is applied to the iterator
-            if value is not None:
-                # The function may not return anything
-                result += value        # Store the output into result array
-            per[0] += len(iterator)                 # The counter is actualized
-            
-            # Show on screen the progress bar
-            self.logger.percent_complete(per[0], N, title=process_name)
-        
-        result = Manager().list([])             # Shared Memory list to store the result
-        per = Manager().list([per_actual])               # Shared Memory to countability the progress
-        f_ = partial(parallel_f,  result, per)  # Modified function used to create processes
+        # Publish the worker function so the forked Pool workers reach it (and
+        # the large read-only arrays it closes over) via copy-on-write, without
+        # pickling them on every task.
+        _PARALLEL_FN = f
+        _PARALLEL_ARGS = args
 
-        n = len(iterator)//self.n_process                                                   # Number or processes
-        for i_start in range(self.n_process):
-            # Division of the iterator array into n smaller arrays
-            j_end = n*(i_start+1) if i_start < self.n_process-1\
-                else n*(i_start+1) + len(iterator) % self.n_process
-            i_start = i_start*n
-            p = Process(target=f_, args=(iterator[i_start: j_end], *args))      # Process creation
-            p.start()                                                           # Initialize the process
-            process.append(p)
+        done = per_actual
+        try:
+            if n_proc == 1:
+                # Run serially, skipping the fork/IPC overhead entirely.
+                for chunk in chunks:
+                    value = _parallel_dispatch(chunk)
+                    if value:
+                        result += value
+                    done += len(chunk)
+                    self.logger.percent_complete(done, N, title=process_name)
+            else:
+                # A fork context lets the workers inherit the current process
+                # state (self and its arrays) without re-pickling it.
+                with get_context('fork').Pool(n_proc) as pool:
+                    for chunk, value in zip(chunks, pool.imap(_parallel_dispatch, chunks)):
+                        if value:
+                            result += value                                      # Store the output into result array
+                        done += len(chunk)                                       # The counter is actualized
+                        self.logger.percent_complete(done, N, title=process_name)
+        finally:
+            _PARALLEL_FN = None
+            _PARALLEL_ARGS = ()
 
-        while len(process) > 0:
-            p = process.pop(0)
-            p.join()
-
-        if N_total is None:
-            self.logger.percent_complete(N, N, title=process_name)
-            if self.logger.level == logging.DEBUG:
-                print()
-        else:
-            self.logger.percent_complete(per_actual, N, title=process_name)
+        finish_progress()
         return result
 
     def get_components(self, alpha: float=0.5, compute_communities=False) -> None:
@@ -1527,11 +1560,26 @@ class MATERIAL:
         ###########################################################################
         # Correct the k-point's signal
         ###########################################################################
-        for k, bn in zip(ks, bnds):
+        def evaluate_points_chunk(iterator: Union[list, np.ndarray]) -> list:
+            '''
+            Evaluate the energy-continuity signal for a chunk of (k, bn) pairs.
+            It only reads shared (read-only) arrays, so it is safe to run in parallel.
+            '''
+            chunk_result = []
+            for k, bn in iterator:
+                signal, scores = evaluate_point(self.dimensions, k, bn, self.kpoints_index,
+                                                self.matrix, self.signal_final,
+                                                self.bands_final, self.eigenvalues)     # Obtain the new signal
+                chunk_result.append([k, bn, signal, scores])
+            return chunk_result
+
+        # The evaluation of each (k, bn) point is independent, so it is parallelized
+        kbnds = list(zip(ks, bnds))
+        evaluated_points = self.parallelize('Correcting signal', evaluate_points_chunk, kbnds) \
+            if len(kbnds) > 0 else []
+
+        for k, bn, signal, scores in evaluated_points:
             # Iterate over all k-point signaled as potential points where the energy continuity may fail
-            signal, scores = evaluate_point(self.dimensions, k, bn, self.kpoints_index,
-                                            self.matrix, self.signal_final, 
-                                            self.bands_final, self.eigenvalues)         # Obtain the new signal
             
             if last and self.final_score[bn] > 0.96 and signal == MISTAKE:
                 signal = OTHER

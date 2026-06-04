@@ -993,7 +993,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                     f"[Band {bn_i + min_band}] Progress: {0:.2%} | Degenerates are being included: {not check_degenerates_points}"
                 )
         _swap_stall_count = 0
-        _prev_cluster_size = 0
+        _best_cluster_size = 0
         while cluster_bn_i.number_of_nodes < nks:
 
             progress = cluster_bn_i.number_of_nodes / nks
@@ -1125,11 +1125,18 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                         for info in info_print:
                             logger.debug(f"  - {info}")
                     if total_samples_can_merge == 0:
-                        if cluster_bn_i.number_of_nodes == _prev_cluster_size:
-                            _swap_stall_count += 1
-                        else:
+                        # Count iterations without a new maximum cluster size. The
+                        # previous equality check (== _prev_cluster_size) only caught a
+                        # frozen cluster; the swap heuristic can instead settle into a
+                        # period-2 oscillation (e.g. 2582 <-> 1639), where the size flips
+                        # every iteration, the counter resets every iteration, and the
+                        # break is never reached. Tracking the best-ever size breaks any
+                        # oscillation while still allowing a genuinely growing swap.
+                        if cluster_bn_i.number_of_nodes > _best_cluster_size:
+                            _best_cluster_size = cluster_bn_i.number_of_nodes
                             _swap_stall_count = 0
-                            _prev_cluster_size = cluster_bn_i.number_of_nodes
+                        else:
+                            _swap_stall_count += 1
 
                         if _swap_stall_count >= nks:
                             # Cluster made no progress for nks consecutive swap iterations.
