@@ -17,6 +17,8 @@ TODO:
 
 from __future__ import annotations
 from multiprocessing import get_context
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 import random
 import string
 import textwrap
@@ -974,14 +976,22 @@ class MATERIAL:
                     done += len(chunk)
                     self.logger.percent_complete(done, N, title=process_name)
             else:
-                # A fork context lets the workers inherit the current process
-                # state (self and its arrays) without re-pickling it.
-                with get_context('fork').Pool(n_proc) as pool:
-                    for chunk, value in zip(chunks, pool.imap(_parallel_dispatch, chunks)):
-                        if value:
-                            result += value                                      # Store the output into result array
-                        done += len(chunk)                                       # The counter is actualized
-                        self.logger.percent_complete(done, N, title=process_name)
+                # A fork context lets the workers inherit the current process state
+                # (self and its arrays) copy-on-write without re-pickling it.  We use
+                # ProcessPoolExecutor instead of Pool.imap (H1): if a worker dies
+                # mid-chunk, executor.map raises BrokenProcessPool rather than blocking
+                # the parent forever.  The workers are forked after _PARALLEL_FN is
+                # published above, so they still inherit it via copy-on-write.
+                with ProcessPoolExecutor(max_workers=n_proc, mp_context=get_context('fork')) as executor:
+                    try:
+                        for chunk, value in zip(chunks, executor.map(_parallel_dispatch, chunks)):
+                            if value:
+                                result += value                                  # Store the output into result array
+                            done += len(chunk)                                   # The counter is actualized
+                            self.logger.percent_complete(done, N, title=process_name)
+                    except BrokenProcessPool:
+                        self.logger.error('A clustering worker process died without returning a result.')
+                        raise
         finally:
             _PARALLEL_FN = None
             _PARALLEL_ARGS = ()
@@ -1888,6 +1898,11 @@ class MATERIAL:
         # Initial preparation of data structures
         # The previous and best result are stored
         ###########################################################################
+        # The main loop relies on `alpha -= step` to terminate (alpha sweeps down to
+        # min_alpha).  A non-positive step would never lower alpha, so the loop could
+        # only stop if the result happened to stabilise — otherwise it spins forever (H2).
+        if step <= 0:
+            raise ValueError(f"solve() requires step > 0 to converge (the alpha sweep would never advance); got step={step}.")
         self.step = step
         self.alpha = alpha # The initial alpha is 0.5. 0.5*<i|j> + 0.5*f(E)
         self.init_alpha = alpha
