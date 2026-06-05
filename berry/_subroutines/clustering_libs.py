@@ -607,9 +607,7 @@ class MATERIAL:
 
         self.vectors = np.stack(stack_aux, axis=1)
         self.logger.percent_complete(100, 100, title=process_name)
-        if self.logger.level == logging.DEBUG:
-            print()
-        
+
         self.GRAPH.add_nodes_from(np.arange(n_vectors))     # Add the nodes, each node represent a k point
         
         ###########################################################################
@@ -942,8 +940,6 @@ class MATERIAL:
         def finish_progress():
             if N_total is None:
                 self.logger.percent_complete(N, N, title=process_name)
-                if self.logger.level == logging.DEBUG:
-                    print()
             else:
                 self.logger.percent_complete(per_actual, N, title=process_name)
 

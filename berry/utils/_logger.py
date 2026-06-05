@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import sys
 import time
 import logging
 
@@ -37,6 +36,7 @@ class log:
         self.logger = logging.getLogger(program)
 
         self.STARTTIME = time.time()
+        self._progress = {}   # per-title state for percent_complete ETA logging
 
         ch = logging.StreamHandler()
         ch.setLevel(logging.WARNING)
@@ -76,44 +76,51 @@ class log:
         F = footer(tempo(self.STARTTIME, ENDTIME))
         self.info(F)
 
-    def percent_complete(self, step, total_steps, bar_width=60, title="", print_perc=True):
+    def percent_complete(self, step, total_steps, bar_width=60, title="", print_perc=True, min_interval=10.0):
         '''
-        author: WinEunuuchs2Unix
-        url: https://stackoverflow.com/questions/3002085/how-to-print-out-status-bar-and-percentage
+        Log a progress line with elapsed time and an estimated time remaining (ETA),
+        instead of drawing a terminal progress bar.
+
+        Per `title`, intermediate updates are rate-limited to at most one every
+        `min_interval` seconds; the first update for a title and the final update
+        (step >= total_steps) always log.  The ETA is a linear extrapolation from the
+        progress made since this title started.
+
+        `bar_width` and `print_perc` are accepted for call-site compatibility and are
+        unused.
         '''
-        if self.level != logging.DEBUG:
+        if total_steps is None or total_steps <= 0:
             return
-        # UTF-8 left blocks: 1, 1/8, 1/4, 3/8, 1/2, 5/8, 3/4, 7/8
-        utf_8s = ["█", "▏", "▎", "▍", "▌", "▋", "▊", "█"]
-        perc = 100 * float(step) / float(total_steps)
-        max_ticks = bar_width * 8
-        num_ticks = int(round(perc / 100 * max_ticks))
-        full_ticks = num_ticks / 8      # Number of full blocks
-        part_ticks = num_ticks % 8      # Size of partial block (array index)
-        
-        disp = bar = ""                 # Blank out variables
-        bar += utf_8s[0] * int(full_ticks)  # Add full blocks into Progress Bar
-        
-        # If part_ticks is zero, then no partial block, else append part char
-        if part_ticks > 0:
-            bar += utf_8s[part_ticks]
-        
-        # Pad Progress Bar with fill character
-        bar += "▒" * int((max_ticks/8 - float(num_ticks)/8.0))
-        
-        if len(title) > 0:
-            disp = title + ": "         # Optional title to progress display
-        
-        # Print progress bar in green: https://stackoverflow.com/a/21786287/6929343
-        disp += "\x1b[0;32m"            # Color Green
-        disp += bar                     # Progress bar to progress display
-        disp += "\x1b[0m"               # Color Reset
-        if print_perc:
-            # If requested, append percentage complete to progress display
-            if perc > 100.0:
-                perc = 100.0            # Fix "100.04 %" rounding error
-            disp += " {:6.2f}".format(perc) + " %"
-        
-        # Output to terminal repetitively over the same line using '\r'.
-        sys.stdout.write("\r" + disp)
-        sys.stdout.flush()
+
+        def _fmt(seconds):
+            seconds = int(max(0, seconds))
+            h, rem = divmod(seconds, 3600)
+            m, s = divmod(rem, 60)
+            return f"{h:d}:{m:02d}:{s:02d}"
+
+        now = time.time()
+        key = title or '_'
+        state = self._progress.get(key)
+        # (Re)start tracking on a new title or when the counter restarts.
+        if state is None or step < state['last_step']:
+            state = {'start_time': now, 'start_step': step, 'last_emit': 0.0, 'last_step': step}
+            self._progress[key] = state
+        state['last_step'] = step
+
+        perc = min(100.0, 100.0 * float(step) / float(total_steps))
+        is_first = step <= state['start_step']
+        is_last = step >= total_steps
+        if not (is_first or is_last) and (now - state['last_emit'] < min_interval):
+            return
+        state['last_emit'] = now
+
+        elapsed = now - state['start_time']
+        done_since = step - state['start_step']
+        msg = f"{title + ': ' if title else ''}{perc:6.2f}% ({step}/{total_steps}) | elapsed {_fmt(elapsed)}"
+        if is_last:
+            msg += " | done"
+            self._progress.pop(key, None)
+        elif done_since > 0:
+            remaining = elapsed * (total_steps - step) / done_since
+            msg += f" | ETA {_fmt(remaining)}"
+        self.info(msg)
