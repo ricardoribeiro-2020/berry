@@ -32,6 +32,7 @@ from berry import log
 
 
 import psutil, os
+import shutil
 import sys
 
 # Try importing pympler; if unavailable, we do shallow sizing
@@ -320,7 +321,7 @@ class Material:
 
         self.vectors = np.stack(stack_aux, axis=1)
 
-    def solver(self, initial_tol=0.99, max_iter=5, step_alpha=0.1, alpha=1, datadir='data/') -> None:
+    def solver(self, initial_tol=0.99, max_iter=5, step_alpha=0.1, alpha=1, datadir='data/', solve_timeout=None) -> None:
         """
         Perform the full band structure analysis, identifying energy-connected components
         and degenerate regions across a k-point mesh.
@@ -415,7 +416,14 @@ class Material:
                 continue
             bn_j = max_band_i
             max_band_j = max_band_energies[bn_j]
+            # Follow the overlap chain to its top. Guard against a non-monotonic mapping
+            # (e.g. a→b, b→a) that would otherwise spin forever (A2).
+            _seen_chain = set()
             while bn_j != max_band_j:
+                if bn_j in _seen_chain:
+                    self.logger.warning(f"Cycle detected resolving max-band chain at band {bn_j}; using it as the group top.")
+                    break
+                _seen_chain.add(bn_j)
                 bn_j = max_band_j
                 max_band_j = max_band_energies[bn_j]
 
@@ -560,8 +568,14 @@ class Material:
         best_grad_e = [None for _ in self.bands]
         best_signal_final = np.zeros((self.nks, self.number_of_bands), dtype=int)
 
+        # Per-run temporary directory.  Several `berry cluster` runs may share the
+        # same working directory; a fixed `temp/` path makes them overwrite and delete
+        # each other's bands_final_temp_*.npy files.  Namespacing by PID isolates runs.
+        temp_dir = os.path.join('temp', f'run_{os.getpid()}')
+        os.makedirs(temp_dir, exist_ok=True)
+
         for iter_ in range(max_iter):
-            clusters, iterable_bands = solver_algorithm(components, degenerate_components, degenerate_points, self.connections, self.neighbors, self.mesh_kpoints_index, self.nks, max_band_energies, mask_degenerates, self.bands, n_process=self.n_process, verbose=self.verbose, logger=self.logger, tolerance=initial_tol, energies=self.eigenvalues, alpha=alpha, min_band=self.min_band)
+            clusters, iterable_bands = solver_algorithm(components, degenerate_components, degenerate_points, self.connections, self.neighbors, self.mesh_kpoints_index, self.nks, max_band_energies, mask_degenerates, self.bands, n_process=self.n_process, verbose=self.verbose, logger=self.logger, tolerance=initial_tol, energies=self.eigenvalues, alpha=alpha, min_band=self.min_band, temp_dir=temp_dir, solve_timeout=solve_timeout)
 
             alpha = max(0, alpha - step_alpha)
             
@@ -573,13 +587,13 @@ class Material:
             # Merge bands_final_temp_{bn_i}_{max_band_energies[bn_i]}.npy files into bandsfinal.npy
             bn_i_temp = 0
             while bn_i_temp < self.number_of_bands:
-                bands_temp_file = np.load(f"temp/bands_final_temp_{bn_i_temp + self.min_band}_{max_band_energies[bn_i_temp] + self.min_band}.npy")
+                bands_temp_file = np.load(os.path.join(temp_dir, f"bands_final_temp_{bn_i_temp + self.min_band}_{max_band_energies[bn_i_temp] + self.min_band}.npy"))
                 bands_temp = np.arange(bn_i_temp, max_band_energies[bn_i_temp] + 1)
 
                 self.bands_final[:, bands_temp] = bands_temp_file[:, bands_temp]
                 bn_i_temp = max_band_energies[bn_i_temp] + 1
 
-                os.remove(f"temp/bands_final_temp_{bands_temp[0] + self.min_band}_{bands_temp[-1] + self.min_band}.npy")
+                os.remove(os.path.join(temp_dir, f"bands_final_temp_{bands_temp[0] + self.min_band}_{bands_temp[-1] + self.min_band}.npy"))
                 
             with open(os.path.join(datadir, 'bandsfinal.npy'), 'wb') as f:
                 np.save(f, self.bands_final)
@@ -694,7 +708,8 @@ class Material:
                 components.append(new_components)
                 del band
 
-        
+        # Best-effort cleanup of this run's temporary directory.
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
     def obtain_output(self) -> None:
@@ -1078,7 +1093,13 @@ class Material:
                 continue
             bn_j = max_band_i
             max_band_j = max_bands_used[bn_j]
+            # Guard against a non-monotonic mapping that would spin forever (A2).
+            _seen_chain = set()
             while bn_j != max_band_j:
+                if bn_j in _seen_chain:
+                    self.logger.warning(f"Cycle detected resolving max-band chain at band {bn_j}; using it as the group top.")
+                    break
+                _seen_chain.add(bn_j)
                 bn_j = max_band_j
                 max_band_j = max_bands_used[bn_j]
 

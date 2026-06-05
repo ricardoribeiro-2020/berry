@@ -32,6 +32,8 @@ import os
 
 from functools import partial
 from multiprocessing import Pool
+from concurrent.futures import ProcessPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
+from concurrent.futures.process import BrokenProcessPool
 
 from scipy.optimize import curve_fit
 
@@ -133,11 +135,15 @@ def compute_edges(vectors, neighbors, similarity, total_bands=None, tol_to_be_an
         with Pool(n_process) as pool:
                 edges += tqdm(pool.imap(compute_edges_wrapper, vectors, chunksize= 1000), total=num_vectors, desc='Computing edges')
     else:
-        with Pool(n_process) as pool:
-            edges += pool.map(compute_edges_wrapper, vectors)
+        # ProcessPoolExecutor instead of Pool.map (A1): if a worker dies mid-task,
+        # iterating the results raises BrokenProcessPool rather than blocking the parent
+        # forever — the same silent-deadlock hazard fixed in solver_algorithm.
+        with ProcessPoolExecutor(max_workers=n_process) as executor:
+            for result in executor.map(compute_edges_wrapper, vectors):
+                edges.append(result)
 
     edges = [item for sublist in edges for item in sublist]
-    
+
     return edges
 
 
@@ -255,9 +261,18 @@ class Component:
 
     def compute_boundary(self):
         """
-        Populate self._boundary_mask and self._interior_mask from self.active_coords.
-        We never allocate a full D-dim grid; we only inspect each node's ±1 neighbors to
-        see whether those ±1 neighbors are also in this component.
+        Populate self._boundary_mask, self._interior_mask, self.neighbor_coords and
+        self.sigma_E from self.active_coords.
+
+        A node is on the boundary if at least one of its in-grid ±1 neighbours is not in
+        the component (open BZ boundary: out-of-grid directions are not neighbours).  We
+        never allocate a full D-dim grid; membership and neighbour-index lookups go
+        through the O(1) coord→index map `self._coord_to_index` built here — this is what
+        lets `_compute_node_sigma` avoid the old O(n) `np.where` scan (B2).
+
+        `self.sigma_E` is stored full-length (one entry per node, aligned to self.nodes);
+        only boundary entries are meaningful and consumers slice it with the boundary
+        mask.  Full-length keeps it trivially alignable under the incremental merge (B1).
         """
         self.nodes = np.array(self.graph.nodes)
         self.number_of_nodes = self.graph.number_of_nodes()
@@ -267,86 +282,182 @@ class Component:
         n = self.number_of_nodes
         D = Component.dimensions
 
-        # Build a hash‐set of all active_coord tuples to test membership in O(1):
-        if Component.dimensions > 1:
-            self.coord_tuples = { tuple(self.active_coords[i]) for i in range(n) }
+        # O(1) coord → node-index map.  Its keys double as the membership set.
+        if D > 1:
+            self._coord_to_index = {tuple(self.active_coords[i]): i for i in range(n)}
         else:
-            self.coord_tuples = { self.active_coords[i] for i in range(n) }
+            self._coord_to_index = {self.active_coords[i]: i for i in range(n)}
+        self.coord_tuples = set(self._coord_to_index)
 
         self.neighbor_coords = set()
-
         boundary = np.zeros(n, dtype=bool)
         interior = np.zeros(n, dtype=bool)
-
-        # Grid dimensions for periodic BZ wrapping: (Nx, Ny, Nz) or (Nk,)
-        grid_shape = Component.mesh_kpoints_index.shape
+        self.sigma_E = np.zeros(n, dtype=float)
 
         for i in range(n):
-            coord = self.active_coords[i]
-            for dim in range(D):
-                for offset in (-1, +1):
-                    neighbor_coord = list(coord) if Component.dimensions > 1 else [coord]
-                    neighbor_coord[dim] += offset
-                    # Open boundary: the k-point grid is not periodic in general.
-                    # A neighbour index outside [0, N) means there is no neighbour
-                    # in that direction — skip it rather than wrapping.
-                    if neighbor_coord[dim] < 0 or neighbor_coord[dim] >= grid_shape[dim]:
-                        continue
-                    neighbor_coord = tuple(neighbor_coord) if Component.dimensions > 1 else neighbor_coord[0]
-
-                    if neighbor_coord not in self.coord_tuples:
-                        self.neighbor_coords.add(neighbor_coord)
-                        boundary[i] = True
-
-            if not boundary[i]:
+            missing = self._node_boundary_neighbors(i)
+            if missing:
+                boundary[i] = True
+                self.neighbor_coords.update(missing)
+            else:
                 # All in-grid neighbours are in the component.
                 interior[i] = True
 
-
-        self.sigma_E = np.zeros(np.sum(boundary), dtype=float)
-        N_neighbor_for_sigma_E = 2
-
-        for i, k in enumerate(np.arange(n)[boundary]):
-            coord = self.active_coords[k]
-            E_mesh = np.zeros((Component.dimensions, 2*N_neighbor_for_sigma_E + 1), dtype=float)
-            Ek_index = (self.nodes[k, 1], ) + tuple(coord) if Component.dimensions > 1 else  (self.nodes[k, 1], coord)
-            Ek = Component.energies[Ek_index]
-
-            for dim in range(Component.dimensions):
-                E_mesh[dim, N_neighbor_for_sigma_E] = Ek
-
-                for offset in range(-N_neighbor_for_sigma_E, N_neighbor_for_sigma_E + 1):
-                    if offset == 0:
-                        continue
-                    neighbor_coord = list(coord) if Component.dimensions > 1 else [coord]
-                    neighbor_coord[dim] += offset
-                    neighbor_coord = tuple(neighbor_coord) if Component.dimensions > 1 else neighbor_coord[0]
-                    
-                    if neighbor_coord in self.coord_tuples:
-                        k_neighbor = np.where((self.active_coords == neighbor_coord).all(axis=1))[0][0] if Component.dimensions > 1 else np.where(self.active_coords == neighbor_coord)[0][0]
-                        b_neighbor = self.nodes[k_neighbor, 1]
-                        Ek_neighbor = Component.energies[(b_neighbor, ) + tuple(neighbor_coord) if Component.dimensions > 1 else (b_neighbor, neighbor_coord,)]
-                        E_mesh[dim, N_neighbor_for_sigma_E + offset] = Ek_neighbor
-                    else:
-                        # Add None if the neighbor is not in the component
-                        E_mesh[dim, N_neighbor_for_sigma_E + offset] = None
-
-            # Compute the gradient of the energy mesh
-            grad_E = [np.gradient(E_axis) for E_axis in E_mesh]
-            abs_E = []
-
-            for dim in range(Component.dimensions):
-                grad_E_not_none = [g for g in grad_E[dim].flatten() if np.isfinite(g)]
-                abs_E.append(np.mean(grad_E_not_none) if len(grad_E_not_none) > 0 else None)
-
-            if len([a for a in abs_E if a is not None]) == Component.dimensions:
-                self.sigma_E[i] = np.linalg.norm(abs_E)
-            else:
-                self.sigma_E[i] = None
-
-
         self._boundary_mask = boundary
         self._interior_mask = interior
+
+        for i in np.nonzero(boundary)[0]:
+            self.sigma_E[i] = self._compute_node_sigma(i)
+
+    # ------------------------------------------------------------------
+    # Boundary helpers — shared by the full rebuild and the incremental merge.
+    # ------------------------------------------------------------------
+    def _inplane_neighbors(self, coord):
+        """All in-grid ±1 neighbour coords of `coord` (open, non-periodic boundary)."""
+        D = Component.dimensions
+        grid_shape = Component.mesh_kpoints_index.shape
+        neighbors = []
+        for dim in range(D):
+            for offset in (-1, +1):
+                neighbor_coord = list(coord) if D > 1 else [coord]
+                neighbor_coord[dim] += offset
+                if neighbor_coord[dim] < 0 or neighbor_coord[dim] >= grid_shape[dim]:
+                    continue
+                neighbors.append(tuple(neighbor_coord) if D > 1 else neighbor_coord[0])
+        return neighbors
+
+    def _node_boundary_neighbors(self, i):
+        """In-grid ±1 neighbour coords of node `i` that are NOT in the component."""
+        return [nc for nc in self._inplane_neighbors(self.active_coords[i])
+                if nc not in self._coord_to_index]
+
+    def _compute_node_sigma(self, k):
+        """
+        Local energy-gradient magnitude at node `k` (NaN if it cannot be estimated).
+        Uses the O(1) coord→index map instead of the former O(n) np.where scan.
+        """
+        D = Component.dimensions
+        N_neighbor_for_sigma_E = 2
+        coord = self.active_coords[k]
+
+        E_mesh = np.zeros((D, 2 * N_neighbor_for_sigma_E + 1), dtype=float)
+        Ek_index = (self.nodes[k, 1], ) + tuple(coord) if D > 1 else (self.nodes[k, 1], coord)
+        Ek = Component.energies[Ek_index]
+
+        for dim in range(D):
+            E_mesh[dim, N_neighbor_for_sigma_E] = Ek
+
+            for offset in range(-N_neighbor_for_sigma_E, N_neighbor_for_sigma_E + 1):
+                if offset == 0:
+                    continue
+                neighbor_coord = list(coord) if D > 1 else [coord]
+                neighbor_coord[dim] += offset
+                neighbor_coord = tuple(neighbor_coord) if D > 1 else neighbor_coord[0]
+
+                k_neighbor = self._coord_to_index.get(neighbor_coord)
+                if k_neighbor is not None:
+                    b_neighbor = self.nodes[k_neighbor, 1]
+                    Ek_neighbor = Component.energies[(b_neighbor, ) + tuple(neighbor_coord) if D > 1 else (b_neighbor, neighbor_coord,)]
+                    E_mesh[dim, N_neighbor_for_sigma_E + offset] = Ek_neighbor
+                else:
+                    # Neighbour not in the component.
+                    E_mesh[dim, N_neighbor_for_sigma_E + offset] = None
+
+        grad_E = [np.gradient(E_axis) for E_axis in E_mesh]
+        abs_E = []
+        for dim in range(D):
+            grad_E_not_none = [g for g in grad_E[dim].flatten() if np.isfinite(g)]
+            abs_E.append(np.mean(grad_E_not_none) if len(grad_E_not_none) > 0 else None)
+
+        if len([a for a in abs_E if a is not None]) == D:
+            return np.linalg.norm(abs_E)
+        return np.nan
+
+    def add_nodes_incremental(self, new_nodes):
+        """
+        Fold `new_nodes` (the node array of a disjoint component being merged in) into
+        this component's boundary bookkeeping incrementally, instead of rebuilding it
+        from scratch on every merge — the single biggest runtime cost (B1).
+
+        Correctness.  With N the added node set (disjoint from the current nodes):
+          * neighbor_coords' = (neighbor_coords − coords(N)) ∪ {in-grid neighbours of N
+            still outside the component}.  No component node is removed, so the only
+            coords that leave neighbor_coords are exactly those of N (now interior to the
+            union); every other adjacency that justified a neighbour coord still holds.
+          * The only nodes whose boundary/interior status can change are N itself plus
+            old boundary nodes ±1-adjacent to a new coord (a previously-missing neighbour
+            of theirs may now be filled).  Old interior nodes stay interior.
+        Cost is O(|N| + affected boundary) per merge instead of O(n) or worse.
+        """
+        D = Component.dimensions
+        old_n = self.number_of_nodes
+        new_nodes = np.asarray(new_nodes)
+        m = new_nodes.shape[0]
+        if m == 0:
+            return
+
+        new_active = Component.array_kpoints_index[new_nodes[:, 0]]
+
+        self.nodes = np.concatenate([self.nodes, new_nodes], axis=0)
+        self.active_coords = np.concatenate([self.active_coords, new_active], axis=0)
+        self.number_of_nodes = old_n + m
+
+        new_coords = []
+        for j in range(m):
+            c = tuple(new_active[j]) if D > 1 else new_active[j]
+            self._coord_to_index[c] = old_n + j
+            new_coords.append(c)
+        self.coord_tuples.update(new_coords)
+
+        # Coords that were outer-neighbours and are now part of the component.
+        self.neighbor_coords.difference_update(new_coords)
+
+        self._boundary_mask = np.concatenate([self._boundary_mask, np.zeros(m, dtype=bool)])
+        self._interior_mask = np.concatenate([self._interior_mask, np.zeros(m, dtype=bool)])
+        self.sigma_E = np.concatenate([self.sigma_E, np.zeros(m, dtype=float)])
+
+        # Phase 1 — boundary/interior status.  This depends only on ±1 neighbours, so the
+        # only nodes that can flip are the new ones plus old boundary nodes ±1-adjacent to
+        # a new coord (a missing neighbour of theirs may now be filled).
+        status_affected = set(range(old_n, old_n + m))
+        for c in new_coords:
+            for nb in self._inplane_neighbors(c):
+                idx = self._coord_to_index.get(nb)
+                if idx is not None and idx < old_n and self._boundary_mask[idx]:
+                    status_affected.add(idx)
+
+        for i in status_affected:
+            missing = self._node_boundary_neighbors(i)
+            if missing:
+                self._boundary_mask[i] = True
+                self._interior_mask[i] = False
+                self.neighbor_coords.update(missing)
+            else:
+                self._boundary_mask[i] = False
+                self._interior_mask[i] = True
+                self.sigma_E[i] = 0.0
+
+        # Phase 2 — sigma_E uses a ±N_neighbor_for_sigma_E axis-aligned energy stencil, so
+        # a new node changes the gradient of every boundary node within that axis distance
+        # (not just ±1).  Recompute sigma for each such boundary node (and the new ones).
+        N_sigma = 2
+        sigma_affected = set()
+        for c in new_coords:
+            candidates = [self._coord_to_index.get(c)]
+            for dim in range(D):
+                for delta in range(-N_sigma, N_sigma + 1):
+                    if delta == 0:
+                        continue
+                    nc = list(c) if D > 1 else [c]
+                    nc[dim] += delta
+                    nc = tuple(nc) if D > 1 else nc[0]
+                    candidates.append(self._coord_to_index.get(nc))
+            for idx in candidates:
+                if idx is not None and self._boundary_mask[idx]:
+                    sigma_affected.add(idx)
+
+        for i in sigma_affected:
+            self.sigma_E[i] = self._compute_node_sigma(i)
 
     def does_intersect(self, other:'Component'):
         """
@@ -578,7 +689,9 @@ class Cluster(Component):
         cluster_points = self.nodes[self._boundary_mask]
         sample_points = Sample.nodes[Sample._boundary_mask]
 
-        energies_differences = np.array(obtain_energy_difference(sample_points, cluster_points, self.sigma_E, energies, neighbors))
+        # sigma_E is stored full-length (aligned to self.nodes); slice it to the boundary
+        # nodes so it lines up with cluster_points = self.nodes[self._boundary_mask].
+        energies_differences = np.array(obtain_energy_difference(sample_points, cluster_points, self.sigma_E[self._boundary_mask], energies, neighbors))
 
         if len(energies_differences) != 1:
             energies_score = np.mean(energies_differences)
@@ -664,7 +777,10 @@ class Cluster(Component):
             Sample (Component): The sample component to merge with the cluster.
         """
         self.graph = nx.compose(self.graph, Sample.graph)
-        self.compute_boundary()
+        # Incremental boundary update (B1): Sample is node-disjoint from self (guaranteed
+        # by can_merge's does_intersect check), so we only need to fold in its nodes
+        # rather than rebuild the whole boundary/sigma_E from scratch.
+        self.add_nodes_incremental(Sample.nodes)
 
 
 def obtain_dot_products(sample_points, cluster_points, connections, neighbors):
@@ -713,7 +829,7 @@ def obtain_energy_difference(sample_points, cluster_points, sigma_E, energies, n
 
 
 
-def solver_iterable(bands_to_solve, components, degenerate_components, degenerate_points, connections, neighbors, mesh_kpoints_index, nks, max_band_energies, mask_degenerates, bands, logger, energies=None, tolerance=0.99, alpha=0.5, min_band=0):
+def solver_iterable(bands_to_solve, components, degenerate_components, degenerate_points, connections, neighbors, mesh_kpoints_index, nks, max_band_energies, mask_degenerates, bands, logger, energies=None, tolerance=0.99, alpha=0.5, min_band=0, temp_dir='temp'):
     """
     ----------------------------------------------------------------------------------------------------------------------
     Main loop for solving clusters of components across multiple bands.
@@ -781,6 +897,13 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
     clusters = []
     compute_energy_only = None
 
+    # Once a band's attribution stalls and we purge ghost components (see the swap-stall
+    # guard below), the running point-count invariant is permanently violated for the
+    # rest of this group.  This flag downgrades the invariant checks from fatal to a
+    # warning so the group can still finish and write its temp file, instead of raising
+    # and leaving the parallel pool waiting forever for a result that never arrives.
+    group_stalled = False
+
     if energies is None:
         compute_score = lambda sample: cluster_bn_i.compute_similarity_with_sample(sample, connections, neighbors, compute='dot_product')
         compute_energy_only = compute_score
@@ -825,10 +948,10 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                         bands_final_temp[k, bn] = b
 
                 # Save the bands_final_temp to a file
-                if not os.path.exists('temp'):
-                    os.makedirs('temp')
-                np.save(f'temp/bands_final_temp_{np.min(bands_to_solve) + min_band}_{bn_i + min_band}.npy', bands_final_temp)
-                logger.info(f"Temporary file temp/bands_final_temp_{np.min(bands_to_solve) + min_band}_{bn_i + min_band}.npy saved.")
+                os.makedirs(temp_dir, exist_ok=True)
+                temp_path = os.path.join(temp_dir, f'bands_final_temp_{np.min(bands_to_solve) + min_band}_{bn_i + min_band}.npy')
+                np.save(temp_path, bands_final_temp)
+                logger.info(f"Temporary file {temp_path} saved.")
             continue
         
         attribution_points = np.zeros_like(mesh_kpoints_index, dtype=int)
@@ -899,14 +1022,19 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
             logger.info(f"Number of available points: {number_of_available_points}")
             logger.info(f"Number of points in the cluster: {cluster_bn_i.number_of_nodes}")
             logger.info(f"Number of points in the band: {nks * (max_band_energies[bn_i] - bn_i + 1)}")
-            raise ValueError(f"Number of available points is not equal to the number of points in the band")
-        
+            if not group_stalled:
+                raise ValueError(f"Number of available points is not equal to the number of points in the band")
+            logger.warning(f"[{bn_i + min_band}] Point-count invariant violated after a swap-stall purge in this group; continuing with the partial result.")
+
         if bn_i + 1 <= max_band_energies[bn_i]:
             components[bn_i + 1] += components[bn_i]
             components[bn_i] = []
         else:
             if len(components[bn_i]) > 0:
-                raise ValueError(f"Band {bn_i + min_band} has remaining points, but the next band is not in the range of the bands that are being solved")
+                if not group_stalled:
+                    raise ValueError(f"Band {bn_i + min_band} has remaining points, but the next band is not in the range of the bands that are being solved")
+                logger.warning(f"Band {bn_i + min_band} has remaining points after a swap-stall purge in this group; dropping them and continuing.")
+                components[bn_i] = []
 
 
         '''
@@ -974,8 +1102,10 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
             logger.info(f"Number of available points: {number_of_available_points}")
             logger.info(f"Number of points in the cluster: {cluster_bn_i.number_of_nodes}")
             logger.info(f"Number of points in the band: {nks * (max_band_energies[bn_i] - bn_i + 1)}")
-            raise ValueError(f"Number of available points is not equal to the number of points in the band")
-        
+            if not group_stalled:
+                raise ValueError(f"Number of available points is not equal to the number of points in the band")
+            logger.warning(f"[{bn_i + min_band}] Point-count invariant violated after a swap-stall purge in this group; continuing with the partial result.")
+
 
         add_degenerates_points = False
         check_degenerates_points = True
@@ -1165,6 +1295,10 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                                     s for s in remaining_samples[ri]
                                     if not cluster_bn_i.does_intersect(s)
                                 ]
+                            # The purge breaks the point-count invariant for the rest of
+                            # this group; downgrade the invariant checks to warnings so
+                            # the group still finalizes and writes its temp file.
+                            group_stalled = True
                             break
 
                         # sort the remaining samples by number of nodes
@@ -1226,7 +1360,10 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                 logger.info(f"Number of available points: {number_of_available_points}")
                 logger.info(f"Number of points in the cluster: {cluster_bn_i.number_of_nodes}")
                 logger.info(f"Number of points in the band: {nks * (max_band_energies[bn_i] - bn_i + 1)}")
-                raise ValueError(f"Number of available points is not equal to the number of points in the band")
+                if not group_stalled:
+                    raise ValueError(f"Number of available points is not equal to the number of points in the band")
+                logger.warning(f"[{bn_i + min_band}] Point-count invariant violated after a swap-stall purge in this group; stopping attribution for this band.")
+                break
 
         for i, samples in enumerate(remaining_samples_):
             remaining_samples[i] += samples
@@ -1238,10 +1375,12 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
             components[bn_i + 1] += components[bn_i]
         else:
             if len(components[bn_i]) > 0:
-                logger.info()
-                raise ValueError(f"Band {bn_i + min_band} has remaining points, but the next band is not in the range of the bands that are being solved")
+                if not group_stalled:
+                    raise ValueError(f"Band {bn_i + min_band} has remaining points, but the next band is not in the range of the bands that are being solved")
+                logger.warning(f"Band {bn_i + min_band} has remaining points after a swap-stall purge in this group; dropping them and continuing.")
+                components[bn_i] = []
 
-            
+
         number_of_available_points = np.sum(cluster_bn_i.number_of_nodes)
         
         for samples in components[bn_i + 1: max_band_energies[bn_i] + 1]:
@@ -1257,7 +1396,9 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
             logger.info(f"Number of points in the cluster: {cluster_bn_i.number_of_nodes}")
             logger.info(f"Number of missing points: {nks * (max_band_energies[bn_i] - bn_i + 1) - number_of_available_points}")
             logger.info(f"Number of points in the band: {nks * (max_band_energies[bn_i] - bn_i + 1)}")
-            raise ValueError(f"Number of available points is not equal to the number of points in the band")
+            if not group_stalled:
+                raise ValueError(f"Number of available points is not equal to the number of points in the band")
+            logger.warning(f"[{bn_i + min_band}] Point-count invariant violated after a swap-stall purge in this group; accepting the partial cluster.")
 
         clusters.append(cluster_bn_i)
 
@@ -1274,17 +1415,17 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                     bands_final_temp[k, bn] = b
 
             # Save the bands_final_temp to a file
-            if not os.path.exists('temp'):
-                os.makedirs('temp')
-            np.save(f'temp/bands_final_temp_{np.min(bands_to_solve) + min_band}_{bn_i + min_band}.npy', bands_final_temp)
-            logger.info(f"Temporary file temp/bands_final_temp_{np.min(bands_to_solve) + min_band}_{bn_i + min_band}.npy saved.")
+            os.makedirs(temp_dir, exist_ok=True)
+            temp_path = os.path.join(temp_dir, f'bands_final_temp_{np.min(bands_to_solve) + min_band}_{bn_i + min_band}.npy')
+            np.save(temp_path, bands_final_temp)
+            logger.info(f"Temporary file {temp_path} saved.")
 
 
 
     return clusters
 
 
-def solver_algorithm(components, degenerate_components, degenerate_points, connections, neighbors, mesh_kpoints_index, nks, max_band_energies, mask_degenerates, bands, logger, n_process=1, verbose=False, parallel=True, energies=None, tolerance=0.99, alpha=0.5, min_band=0):
+def solver_algorithm(components, degenerate_components, degenerate_points, connections, neighbors, mesh_kpoints_index, nks, max_band_energies, mask_degenerates, bands, logger, n_process=1, verbose=False, parallel=True, energies=None, tolerance=0.99, alpha=0.5, min_band=0, temp_dir='temp', solve_timeout=None):
     """
     ----------------------------------------------------------------------------------------------------------------------
     Main algorithm for solving clusters of components across multiple bands, with support for parallel processing.
@@ -1301,7 +1442,7 @@ def solver_algorithm(components, degenerate_components, degenerate_points, conne
     ----------------------------------------------------------------------------------------------------------------------
     '''
     clusters = []
-    solver_iterable_partial = partial(solver_iterable, components=components, degenerate_components=degenerate_components, degenerate_points=degenerate_points, connections=connections, neighbors=neighbors, mesh_kpoints_index=mesh_kpoints_index, nks=nks, max_band_energies=max_band_energies, mask_degenerates=mask_degenerates, bands=bands, logger=logger, energies=energies, tolerance = tolerance, alpha=alpha, min_band=min_band)
+    solver_iterable_partial = partial(solver_iterable, components=components, degenerate_components=degenerate_components, degenerate_points=degenerate_points, connections=connections, neighbors=neighbors, mesh_kpoints_index=mesh_kpoints_index, nks=nks, max_band_energies=max_band_energies, mask_degenerates=mask_degenerates, bands=bands, logger=logger, energies=energies, tolerance = tolerance, alpha=alpha, min_band=min_band, temp_dir=temp_dir)
 
     iterable_bands = []
 
@@ -1325,8 +1466,32 @@ def solver_algorithm(components, degenerate_components, degenerate_points, conne
     if verbose:
         clusters = process_map(solver_iterable_partial, iterable_bands, max_workers=n_process, desc='Clustering Points')
     else:
-        with Pool(n_process) as pool:
-            clusters = pool.map(solver_iterable_partial, iterable_bands)
+        # NB: plain `multiprocessing.Pool.map` does NOT surface a worker that dies or
+        # returns no result for a task — the parent blocks on `get()` forever (observed:
+        # a band group abandoned mid-solve left the whole run wedged in futex_wait with
+        # no final report).  `ProcessPoolExecutor` raises `BrokenProcessPool` when a
+        # worker dies and re-raises any worker exception via `future.result()`, turning a
+        # silent hang into a visible, fast failure.
+        clusters = [None] * len(iterable_bands)
+        with ProcessPoolExecutor(max_workers=n_process) as executor:
+            future_to_idx = {
+                executor.submit(solver_iterable_partial, ib): i
+                for i, ib in enumerate(iterable_bands)
+            }
+            try:
+                # solve_timeout (A4) bounds the total wall time of the parallel solve; a
+                # worker stuck in a genuine CPU-bound spin (which BrokenProcessPool cannot
+                # detect) then surfaces as a TimeoutError instead of hanging indefinitely.
+                for future in as_completed(future_to_idx, timeout=solve_timeout):
+                    idx = future_to_idx[future]
+                    clusters[idx] = future.result()
+            except FuturesTimeoutError:
+                logger.error(f"Parallel clustering exceeded solve_timeout={solve_timeout}s; aborting the run.")
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
+            except BrokenProcessPool as exc:
+                logger.error(f"A clustering worker process died without returning a result: {exc}")
+                raise
 
     clusters = [item for sublist in clusters for item in sublist]
     return clusters, iterable_bands
