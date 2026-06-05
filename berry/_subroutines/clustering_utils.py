@@ -994,6 +994,7 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                 )
         _swap_stall_count = 0
         _best_cluster_size = 0
+        _seen_stall_sizes = set()
         while cluster_bn_i.number_of_nodes < nks:
 
             progress = cluster_bn_i.number_of_nodes / nks
@@ -1135,15 +1136,28 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
                         if cluster_bn_i.number_of_nodes > _best_cluster_size:
                             _best_cluster_size = cluster_bn_i.number_of_nodes
                             _swap_stall_count = 0
+                            _seen_stall_sizes = set()
                         else:
                             _swap_stall_count += 1
 
-                        if _swap_stall_count >= nks:
-                            # Cluster made no progress for nks consecutive swap iterations.
-                            # Purge ghost components (k-flat indices already in the cluster)
-                            # so the remaining real samples flow to the next band.
+                        # A period-k oscillation revisits the same stuck cluster
+                        # size(s) without ever beating the best (e.g. 2582 <-> 1639).
+                        # Detecting a revisited size breaks the cycle in a handful of
+                        # iterations; the previous `>= nks` bound only fired after a
+                        # full k-grid worth of stalls (nks=2585 here ≈ 21h of churn).
+                        # A genuinely growing swap sets a new best, which clears the
+                        # seen-set, so real progress is never cut short.
+                        oscillating = cluster_bn_i.number_of_nodes in _seen_stall_sizes
+                        _seen_stall_sizes.add(cluster_bn_i.number_of_nodes)
+
+                        if oscillating or _swap_stall_count >= nks:
+                            # Cluster made no progress (oscillating swaps or a frozen
+                            # stall). Purge ghost components (k-flat indices already in
+                            # the cluster) so the remaining real samples flow to the
+                            # next band.
                             logger.info(
-                                f"[{bn_i + min_band}] Swap stall limit reached — cluster at "
+                                f"[{bn_i + min_band}] Swap stall detected "
+                                f"({'oscillation' if oscillating else 'frozen'}) — cluster at "
                                 f"{cluster_bn_i.number_of_nodes}/{nks}. Purging ghosts and stopping."
                             )
                             for ri in range(len(remaining_samples)):
