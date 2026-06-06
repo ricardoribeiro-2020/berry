@@ -778,17 +778,54 @@ class Material:
             self.energy_bands.append(grad_mistakes_energy)
 
 
+        ###########################################################################
+        # Completeness guarantee.
+        #
+        # A band whose cluster stalled below nks (a swap-stall that the solver
+        # could not fully resolve) leaves -1 holes in bands_final. Each k-point
+        # row of bands_final is a relabelling of the original band indices, so a
+        # complete row is a permutation of 0..number_of_bands-1. Fill any -1 with
+        # the labels missing from that row (lower columns get the lower missing
+        # labels). This keeps the saved bandsfinal.npy a complete, valid
+        # assignment for downstream programs even when the heuristic could not
+        # converge a band, instead of leaving unassigned k-points behind.
+        ###########################################################################
+        hole_rows, hole_cols = np.where(self.bands_final == -1)
+        if hole_rows.size > 0:
+            all_labels = set(range(self.number_of_bands))
+            self.logger.warning(
+                f"obtain_output: {hole_rows.size} unassigned (k, band) slots after "
+                f"solving (a band stalled below nks); completing them from the per-k "
+                f"band permutation so the output is a full assignment."
+            )
+            for k in np.unique(hole_rows):
+                row = self.bands_final[k]
+                missing = sorted(all_labels - set(row[row != -1].tolist()))
+                cols = np.where(row == -1)[0]
+                for col, label in zip(cols, missing):
+                    self.bands_final[k, col] = label
+
+
         for bn_i, band in enumerate(self.cluster_bands):
             band.nodes = band.nodes[band.nodes[:, 0].argsort()]                   # Sort the k-points inside the band
-            
+
+            # Map k-point -> band label for this cluster. Indexing band.nodes by a
+            # global k-index (band.nodes[k_neig, 1]) only works when the cluster is
+            # complete (nks rows, one per k, sorted by k). A band that stalled below
+            # nks has a short nodes array, so the old indexing raised IndexError.
+            k_to_bn = {int(k): int(bn) for k, bn in band.nodes}
+
             for ik, (k, bn1) in enumerate(band.nodes):
                 connections = []                                                    # The array that store the dot-product with the k-point's neighbors
                 for i_neig, k_neig in enumerate(self.neighbors[k]):
                     # Obtain the dot-product with each neighbor
                     if k_neig == -1:
                         continue
-                    
-                    bn2 = band.nodes[k_neig, 1]
+
+                    bn2 = k_to_bn.get(int(k_neig))
+                    if bn2 is None:
+                        # Neighbour k-point is not in this (partial) cluster; skip it.
+                        continue
                     connections.append(self.connections[k, i_neig, bn1, bn2])       # <k, k neighbor>
 
                 self.signal_final[k, bn_i] = evaluate_result(connections)             # Computes the k-point's signal

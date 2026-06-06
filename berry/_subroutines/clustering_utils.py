@@ -1282,22 +1282,35 @@ def solver_iterable(bands_to_solve, components, degenerate_components, degenerat
 
                         if oscillating or _swap_stall_count >= nks:
                             # Cluster made no progress (oscillating swaps or a frozen
-                            # stall). Purge ghost components (k-flat indices already in
-                            # the cluster) so the remaining real samples flow to the
-                            # next band.
+                            # stall). Stop attributing to this band and let the still-
+                            # unassigned points flow down to the next band.
                             logger.info(
                                 f"[{bn_i + min_band}] Swap stall detected "
                                 f"({'oscillation' if oscillating else 'frozen'}) — cluster at "
                                 f"{cluster_bn_i.number_of_nodes}/{nks}. Purging ghosts and stopping."
                             )
-                            for ri in range(len(remaining_samples)):
-                                remaining_samples[ri] = [
-                                    s for s in remaining_samples[ri]
-                                    if not cluster_bn_i.does_intersect(s)
-                                ]
-                            # The purge breaks the point-count invariant for the rest of
-                            # this group; downgrade the invariant checks to warnings so
-                            # the group still finalizes and writes its temp file.
+                            # remaining_samples[0] holds THIS band's own leftovers,
+                            # including the stale whole-cluster copies the swap step
+                            # pushed back (see the swap below). Those overlap the accepted
+                            # cluster and, if passed on verbatim, would flood the next band
+                            # with duplicate points. Strip only the already-claimed
+                            # k-positions from them — keep the genuinely-unassigned holes —
+                            # instead of deleting the whole fragment.
+                            cluster_mesh = np.zeros_like(mesh_kpoints_index, dtype=bool)
+                            for coord in cluster_bn_i.active_coords:
+                                idx_coord = tuple(coord) if Component.dimensions > 1 else coord
+                                cluster_mesh[idx_coord] = True
+                            stripped = []
+                            for s in remaining_samples[0]:
+                                stripped += s.remove_points(cluster_mesh)
+                            remaining_samples[0] = stripped
+                            # remaining_samples[1:] are the FOLLOWING degenerate bands'
+                            # fragments. In a degenerate group every k-point exists once
+                            # per band, so these legitimately share k-positions with this
+                            # band's cluster — they are NOT ghosts. The old code deleted
+                            # them too (does_intersect matches on k-position only), which
+                            # starved the next band and collapsed it to a 2-point cluster.
+                            # Leave them untouched so they can solve their own band.
                             group_stalled = True
                             break
 
