@@ -140,6 +140,46 @@ VALIDATE_RESULT_HELP = lambda N: f'''
 '''
 VALIDATE_RESULT_HEADER = ['NOT', 'MIS', 'DEG', 'OTH', 'COR', 'FOR']
 
+###########################################################################
+# Column legends (shared by every report table)
+###########################################################################
+# Short, human-readable meaning of each table column. Keyed by the column
+# abbreviation so a legend can be built that always matches the columns shown.
+COLUMN_LEGEND = {
+    'NOT':    'not solved (no band attributed)',
+    'MIS':    'mistake (energy break and/or dot product <= 0.2)',
+    'DEG':    'degenerate (needs basis rotation)',
+    'PMI':    'potential mistake (dot product <= 0.8)',
+    'PCO':    'potential correct (0.8 < dot product < 0.9)',
+    'OTH':    'other (partial energy continuity)',
+    'COR':    'correct (energy-continuous, dot product > 0.9)',
+    'FOR':    'forced (force-filled by the completeness pass; not a genuine solve)',
+    'Score':  'mean dot product of the band (1 is best)',
+    'Failed': 'NOT + MIS points (energy break / low overlap)',
+    'Degen':  'degenerate points (need basis rotation)',
+    'Forced': 'force-filled points (not a genuine solve)',
+    'Status': 'OK / OK* (needs basis rotation) / CHECK (low score) / FORCED / FAIL',
+}
+
+# All report tables and their surrounding content use these two indent levels:
+#   TITLE_INDENT  for the '====== ... ======' section header,
+#   BODY_INDENT   for legends, table headers and table rows.
+TITLE_INDENT = '\t'
+BODY_INDENT = '\t\t'
+
+def _format_legend(columns: list, indent: str = BODY_INDENT) -> str:
+    '''
+    A wrapped legend block explaining every column in ``columns``, indented to
+    line up with the table body. Columns with no known meaning are skipped.
+    '''
+    items = [f"{c} = {COLUMN_LEGEND[c]}" for c in columns if c in COLUMN_LEGEND]
+    return '\n' + textwrap.fill(
+        ' | '.join(items),
+        width=100,
+        initial_indent=indent + 'Legend: ',
+        subsequent_indent=indent + '        ',
+    ) + '\n'
+
 
 def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
     f'''
@@ -1691,7 +1731,7 @@ class MATERIAL:
         Return
             final_report : string
         '''
-        final_report = f'\n\t====== {description} ======\n'
+        final_report = f'\n{TITLE_INDENT}====== {description} ======\n'
         bands_report = []
         # The set of signal codes (and therefore the column layout) depends on
         # which array is being reported, so the caller passes the matching header.
@@ -1713,26 +1753,24 @@ class MATERIAL:
         # Set up the data representation
         ###########################################################################
         bands_report = np.array(bands_report)
-        final_report += '\n\t\t Signaling: how many events ' + \
-                        'in each band signaled.\n'
-        bands_header = '\n\t\t Band | '
-        
-        header = list(header_text) + ['Score']
 
+        header = list(header_text) + ['Score']
         n_spaces = len(str(np.max(bands_report[:, -1]))) + 4
 
-        bands_header += ''.join(f"{h:^{n_spaces}}" for h in header[:-1])
-        bands_header += f'{header[-1]:>8}'
+        # Visible (indent-free) header line, so the underline matches its width.
+        header_line = ' Band | ' + ''.join(f"{h:^{n_spaces}}" for h in header[:-1])
+        header_line += f'{header[-1]:>8}'
 
-
-        final_report += bands_header + '\n\t\t'
-        final_report += '-' * len(bands_header)
+        final_report += f'\n{BODY_INDENT} Signaling: how many events in each band signaled.\n'
+        final_report += _format_legend(header)                          # meaning of every column
+        final_report += f'\n{BODY_INDENT}{header_line}'
+        final_report += f'\n{BODY_INDENT}' + '-' * len(header_line)
 
         for bn, report in enumerate(bands_report):
-            # Make the report
-            final_report += f'\n\t\t {bn+self.min_band:<4d} | '
-            final_report += ''.join(f"{int(r):^{n_spaces}d}" for r in report[:-1])
-            final_report += f'{report[-1]:>8.4f}'
+            row = f' {bn+self.min_band:<4d} | '
+            row += ''.join(f"{int(r):^{n_spaces}d}" for r in report[:-1])
+            row += f'{report[-1]:>8.4f}'
+            final_report += f'\n{BODY_INDENT}{row}'
         final_report += '\n'
         if show:
             self.logger.info(final_report)              # Show on screen
@@ -1937,7 +1975,7 @@ class MATERIAL:
         self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)                       # Save the currect result
 
         total_not_solved = np.sum(self.correct_signalfinal == NOT_SOLVED) + np.sum(self.correct_signalfinal == MISTAKE)
-        self.logger.info('Total not solved: ' + str(total_not_solved))
+        self.logger.info(f'{BODY_INDENT}Total not solved: ' + str(total_not_solved))
         if self.tol > 0.1 and total_not_solved > 1000:
             print('Creating the graph')
             self.make_connections(self.tol, not_first_iteration=True)
@@ -1969,21 +2007,17 @@ class MATERIAL:
         # render a compact, actionable table instead of the full signal table.
         _, report_a2 = self.print_report(self.correct_signalfinal, 'Final Report', show=False, header_text=VALIDATE_RESULT_HEADER)
 
-        self.final_report += (
-            '\n\tColumns: Failed = energy-discontinuous / low-overlap points (signal NOT/MIS);'
-            '\n\t         Degen  = degenerate points (need basis rotation);'
-            '\n\t         Forced = force-filled to guarantee an attribution (not a genuine solve).'
-            '\n\t         Full per-point signals are in signalfinal.npy / correct_signalfinal.npy.\n'
-        )
-
         ###########################################################################
         # Compact per-band table: only the actionable counts + a plain status.
         ###########################################################################
         TOL_USABLE = 0.95           # Minimum score to consider a band as usable.
         bands_attention = []
-        table = '\n\t====== Final Report ======\n'
-        table += '\n\t\t Band | Failed | Degen | Forced | Score | Status'
-        table += '\n\t\t ' + '-' * 50
+
+        header_line = ' Band | Failed | Degen | Forced | Score | Status'
+        table = f'\n{TITLE_INDENT}====== Final Report ======\n'
+        table += _format_legend(['Failed', 'Degen', 'Forced', 'Score', 'Status'])
+        table += f'\n{BODY_INDENT}{header_line}'
+        table += f'\n{BODY_INDENT}' + '-' * len(header_line)
         for i in range(self.nbnd):
             failed = int(report_a2[i, NOT_SOLVED] + report_a2[i, MISTAKE])
             degen = int(report_a2[i, DEGENERATE])
@@ -1999,25 +2033,24 @@ class MATERIAL:
                 status = 'OK*'                  # usable, but needs basis rotation
             else:
                 status = 'OK'
-            table += (f'\n\t\t {i+self.min_band:<4d} | {failed:^6d} | {degen:^5d} | '
+            table += (f'\n{BODY_INDENT} {i+self.min_band:<4d} | {failed:^6d} | {degen:^5d} | '
                       f'{forced:^6d} | {score:>5.2f} | {status}')
             if status in ('FAIL', 'FORCED'):
                 bands_attention.append((i, failed, degen, forced, status))
-        table += '\n\t\t ( * usable but has degenerate points -> needs basis rotation;'
-        table += '\n\t\t   CHECK = all points attributed but score below {:.2f} -> human verification )\n'.format(TOL_USABLE)
+        table += '\n'
         self.final_report += table
 
         ###########################################################################
         # The points that failed and why.
         ###########################################################################
         if bands_attention:
-            self.final_report += '\n\t\tBands needing attention:'
+            self.final_report += f'\n{BODY_INDENT}Bands needing attention:'
             for i, failed, degen, forced, status in bands_attention:
                 if status == 'FAIL':
-                    self.final_report += (f'\n\t\t  Band {i+self.min_band:>3d} : {failed} failed '
+                    self.final_report += (f'\n{BODY_INDENT}  Band {i+self.min_band:>3d} : {failed} failed '
                                           f'(energy discontinuity / low overlap) - NOT usable')
                 else:  # FORCED
-                    self.final_report += (f'\n\t\t  Band {i+self.min_band:>3d} : {forced} forced '
+                    self.final_report += (f'\n{BODY_INDENT}  Band {i+self.min_band:>3d} : {forced} forced '
                                           f'(no genuine continuation found) - usable with caution')
             self.final_report += '\n'
 
