@@ -101,16 +101,23 @@ class log:
         now = time.time()
         key = title or '_'
         state = self._progress.get(key)
-        # (Re)start tracking on a new title or when the counter restarts.
+        # (Re)start ETA tracking on a new title or when the counter restarts, but
+        # PRESERVE the throttle timestamp (last_emit) across restarts. Otherwise
+        # two progress sequences that share a title but run on different step
+        # scales (e.g. a sub-loop counter vs. an outer one) reset each other's
+        # timer on every call and flood the log, bypassing the rate limit.
         if state is None or step < state['last_step']:
-            state = {'start_time': now, 'start_step': step, 'last_emit': 0.0, 'last_step': step}
+            prev_emit = state['last_emit'] if state else None
+            state = {'start_time': now, 'start_step': step, 'last_emit': prev_emit, 'last_step': step}
             self._progress[key] = state
         state['last_step'] = step
 
         perc = min(100.0, 100.0 * float(step) / float(total_steps))
-        is_first = step <= state['start_step']
         is_last = step >= total_steps
-        if not (is_first or is_last) and (now - state['last_emit'] < min_interval):
+        # Emit only on: the first line for this title, completion, or once every
+        # min_interval seconds. A step-based "first" bypass is deliberately NOT
+        # used, so a counter restart cannot re-open the throttle.
+        if state['last_emit'] is not None and not is_last and (now - state['last_emit'] < min_interval):
             return
         state['last_emit'] = now
 
