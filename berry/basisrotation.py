@@ -20,6 +20,7 @@ except:
     pass
 
 
+FORCED = 6              # force-filled by the clustering completeness pass (not a genuine solve)
 CORRECT = 5
 POTENTIAL_CORRECT = 4
 POTENTIAL_MISTAKE = 3
@@ -168,7 +169,7 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
         logger.info("\n\n\tK-point where problem will be solved:", nk0)
         for j in range(m.dimensions*2):    # Find the neigbhors of the k-point to be used on interpolation
             nk = d.neighbors[nk0, j]       # k-point number of neighbor
-            if nk != -1 and signalfinal[nk,bnproblem[nkindex, 0]] > DEGENERATE and signalfinal[nk,bnproblem[nkindex, 1]] > DEGENERATE:
+            if nk != -1 and DEGENERATE < signalfinal[nk,bnproblem[nkindex, 0]] < FORCED and DEGENERATE < signalfinal[nk,bnproblem[nkindex, 1]] < FORCED:
                 nb1 = matchbandproblem[nkindex, 0]   # One of the bands of the neighbor
                 nb2 = matchbandproblem[nkindex, 1]   # The other band
                 nkj = j
@@ -289,10 +290,10 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
         logger.debug(_bands_numbers(m.nkx, m.nky, bandsfinal[:, nb]))
     logger.debug()
     logger.debug("\tSignaling")
-    nrsignal = np.zeros((max_band, CORRECT+1), dtype=int)
+    nrsignal = np.zeros((max_band, FORCED+1), dtype=int)
     for nb in range(max_band + 1):
         nk = -1
-        for s in range(CORRECT+1):
+        for s in range(FORCED+1):
             nrsignal[nb, s] = np.count_nonzero(signalfinal[:, nb] == s)
 
         logger.debug()
@@ -311,7 +312,7 @@ def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", 
     logger.info("\tSignaling")
 
     signal_report = '\tBands | '
-    for signal in range(CORRECT+1):
+    for signal in range(FORCED+1):
         n_spaces = len(str(np.max(nrsignal[:, signal])))-1
         signal_report += ' '*n_spaces+str(signal) + '   '
     

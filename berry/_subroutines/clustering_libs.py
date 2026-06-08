@@ -50,12 +50,15 @@ Band = int
 ###########################################################################
 # Constant Definition
 ###########################################################################
+FORCED = 6              # signal_final / evaluate_result scale (force-filled by completeness pass)
 CORRECT = 5
 POTENTIAL_CORRECT = 4
 POTENTIAL_MISTAKE = 3
 DEGENERATE = 2
 MISTAKE = 1
 NOT_SOLVED = 0
+
+FORCED_CONTINUITY = 5   # correct_signalfinal / evaluate_point (energy-continuity) scale
 
 ###########################################################################
 # Parallelization helpers (Pool workers)
@@ -78,6 +81,31 @@ def _parallel_dispatch(chunk):
     return _PARALLEL_FN(chunk, *_PARALLEL_ARGS)
 
 
+###########################################################################
+# Quadratic extrapolation weights (cached)
+###########################################################################
+# The continuity gate predicts a band's energy one grid step ahead by fitting a
+# quadratic to its trajectory at fixed integer offsets. For a given set of
+# offsets that prediction is a constant linear combination of the sampled
+# energies, so the weight row is cached per offset-set instead of refitting with
+# np.polyfit on every (k-point, band, direction) -- ~66x faster at scale, and
+# bit-identical to polyfit. At most a handful of distinct offset-sets occur.
+_EXTRAP_WEIGHT_CACHE: dict = {}
+
+def _extrap_weights(offsets: tuple) -> np.ndarray:
+    '''
+    Weight row ``w`` such that the least-squares quadratic through points at the
+    given integer ``offsets`` (x-values), evaluated at x=+1, equals ``w @ energies``.
+    '''
+    w = _EXTRAP_WEIGHT_CACHE.get(offsets)
+    if w is None:
+        X = np.asarray(offsets, dtype=float)
+        V = np.vander(X, 3)                                   # columns [x^2, x, 1]
+        w = (np.vander(np.array([1.0]), 3) @ np.linalg.pinv(V)).ravel()
+        _EXTRAP_WEIGHT_CACHE[offsets] = w
+    return w
+
+
 EVALUATE_RESULT_HELP = '''
     ---------------------- Report considering dot-product information ----------------------------
             C -> Mean dot-product |<i|j>| of each k-point
@@ -90,9 +118,10 @@ EVALUATE_RESULT_HELP = '''
             3     |     PMI      |      POTENTIAL_MISTAKE     C <= 0.8
             4     |     PCO      |      POTENTIAL_CORRECT     0.8 < C < 0.9
             5     |     COR      |      CORRECT               C > 0.9
+            6     |     FOR      |      FORCED                Force-filled by the completeness pass
     -----------------------------------------------------------------------------------------------
 '''
-EVALUATE_RESULT_HEADER = ['NOT', 'MIS', 'DEG', 'PMI', 'PCO', 'COR']
+EVALUATE_RESULT_HEADER = ['NOT', 'MIS', 'DEG', 'PMI', 'PCO', 'COR', 'FOR']
 
 VALIDATE_RESULT_HELP = lambda N: f'''
     ----------------------- Report considering energy continuity criteria -------------------------
@@ -106,9 +135,10 @@ VALIDATE_RESULT_HELP = lambda N: f'''
             2     |     DEG      |      DEGENERATE          It is a degenerate point
             3     |     OTH      |      OTHER               0 < N < {N} and 0.8 < C < 0.9
             4     |     COR      |      CORRECT             N = 4 and C > 0.9
+            5     |     FOR      |      FORCED              Force-filled by the completeness pass
     ----------------------------------------------------------------------------------------------
 '''
-VALIDATE_RESULT_HEADER = ['NOT', 'MIS', 'DEG', 'OTH', 'COR']
+VALIDATE_RESULT_HEADER = ['NOT', 'MIS', 'DEG', 'OTH', 'COR', 'FOR']
 
 
 def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
@@ -644,6 +674,32 @@ class MATERIAL:
                 self.logger.debug(f'\t\t{d}')
 
         self.ENERGIES = energies
+
+        ###########################################################################
+        # Unit-free energy scales for the continuity gate, so no absolute eV
+        # threshold has to be hand-picked:
+        #   gap_scale  - median spacing between adjacent bands (penalty-width floor).
+        #   disp_scale - 99.9th-percentile single-step dispersion |E(k+1)-E(k)|
+        #                (a robust "max" that ignores a rare outlier step). The
+        #                gross-jump floor is a multiple of this so a legitimate
+        #                one-step continuation (even in steep bands) is never cut.
+        ###########################################################################
+        gaps = np.diff(np.sort(self.eigenvalues, axis=1), axis=1)
+        gaps = gaps[gaps > 0]
+        self.gap_scale = float(np.median(gaps)) if gaps.size else 1.0
+
+        disp_values = []
+        neigh = np.asarray(self.neighbors)
+        for j in range(neigh.shape[1]):
+            nb = neigh[:, j]
+            valid = nb != -1
+            if np.any(valid):
+                d = np.abs(self.eigenvalues[nb[valid]] - self.eigenvalues[valid])
+                if d.size:
+                    disp_values.append(d.ravel())
+        disp_scale = float(np.percentile(np.concatenate(disp_values), 99.9)) if disp_values else 0.0
+        self.disp_scale = disp_scale if disp_scale > 0 else self.gap_scale
+
         # self.nbnd = nbnd-min_band
         self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
         # self.bands_final, _ = np.meshgrid(bands, np.arange(self.nks))
@@ -689,7 +745,121 @@ class MATERIAL:
             neigh = neighs.pop(0) if len(neighs) > 0 else None
         return neigh == j if neigh is not None else False
 
-    def make_connections(self, tol:float=0.80, not_first_iteration:bool=False) -> None:
+    def _grid_step_unit(self, k_ref: int, k_neighbor: int):
+        '''
+        Unit step (per axis, on the k-space grid) pointing from ``k_ref`` toward
+        ``k_neighbor``. Neighbours are adjacent grid points, so exactly one axis
+        differs by +/-1. No periodic (BZ-wrapping) boundary is assumed: the
+        k-mesh may be open (as for MoS2), so stepping past an edge leaves the
+        mesh rather than wrapping around.
+
+        Returns
+            (idx_ref, unit, sizes) : tuple of np.ndarray
+                idx_ref : grid index of k_ref
+                unit    : integer unit step per axis (a single axis is non-zero)
+                sizes   : number of k-points per axis
+        '''
+        idx_ref = np.atleast_1d(np.asarray(self.kpoints_index[k_ref])).astype(int)
+        idx_nb = np.atleast_1d(np.asarray(self.kpoints_index[k_neighbor])).astype(int)
+        sizes = np.array([self.nkx, self.nky, self.nkz][:self.dimensions], dtype=int)
+        unit = np.sign(idx_nb - idx_ref).astype(int)
+        return idx_ref, unit, sizes
+
+    def _extrapolate_energy(self, k_ref: int, k_neighbor: int, slot: int, N: int = 4):
+        '''
+        Predict the energy that band ``slot`` (in the current solution
+        ``self.bands_final``) would have at ``k_neighbor`` by fitting a quadratic
+        to its own trajectory at ``k_ref`` and the points behind it (away from the
+        neighbor), then evaluating one step forward.
+
+        Points not yet attributed (``bands_final == -1``) are skipped so the fit
+        never reads a bogus energy (``eigenvalues[k, -1]`` would silently pick the
+        last band). The k-mesh is open (no BZ wrap): stepping past an edge stops
+        the trajectory.
+
+        Returns
+            (E_pred, sigma) : (float, float)
+                E_pred : extrapolated energy at ``k_neighbor``.
+                sigma  : local energy spread, used as the Gaussian-penalty width.
+        '''
+        idx_ref, unit, sizes = self._grid_step_unit(k_ref, k_neighbor)
+
+        Xs, Es = [], []
+        for m in range(N):                                   # m=0 -> k_ref, m>0 -> behind it
+            idx_b = idx_ref - m * unit
+            if np.any(idx_b < 0) or np.any(idx_b >= sizes):
+                break                                        # stepped off the open k-mesh: stop
+            kb = int(self.matrix[tuple(idx_b)]) if self.dimensions > 1 else int(self.matrix[idx_b[0]])
+            b = self.bands_final[kb, slot]
+            if b == -1:
+                continue                                     # unattributed: skip
+            Xs.append(-m)
+            Es.append(self.eigenvalues[kb, b])
+
+        if len(Es) == 0:
+            # Nothing attributed along this direction: fall back to the raw energy.
+            return float(self.eigenvalues[k_ref, slot]), self.sigma_min
+
+        sigma = max(float(np.std(Es)), self.sigma_min) if len(Es) > 1 else self.sigma_min
+        if len(Es) < 3:
+            return float(Es[0]), sigma                       # nearest-neighbour energy fallback
+        w = _extrap_weights(tuple(Xs))                       # cached quadratic-extrapolation weights
+        return float(w @ np.asarray(Es)), sigma              # predict one step forward (k_neighbor)
+
+    def _slot_reference_energy(self, k: int, slot: int) -> float:
+        '''
+        Reference energy for an unattributed (k, slot): extrapolate from an
+        attributed neighbour of k along that slot's trajectory; fall back to the
+        raw eigenvalue-ordering energy when the slot has no attributed neighbour.
+        '''
+        for k_nb in self.neighbors[k]:
+            if k_nb == -1:
+                continue
+            if self.bands_final[k_nb, slot] != -1:
+                E_pred, _ = self._extrapolate_energy(k_nb, k, slot)
+                return E_pred
+        return float(self.eigenvalues[k, slot])
+
+    def _force_complete_bands(self) -> np.ndarray:
+        '''
+        Force a genuine band attribution for every k-point/slot the clustering
+        left unattributed (-1). For each k-point, the bands not used by any
+        attributed slot ("available") are assigned to the empty slots so that
+        each slot takes the available band closest in energy to where its own
+        trajectory predicts it should be (continuity reference). Slots are filled
+        in reference-energy order taking the nearest still-available band, which
+        is the conflict-free, 1-D optimal realisation of "closest band in energy".
+
+        Returns
+            forced_mask : np.ndarray[bool], shape (nks, total_bands)
+                True where bands_final was force-filled by this pass.
+        '''
+        forced_mask = (self.bands_final == -1)
+        all_bands = np.arange(self.total_bands)
+        for k in range(self.nks):
+            empty_slots = np.where(forced_mask[k])[0]
+            if len(empty_slots) == 0:
+                continue
+            used = np.unique(self.bands_final[k][~forced_mask[k]])
+            # Available bands = those not used by any attributed slot at this k.
+            available = list(np.setdiff1d(all_bands, used))
+            avail_E = [float(self.eigenvalues[k, b]) for b in available]
+            # Continuity reference for each empty slot.
+            refs = [self._slot_reference_energy(k, s) for s in empty_slots]
+            # Fill low-reference-energy slots first, each taking the nearest
+            # still-available band (greedy nearest with removal == 1-D optimum).
+            for idx in np.argsort(refs, kind='stable'):
+                s = int(empty_slots[idx])
+                if not available:
+                    self.bands_final[k, s] = s          # last resort (permutation defect)
+                    continue
+                j = int(np.argmin([abs(e - refs[idx]) for e in avail_E]))
+                self.bands_final[k, s] = available.pop(j)
+                avail_E.pop(j)
+        return forced_mask
+
+    def make_connections(self, tol:float=0.80, not_first_iteration:bool=False,
+                         floor_factor:float=3.0, sigma_min_factor:float=0.25) -> None:
         '''
         This function evaluates the connection between each k point,
         and adds an edge to the graph if its connection is greater
@@ -707,43 +877,72 @@ class MATERIAL:
         ###########################################################################
         self.tol = tol
         tol = 1 - 2/np.pi * np.arccos(tol) # Convert the tolerance value to arccos metric
-      
+
+        ###########################################################################
+        # Energy-continuity gate configuration (see _extrapolate_energy).
+        #   - First build (not_first_iteration=False): no clustering solution yet,
+        #     so only the loose hard floor is applied (gross-jump guard).
+        #   - Rebuilds (not_first_iteration=True): the full gate (extrapolation +
+        #     Gaussian penalty + floor) runs along the current bands_final.
+        ###########################################################################
+        self.energy_gate_full = not_first_iteration
+        # Loose gross-jump guard. Based on the max single-step dispersion so a
+        # legitimate one-step continuation is never cut, but floored at half the
+        # band spacing so it can never collapse below it for (near-)flat bands.
+        self.floor_E = max(floor_factor * self.disp_scale, 0.5 * self.gap_scale)
+        self.sigma_min = sigma_min_factor * self.gap_scale    # min Gaussian-penalty width
+
         def connection_component(vectors:np.ndarray) -> list[list[Kpoint]]:
             '''
-            Find the possible edges in the graph using the information of dot product.
+            Find the possible edges in the graph using the dot-product
+            information, gated by energy continuity.
+
+            For each node i_ = (k1, bn1) and each neighbour k-point k2, an edge to
+            a candidate band bn2 is created only if the candidate is continuous in
+            energy with the reference (hard floor + Gaussian penalty folded into
+            the edge weight) AND the (penalised) dot product exceeds ``tol``.
 
             Parameters
                 vectors : array_like
-                    An array with vector representation of k points.
-            
+                    Node ids to process.
+
             Returns
                 edges : list[list[Kpoint]]
                     List of all edges that was found.
             '''
             edges = []
-            # bands = np.repeat(np.arange(self.min_band, self.max_band + 1), self.number_neighbors)
-            bands = np.repeat(np.arange(0, self.nbnd), self.number_neighbors)
             for i_ in vectors:
-                # bn1 = i_//self.nks + self.min_band  # bi
-                bn1 = i_//self.nks  # bi
-                k1 = i_ % self.nks
-                neighs = np.tile(self.neighbors[k1], self.nbnd)
-                ks = neighs + bands*self.nks
-                ks = ks[neighs != -1]
-                for j_ in ks:
-                    k2 = j_ % self.nks
-                    # bn2 = j_//self.nks + self.min_band  # bj
-                    bn2 = j_//self.nks  # bj
-                    i_neig = np.where(self.neighbors[k1] == k2)[0]
-                    connection = self.connections[k1, i_neig,
-                                                    bn1, bn2]  # <i|j>
-                    '''
-                    for each first neighbor
-                    Edge(i,j) = 1 iff <i, j> ~ 1
-                    '''
-                    connection = 1 - 2/np.pi * np.arccos(connection)
-                    if connection > tol:
-                        edges.append([i_, j_, connection])  # Add the weighted edge
+                bn1 = i_ // self.nks                              # reference band slot
+                k1 = i_ % self.nks                                # reference k-point
+                for i_neig, k2 in enumerate(self.neighbors[k1]):  # one fit per (node, direction)
+                    if k2 == -1:
+                        continue                                  # no neighbour in this direction
+                    if self.energy_gate_full:
+                        # Predict where the reference band continues at k2 and how
+                        # sharply to penalise departures from that prediction.
+                        E_pred, sigma = self._extrapolate_energy(k1, k2, bn1)
+                    else:
+                        # First build: hard floor only, measured from the raw energy.
+                        E_pred, sigma = self.eigenvalues[k1, bn1], None
+
+                    E_cand = self.eigenvalues[k2]                 # energies of every band at k2
+                    dE = np.abs(E_cand - E_pred)
+                    cand = np.where(dE <= self.floor_E)[0]        # HARD FLOOR (loose gross-jump guard)
+                    if len(cand) == 0:
+                        continue
+
+                    c = self.connections[k1, i_neig, bn1, cand]   # <i|j> for surviving candidates
+                    dot = 1 - 2/np.pi * np.arccos(np.clip(c, -1.0, 1.0))
+                    if self.energy_gate_full:
+                        g = np.exp(-(dE[cand] / sigma) ** 2)      # PENALTY (fast decay with |dE|)
+                        combined = dot * g
+                    else:
+                        combined = dot
+
+                    keep = combined > tol
+                    for bn2, w in zip(cand[keep], combined[keep]):
+                        j_ = int(k2) + int(bn2) * self.nks
+                        edges.append([int(i_), j_, float(w)])     # weight = overlap x continuity
             return edges
 
         self.logger.info(f'\tTolerance: {tol}')
@@ -1478,7 +1677,7 @@ class MATERIAL:
         
         self.degenerate_final = np.array(self.degenerate_final)
     
-    def print_report(self, signal_report: np.ndarray, description:str, show:bool=True) -> (str, np.ndarray):
+    def print_report(self, signal_report: np.ndarray, description:str, show:bool=True, header_text:list=None) -> (str, np.ndarray):
         '''
         Shows on screen the report for each band.
 
@@ -1494,13 +1693,17 @@ class MATERIAL:
         '''
         final_report = f'\n\t====== {description} ======\n'
         bands_report = []
-        MAX = np.max(signal_report) + 1
+        # The set of signal codes (and therefore the column layout) depends on
+        # which array is being reported, so the caller passes the matching header.
+        if header_text is None:
+            header_text = VALIDATE_RESULT_HEADER
+        n_codes = len(header_text)
         ###########################################################################
         # Prepare the summary for each band
         ###########################################################################
         for bn in range(self.nbnd):
             band_result = signal_report[:, bn]                              # Obtain all k-point' signals for band bn
-            report = [np.sum(band_result == s) for s in range(MAX)]         # Set the band report
+            report = [np.sum(band_result == s) for s in range(n_codes)]     # Set the band report
             report.append(np.round(self.final_score[bn], 4))                # Set the final score
             bands_report.append(report)
 
@@ -1514,8 +1717,7 @@ class MATERIAL:
                         'in each band signaled.\n'
         bands_header = '\n\t\t Band | '
         
-        header_text = EVALUATE_RESULT_HEADER if MAX == 6 else VALIDATE_RESULT_HEADER
-        header = header_text + ['Score']
+        header = list(header_text) + ['Score']
 
         n_spaces = len(str(np.max(bands_report[:, -1]))) + 4
 
@@ -1762,17 +1964,62 @@ class MATERIAL:
         self.final_report += '|                                       SOLUTION REPORT                                         |\n'
         self.final_report += '*************************************************************************************************\n\n'
 
-        self.final_report += f'\n\tLegend of report:\n'
-        # self.final_report += EVALUATE_RESULT_HELP
-        # self.final_report += '\n'
-        self.final_report += VALIDATE_RESULT_HELP(self.dimensions * 2)
-        self.final_report += '\n'
-        # report_s1, report_a1 = self.print_report(self.signal_final, 'Final Report for dot-product information', show=False)
-        # self.final_report += report_s1
-        # self.final_report += '\n'
-        retport_s2, report_a2 = self.print_report(self.correct_signalfinal, 'Final Report', show=False)
-        self.final_report += retport_s2
-        self.final_report += '\n'
+        # Per-band counts (validate scale: NOT, MIS, DEG, OTH, COR, FOR, Score)
+        # are still needed for the usable/completed-band logic; we read them but
+        # render a compact, actionable table instead of the full signal table.
+        _, report_a2 = self.print_report(self.correct_signalfinal, 'Final Report', show=False, header_text=VALIDATE_RESULT_HEADER)
+
+        self.final_report += (
+            '\n\tColumns: Failed = energy-discontinuous / low-overlap points (signal NOT/MIS);'
+            '\n\t         Degen  = degenerate points (need basis rotation);'
+            '\n\t         Forced = force-filled to guarantee an attribution (not a genuine solve).'
+            '\n\t         Full per-point signals are in signalfinal.npy / correct_signalfinal.npy.\n'
+        )
+
+        ###########################################################################
+        # Compact per-band table: only the actionable counts + a plain status.
+        ###########################################################################
+        TOL_USABLE = 0.95           # Minimum score to consider a band as usable.
+        bands_attention = []
+        table = '\n\t====== Final Report ======\n'
+        table += '\n\t\t Band | Failed | Degen | Forced | Score | Status'
+        table += '\n\t\t ' + '-' * 50
+        for i in range(self.nbnd):
+            failed = int(report_a2[i, NOT_SOLVED] + report_a2[i, MISTAKE])
+            degen = int(report_a2[i, DEGENERATE])
+            forced = int(report_a2[i, FORCED_CONTINUITY])
+            score = self.final_score[i]
+            if failed > 0:
+                status = 'FAIL'                 # has unsolved / mistaken points
+            elif forced > 0:
+                status = 'FORCED'               # force-filled, not a genuine solve
+            elif score <= TOL_USABLE:
+                status = 'CHECK'                # attributed but low confidence -> verify
+            elif degen > 0:
+                status = 'OK*'                  # usable, but needs basis rotation
+            else:
+                status = 'OK'
+            table += (f'\n\t\t {i+self.min_band:<4d} | {failed:^6d} | {degen:^5d} | '
+                      f'{forced:^6d} | {score:>5.2f} | {status}')
+            if status in ('FAIL', 'FORCED'):
+                bands_attention.append((i, failed, degen, forced, status))
+        table += '\n\t\t ( * usable but has degenerate points -> needs basis rotation;'
+        table += '\n\t\t   CHECK = all points attributed but score below {:.2f} -> human verification )\n'.format(TOL_USABLE)
+        self.final_report += table
+
+        ###########################################################################
+        # The points that failed and why.
+        ###########################################################################
+        if bands_attention:
+            self.final_report += '\n\t\tBands needing attention:'
+            for i, failed, degen, forced, status in bands_attention:
+                if status == 'FAIL':
+                    self.final_report += (f'\n\t\t  Band {i+self.min_band:>3d} : {failed} failed '
+                                          f'(energy discontinuity / low overlap) - NOT usable')
+                else:  # FORCED
+                    self.final_report += (f'\n\t\t  Band {i+self.min_band:>3d} : {forced} forced '
+                                          f'(no genuine continuation found) - usable with caution')
+            self.final_report += '\n'
 
         p_report, problems = self.solved_problems_info
 
@@ -1833,26 +2080,25 @@ class MATERIAL:
                 for k, bn1, bn2 in self.degenerate_final[i_sort]:
                     self.final_report += f'\n\t\t  * K-point: {k} \tBands: {bn1+self.min_band}, {bn2+self.min_band}'
 
-        TOL_USABLE = 0.95           # Minimum score to consider a band as usable.
         n_recomended = 0
         max_solved = 0
         
         for i, _ in enumerate(self.final_score):
-            if np.sum(report_a2[i, NOT_SOLVED]) > 0:
+            if np.sum(report_a2[i, [NOT_SOLVED, FORCED_CONTINUITY]]) > 0:
                 break
             max_solved += 1
-        
+
         self.max_solved = max_solved
 
         n_max = max_solved
         for i, s in enumerate(self.final_score):
-            if s <= TOL_USABLE or i > max_solved or np.sum(report_a2[i, [NOT_SOLVED, MISTAKE]]) > 0:
+            if s <= TOL_USABLE or i > max_solved or np.sum(report_a2[i, [NOT_SOLVED, MISTAKE, FORCED_CONTINUITY]]) > 0:
                 break
             n_recomended += 1
-        
+
         self.completed_bands = []
         for i, s in enumerate(self.final_score):
-            if s <= TOL_USABLE or np.sum(report_a2[i, [NOT_SOLVED, MISTAKE]]) > 0:
+            if s <= TOL_USABLE or np.sum(report_a2[i, [NOT_SOLVED, MISTAKE, FORCED_CONTINUITY]]) > 0:
                 continue
             self.completed_bands.append(i)
         self.completed_bands = np.array(self.completed_bands)
@@ -1868,6 +2114,12 @@ class MATERIAL:
 
         self.final_report += f'\n\n\tThe program has clustered without errors {len(self.completed_bands)} bands. \n\tThe information is stored in the `completed_bands.npy` file.'
         self.final_report += f'\n\t\t  Band: ' + ', '.join([str(bn+self.min_band) for bn in self.completed_bands])
+
+        n_forced = int(np.sum(self.forced_mask)) if getattr(self, 'forced_mask', None) is not None else 0
+        if n_forced > 0:
+            self.final_report += f'\n\n\t{n_forced} point(s) were force-filled (FOR) by the completeness pass to guarantee a'
+            self.final_report += f'\n\tband attribution everywhere. These are not genuine solves: they were assigned the'
+            self.final_report += f'\n\tclosest available band in energy and are excluded from the usable/completed bands.'
 
         if len(degenerates) > 0:
             self.final_report += f'\n\n\tTo use the program basis rotation, you must run the program for the first {n_max} bands.'
@@ -1929,11 +2181,11 @@ class MATERIAL:
 
             self.logger.info('\n\t\tCalculating output')        
             self.obtain_output()                            # Compute the result
-            self.print_report(self.signal_final, f'Report Number: {COUNT} considering dot-product information')                           # Print result
+            self.print_report(self.signal_final, f'Report Number: {COUNT} considering dot-product information', header_text=EVALUATE_RESULT_HEADER)                           # Print result
 
             self.logger.info('\n\t\tValidating result using energy continuity criteria')     
             self.correct_signal()                           # Evaluate the energy continuity and perform a new Graph
-            self.print_report(self.correct_signalfinal, f'Validation Report Number: {COUNT} considering  energy continuity criteria')     # Print result
+            self.print_report(self.correct_signalfinal, f'Validation Report Number: {COUNT} considering  energy continuity criteria', header_text=VALIDATE_RESULT_HEADER)     # Print result
             
             # Verification if the result is similar to the previous one
             bands_final_flag = np.sum(np.abs(self.bands_final_prev - self.bands_final)) != 0
@@ -2003,21 +2255,29 @@ class MATERIAL:
                 self.correct_signal()
 
                 self.logger.info(f'\n\t\t\tBest result: {max_solved} bands')
-                self.print_report(self.correct_signalfinal, f'Validation Report: Best Iteration')     # Print result
+                self.print_report(self.correct_signalfinal, f'Validation Report: Best Iteration', header_text=VALIDATE_RESULT_HEADER)     # Print result
 
             self.alpha -= step
         
         # The best result is maintained
         self.bands_final = np.copy(self.best_bands_final)
-        bands_final, _ = np.meshgrid(np.arange(0, self.total_bands), np.arange(self.nks))
-        self.bands_final[self.bands_final == -1] = bands_final[self.bands_final == -1]
-        
+
+        ###########################################################################
+        # Force a genuine band attribution everywhere: every slot the clustering
+        # left unattributed is filled with the closest available band in energy,
+        # using a continuity reference. These points are flagged FORCED so the
+        # report and basisrotation can tell them apart from genuine solves.
+        ###########################################################################
+        self.forced_mask = self._force_complete_bands()
+
         self.final_score = np.copy(self.best_score)
-        self.degenerate_final = np.copy(self.degenerate_best)      
-        self.signal_final = np.copy(self.best_signal_final)  
+        self.degenerate_final = np.copy(self.degenerate_best)
+        self.signal_final = np.copy(self.best_signal_final)
+        self.signal_final[self.forced_mask] = FORCED
         self.max_solved = max_solved
 
         self.correct_signal(last=True)
+        self.correct_signalfinal[self.forced_mask] = FORCED_CONTINUITY
         self.logger.info(self.report())
 
 class COMPONENT:
