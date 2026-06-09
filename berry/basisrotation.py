@@ -1,350 +1,476 @@
 """
-  This program finds the problematic cases and makes a basis rotation of
-  the wavefunctions
+  Basis rotation of degenerate Bloch wavefunctions, driven by the degenerate
+  k-points found during the clustering step (``cluster`` or ``cluster0``).
+
+  This is the *a posteriori* twin of ``degenrotation``: it runs AFTER cluster
+  and reuses the exact same rotation machinery (connected-zone construction,
+  SVD/Procrustes alignment, holonomy correction, iterative gauge refinement,
+  BFS propagation), but takes its list of degenerate points from the
+  clustering's ``degeneratefinal.npy`` instead of detecting degeneracies by
+  energy.  ``degenrotation`` remains the *a priori* tool (run before cluster),
+  which detects degeneracies directly from the eigenvalues.
+
+  Behaviour:
+    * A flagged k-point with no flagged neighbour forms a single-point zone and
+      is rotated against its best clean (non-degenerate) external neighbour.
+    * Flagged k-points adjacent to each other form a connected zone; the
+      rotation is propagated across the whole zone via BFS.
+    * Only flagged k-points are ever written; clean neighbours are read as
+      reference anchors but never modified.
+
+  For colinear calculations each wavefunction is a complex array of shape (nr,);
+  rotated wavefunctions overwrite ``k0{nk}b0{band}.wfc`` in place.
+  For non-colinear calculations each wavefunction is a spinor pair stored as
+  ``-0``/``-1`` files; the same N x N unitary is applied to both components.
 """
 import os
 import logging
-
-from scipy.optimize import minimize
+from collections import defaultdict
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 
 from berry import log
-from berry._subroutines.write_k_points import _bands_numbers
-from berry._subroutines.clustering_libs import evaluate_result
+from berry._subroutines.rotation_core import (
+    _process_zone, build_zones,
+)
 
 try:
     import berry._subroutines.loaddata as d
     import berry._subroutines.loadmeta as m
-except:
+except Exception:
     pass
 
 
-FORCED = 6              # force-filled by the clustering completeness pass (not a genuine solve)
-CORRECT = 5
-POTENTIAL_CORRECT = 4
-POTENTIAL_MISTAKE = 3
-DEGENERATE = 2
-MISTAKE = 1
-NOT_SOLVED = 0
+ENERGY_THRESHOLD = 0.0001  # eigenvalue units (eV for standard QE XML output)
 
-def func(aa, ddot):
-    # < Psi_A | Psi_1 > a_1 + < Psi_A | Psi_2 > a_2
-    r1 = complex(ddot[0],ddot[1])*aa[0]*np.exp(1j*aa[1]) + complex(ddot[2],ddot[3])*np.sqrt(1 - aa[0]**2)*np.exp(1j*aa[2])
-    # < Psi_B | Psi_1 > b_1 + < Psi_B | Psi_2 > b_2
-    r2 = complex(ddot[4],ddot[5])*aa[3]*np.exp(1j*aa[4]) + complex(ddot[6],ddot[7])*np.sqrt(1 - aa[3]**2)*np.exp(1j*aa[5])
-    # return the negative, so it minimizes instead of maximizes
-    return -np.absolute(r1) - np.absolute(r2)
+# Energy-coherence threshold for grouping cluster-flagged bands into one
+# rotatable subspace.  Looser than ENERGY_THRESHOLD on purpose: it only splits
+# flagged pairs whose bands are *clearly* non-degenerate (default ~10 meV),
+# otherwise the cluster's flag is trusted.  Set to None to disable the guard.
+GROUP_ENERGY_THRESHOLD = 0.01  # eigenvalue units (eV)
 
-def set_new_signal(k, bn, psinew, bnfinal, sigfinal, connections, logger: log):
-    """Verifies the result of the basis rotation, and make the necessary changes to the signal's file.
-    k              the k-point where transformation was performed
-    bn             array with the original band numbers for each k-point, state
-    psinew         new wavefunction
-    bnfinal        the band where the wavefunction ends up
-    sigfinal       the new signaling of the state
-    connections    the array with the original modulus of the dot products
+
+# Module-level shared context populated by run_basis_rotation before forking.
+# Workers read this dict (never write to it); large arrays are inherited via
+# copy-on-write when using the fork start method on Linux / macOS.
+_zone_ctx: dict = {}
+
+
+# ---------------------------------------------------------------------------
+# Phase 1' — read degenerate points from the clustering output
+# ---------------------------------------------------------------------------
+
+def _union_pairs(pairs: list) -> list:
+    """Merge degenerate band pairs that share a band into maximal groups.
+
+    A triplet degeneracy is stored by the clustering as the overlapping pairs
+    {a,b}, {a,c}, {b,c}; this returns the single group {a,b,c}.  Handles
+    transitive merges (a pair can connect two previously-disjoint groups).
     """
-    logger.info("")
-    machbn = bnfinal[k, bn]      # Original band attribution for k-point k and state bn
+    groups: list = []
+    for p in pairs:
+        p = set(p)
+        overlap     = [g for g in groups if g & p]
+        non_overlap = [g for g in groups if not (g & p)]
+        for g in overlap:
+            p |= g
+        groups = non_overlap + [p]
+    return [frozenset(g) for g in groups]
 
-    dot_products = []
-    for i_neig, kneig in enumerate(d.neighbors[k]):  # Run over neighbors
-        if kneig == -1:    # Exclude k-points out of the set
-            continue
 
-        bneig = bnfinal[kneig, bn]   # Original band attribution of the neighbor
-        logger.info(f"\tCalculating dot product <{k},{machbn + initial_band}|{kneig},{bneig + initial_band}>")
-        # Get neighbor's wavefunction
-        psineig = np.load(os.path.join(m.wfcdirectory, f"k0{kneig}b0{bneig + initial_band}.wfc"))
-        if isinstance(psineig, np.lib.npyio.NpzFile): # check if wfc is .npz compressed file
-            psineig = psineig['arr_0']
+def _degen_at_k_from_cluster(degeneratefinal, eigenvalues, nbnd, initial_band,
+                             bands_final, logger, group_ethr=None) -> dict:
+    """Build ``degen_at_k = {nk: [frozenset(absolute_bands), ...]}`` from the
+    clustering's ``degeneratefinal.npy``.
 
-        # Calculate the dot product between the neighbor and the new state
-        dphase = d_phase[:, k] * np.conjugate(d_phase[:, kneig])
-        dot_product = np.sum(dphase * psinew * np.conjugate(psineig)) / m.nr
-        dp = np.abs(dot_product)
-        logger.info(f'\told dp: {connections[k, i_neig, machbn, bneig]} new dp: {dp}')
-        dot_products.append(dp)
+    Each row is ``[k, c1, c2]`` -- a degenerate band pair at k-point k.  The
+    clustering works in bands RELATIVE to ``min_band = initial_band`` (it slices
+    ``eigenvalues[:, min_band:]`` and stores ``bands_final`` values in that
+    relative space), whereas the rotation core, the wfc files and
+    ``d.eigenvalues`` are ABSOLUTE.  We therefore add ``initial_band`` to map
+    every band to the absolute index space before returning.
 
-        # Evaluates the new signaling of the state
-        dot_products_neigs = []
-        for j_neig, k2_neig in enumerate(d.neighbors[kneig]):
-            if k2_neig == -1:
+    Robustness: ``c1, c2`` are band values for the main cluster path and for
+    cluster0's primary block, but cluster0's secondary block can emit slot
+    indices instead.  For each row we consider both interpretations --
+    value: ``(c + initial_band)`` and slot: ``(bands_final[k, c] + initial_band)``
+    -- and keep whichever is the more energy-degenerate (smallest |E_a - E_b|,
+    measured on the absolute ``eigenvalues``).  Ties favour the value
+    interpretation.
+
+    Energy-coherent grouping (``group_ethr``): the cluster flags degeneracy by
+    dot product, not energy, so two flagged bands can be far apart in energy
+    (e.g. band 3 independently flagged with bands 2 and 4 at the same k, where
+    E2 ~ E3 but E4 is distant).  Blindly unioning shared-band pairs would lump
+    such non-degenerate bands into one subspace and let the Procrustes step mix
+    states that are not eigenstates.  A flagged pair is therefore kept as a
+    degenerate edge only if its energy gap is below ``group_ethr``; pairs whose
+    bands are *clearly* separated are dropped (the surviving edges are then
+    unioned, so a real triple degeneracy is preserved while a spurious one is
+    split).  ``group_ethr=None`` disables the guard and trusts every flagged
+    pair regardless of energy.
+    """
+    if degeneratefinal is None or len(degeneratefinal) == 0:
+        return {}
+
+    deg = np.atleast_2d(np.asarray(degeneratefinal))
+    if deg.ndim != 2 or deg.shape[1] < 3:
+        logger.warning(
+            f"\tdegeneratefinal has unexpected shape {deg.shape}; "
+            f"expected (N, >=3) rows [k, b1, b2]. Nothing to do."
+        )
+        return {}
+
+    n_slots = bands_final.shape[1] if bands_final is not None else 0
+
+    pairs_at_k: dict = defaultdict(list)
+    n_used = n_skipped = n_filtered = 0
+    for row in deg:
+        k, c1, c2 = int(row[0]), int(row[1]), int(row[2])
+
+        candidates = []
+        # Candidate A -- columns are band values relative to initial_band.
+        a1, a2 = c1 + initial_band, c2 + initial_band
+        if initial_band <= a1 < nbnd and initial_band <= a2 < nbnd:
+            candidates.append((a1, a2))
+        # Candidate B -- columns are slots into bands_final (cluster0 edge path).
+        if 0 <= c1 < n_slots and 0 <= c2 < n_slots:
+            b1 = int(bands_final[k, c1]) + initial_band
+            b2 = int(bands_final[k, c2]) + initial_band
+            if initial_band <= b1 < nbnd and initial_band <= b2 < nbnd:
+                candidates.append((b1, b2))
+
+        best, best_gap = None, None
+        for a, b in candidates:
+            if a == b:
                 continue
-            bn2neig = bnfinal[k2_neig, bn]
-            connection = dp if k2_neig == k else connections[kneig, j_neig, bneig, bn2neig]
-            dot_products_neigs.append(connection)
-        new_signal = evaluate_result(dot_products_neigs)
-        logger.info(f'\told signal: {sigfinal[kneig, bn]} new signal: {new_signal}')
-        sigfinal[kneig, bn] = new_signal
-    
-    sigfinal[k, bn] = evaluate_result(dot_products)
+            gap = abs(float(eigenvalues[k, a]) - float(eigenvalues[k, b]))
+            if best_gap is None or gap < best_gap:
+                best, best_gap = (a, b), gap
 
-    return sigfinal
+        if best is None:
+            n_skipped += 1
+            continue
+        # Energy-coherence guard: drop a flagged pair whose bands are clearly
+        # non-degenerate, so it cannot pull a distant band into the subspace.
+        if group_ethr is not None and best_gap >= group_ethr:
+            n_filtered += 1
+            continue
+        pairs_at_k[k].append(frozenset(best))
+        n_used += 1
 
-# Start run of basis rotation
-def run_basis_rotation(max_band: int, npr: int = 1, logger_name: str = "basis", logger_level: int = logging.INFO, compress: bool = False, flush: bool = False):
-    global signalfinal, d_phase, initial_band
+    degen_at_k = {k: _union_pairs(pairs) for k, pairs in pairs_at_k.items()}
+
+    logger.info(
+        f"\tRead {n_used} degenerate pair(s) from cluster across "
+        f"{len(degen_at_k)} k-point(s)"
+        + (f"; dropped {n_filtered} pair(s) with energy gap >= {group_ethr} (non-degenerate)"
+           if n_filtered else "")
+        + (f"; skipped {n_skipped} unusable row(s)" if n_skipped else "")
+    )
+    return degen_at_k
+
+
+# ---------------------------------------------------------------------------
+# Parallel zone worker
+# ---------------------------------------------------------------------------
+
+def _process_zone_worker(args: tuple) -> list:
+    """Fork-based parallel zone worker (reads shared data from _zone_ctx)."""
+    zi, sig, zone = args
+    ctx = _zone_ctx
+    import logging as _logging
+    logger = _logging.getLogger(ctx['logger_name'])
+    return _process_zone(
+        zi=zi, sig=sig, zone=zone,
+        d_phase         = ctx['d_phase'],
+        eigenvalues     = ctx['eigenvalues'],
+        neighbors       = ctx['neighbors'],
+        noncolin        = ctx['noncolin'],
+        wfcdir          = ctx['wfcdir'],
+        nr              = ctx['nr'],
+        n_dir           = ctx['n_dir'],
+        compress        = ctx['compress'],
+        ethr            = ctx['ethr'],
+        max_refinement_iter   = ctx['max_refinement_iter'],
+        refinement_iter_cap   = ctx['refinement_iter_cap'],
+        refinement_anderson_m = ctx['refinement_anderson_m'],
+        refinement_tol        = ctx['refinement_tol'],
+        holonomy_correction      = ctx['holonomy_correction'],
+        holonomy_max_iter        = ctx['holonomy_max_iter'],
+        holonomy_tol             = ctx['holonomy_tol'],
+        use_wfc_cache            = ctx['use_wfc_cache'],
+        n_workers                = 1,  # avoid nested parallelism inside a worker
+        logger                   = logger,
+        holonomy_min_plaquettes  = ctx.get('holonomy_min_plaquettes', 2),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+def run_basis_rotation(
+    max_band: int = -1,
+    npr: int = 1,
+    logger_name: str = "basis",
+    logger_level: int = logging.INFO,
+    compress: bool = False,
+    flush: bool = False,
+    ethr: float = ENERGY_THRESHOLD,
+    group_ethr: float = GROUP_ENERGY_THRESHOLD,
+    max_refinement_iter: int = 50,
+    refinement_iter_cap: int = 500,
+    refinement_anderson_m: int = 10,
+    refinement_tol: float = 1e-4,
+    holonomy_correction: bool = True,
+    holonomy_max_iter: int = 20,
+    holonomy_tol: float = 1e-4,
+    holonomy_min_plaquettes: int = 2,
+    use_wfc_cache: bool = True,
+) -> None:
     logger = log(logger_name, "BASIS ROTATION", level=logger_level, flush=flush)
-
-    initial_band = m.initial_band if m.initial_band != "dummy" else 0
-    max_band -= initial_band
-
     logger.header()
 
-    # Reading data needed for the run
-    
-    logger.info("\tUnique reference of run:", m.refname)
-    logger.info("\tDirectory where the wfc are:", m.wfcdirectory)
-    logger.info("\tNumber of k-points in each direction:", m.nkx, m.nky, m.nkz)
-    logger.info("\tTotal number of k-points:", m.nks)
-    logger.info("\tTotal number of points in real space:", m.nr)
-    logger.info("\tNumber of bands:", max_band)
-    logger.info(f"\tBands: [{initial_band}, {max_band + initial_band}]")
+    n_workers = npr
+
+    initial_band = m.initial_band if m.initial_band != "dummy" else 0
+    final_band   = m.final_band
+
+    # ------------------------------------------------------------------
+    # Log run parameters
+    # ------------------------------------------------------------------
+    logger.info(f"\tUnique reference of run: {m.refname}")
+    logger.info(f"\tDirectory where the wfc are: {m.wfcdirectory}")
+    logger.info(f"\tNumber of k-points: {m.nkx} x {m.nky} x {m.nkz} = {m.nks}")
+    logger.info(f"\tTotal number of points in real space: {m.nr}")
+    logger.info(f"\tBands: [{initial_band}, {final_band}]")
+    logger.info(f"\tDimensions: {m.dimensions}")
+    logger.info(f"\tNoncolinear: {m.noncolin}")
+    logger.info(f"\tEnergy threshold (reference selection): {ethr}")
+    logger.info(f"\tEnergy-coherence grouping threshold: {group_ethr}"
+                + ("  (disabled — trusting all cluster flags)" if group_ethr is None else ""))
+    logger.info(
+        f"\tHolonomy correction: {holonomy_correction}  "
+        f"(max_iter={holonomy_max_iter}, tol={holonomy_tol:.1e}, "
+        f"min_plaquettes={holonomy_min_plaquettes})"
+    )
+    logger.info(f"\tIn-memory wfc cache: {use_wfc_cache}")
+    logger.info(f"\tParallelism: n_workers={n_workers}")
     logger.info()
 
-    if m.noncolin:
-        logger.info("\n\tThis is a noncolinear calculation: basis rotation is not implemented.")
-        logger.info("\tExiting.")
-        logger.footer()
-        exit(0)
+    # ------------------------------------------------------------------
+    # Load shared data
+    # ------------------------------------------------------------------
+    def _require(path, hint):
+        if not os.path.isfile(path):
+            logger.error(
+                f"\tRequired input '{os.path.basename(path)}' not found in {m.data_dir}.\n"
+                f"\t{hint}"
+            )
+            logger.footer()
+            raise SystemExit(1)
+        return np.load(path)
 
-    d_phase = np.load(os.path.join(m.data_dir, "phase.npy"))
-    logger.info("\tPhases loaded")
+    d_phase     = _require(os.path.join(m.data_dir, "phase.npy"),
+                           "Run 'berry wfcgen'/'berry dot' before basis rotation.")
+    eigenvalues = d.eigenvalues                                     # shape (nks, nbnd)
+    neighbors   = d.neighbors                                       # shape (nks, 2*dimensions)
 
-    try: # reading .npz compressed file if exists
-        dotproduct = np.load(os.path.join(m.data_dir, "dpc.npz"))
-        connections = np.load(os.path.join(m.data_dir, "dp.npz"))
-        
-        dotproduct = dotproduct['arr_0']
-        connections = connections['arr_0']
+    logger.info(f"\tPhases loaded, shape: {d_phase.shape}")
+    logger.info(f"\tEigenvalues loaded, shape: {eigenvalues.shape}")
 
-        logger.info("\tDot product loaded")
-    except: # reading .npy file otherwise
-        dotproduct = np.load(os.path.join(m.data_dir, "dpc.npy"))
-        connections = np.load(os.path.join(m.data_dir, "dp.npy"))
-        logger.info("\tDot product loaded")
-
-    logger.info("\tReading files bandsfinal.npy, signalfinal.npy and degeneratefinal.npy")
-    bandsfinal = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
-    signalfinal = np.load(os.path.join(m.data_dir, "signalfinal.npy"))
-    degeneratefinal = np.load(os.path.join(m.data_dir, "degeneratefinal.npy"))
-
-    # Finished reading data from files
-    ###################################################################################
-    # Start identifying states to apply rotation
+    bands_final     = _require(os.path.join(m.data_dir, "bandsfinal.npy"),
+                               "Run 'berry cluster' (or 'cluster0') before basis rotation.")
+    degeneratefinal = _require(os.path.join(m.data_dir, "degeneratefinal.npy"),
+                               "Run 'berry cluster' (or 'cluster0') before basis rotation.")
+    logger.info(f"\tRead bandsfinal.npy {bands_final.shape} and degeneratefinal.npy")
     logger.info()
-    logger.info("\t**********************")
-    logger.info("\n\tProblems signaled:")
-    if degeneratefinal.shape[0] == 0:
-        logger.info("\n\tNo problems found.")
-        logger.footer()
-        exit(0)
-    # Consider just the ones below last band wanted
-    kpproblem = degeneratefinal[:, 0]
-    bnproblem = degeneratefinal[:, [1, 2]]
-    S1 = signalfinal[kpproblem, bnproblem[:, 0]]
-    S2 = signalfinal[kpproblem, bnproblem[:, 1]]
-    bands_use1 = np.logical_and(bnproblem[:, 0] <= max_band, bnproblem[:, 1] <= max_band)
-    bands_use2 = np.logical_and(S1 == DEGENERATE, S2 == DEGENERATE)
-    bands_use = np.logical_and(bands_use1, bands_use2)
-    if np.sum(bands_use) == 0:
-        logger.info("\n\tNo problems found in the band range.")
-        logger.footer()
-        exit(0)
-    kpproblem = kpproblem[bands_use]   # Arrays already filtered
-    bnproblem = bnproblem[bands_use]
-    matchbandproblem = np.array(list(zip(bandsfinal[kpproblem, bnproblem[:, 0]],
-                                        bandsfinal[kpproblem, bnproblem[:, 1]])))
 
-    # list_str = lambda l:' (' + ', '.join(map(str, l)) + ') '
-    list_str = lambda l:' (' + ', '.join(map(str, l + initial_band)) + ') '
-    logger.info("\tk-points\n\t", ', '.join(map(str, kpproblem)))
-    logger.info("\tin bands\n\t", ', '.join(map(list_str, bnproblem)))
-    logger.info("\tmatch  bands\n\t", ', '.join(map(list_str, matchbandproblem)))
+    # ==================================================================
+    # Phase 1' — Read degenerate k-points from the clustering output
+    # ==================================================================
+    logger.info("\t****  Phase 1: Reading degenerate k-points from cluster  ****")
+    logger.info()
 
-    # runs through the list of problems
-    for nkindex, nk0 in enumerate(kpproblem):  # nkindex is the index in list kpproblem
-        logger.info("\n\n\tK-point where problem will be solved:", nk0)
-        for j in range(m.dimensions*2):    # Find the neigbhors of the k-point to be used on interpolation
-            nk = d.neighbors[nk0, j]       # k-point number of neighbor
-            if nk != -1 and DEGENERATE < signalfinal[nk,bnproblem[nkindex, 0]] < FORCED and DEGENERATE < signalfinal[nk,bnproblem[nkindex, 1]] < FORCED:
-                nb1 = matchbandproblem[nkindex, 0]   # One of the bands of the neighbor
-                nb2 = matchbandproblem[nkindex, 1]   # The other band
-                nkj = j
-                break                      # Found a valid neighbor, can proceed
-            else:
-                nb1 = -1
-                nb2 = -1
-                nkj = -1
-        logger.info("\tReference k-point:", nk)
-        if nkj == -1:
-            logger.info("\tNo neighbors valid for basis rotation. Skipping.")
-            continue
+    degen_at_k = _degen_at_k_from_cluster(
+        degeneratefinal, eigenvalues, m.nbnd, initial_band, bands_final, logger,
+        group_ethr=group_ethr,
+    )
+
+    # Honour the "maximum band to consider" CLI argument: drop any degenerate
+    # group that involves a band above max_band (max_band < 0 disables the cut).
+    if max_band is not None and max_band >= 0:
+        filtered = {}
+        for nk, groups in degen_at_k.items():
+            kept = [g for g in groups if max(g) <= max_band]
+            if kept:
+                filtered[nk] = kept
+        n_dropped = len(degen_at_k) - len(filtered)
+        degen_at_k = filtered
+        if n_dropped:
+            logger.info(f"\tBand cut <= {max_band}: dropped {n_dropped} k-point(s) above the range")
+
+    n_degen_kpts = len(degen_at_k)
+
+    if n_degen_kpts == 0:
+        logger.info("\tNo degenerate k-points flagged by the clustering. Nothing to do.")
+        logger.footer()
+        return
+
+    sig_counts: dict = defaultdict(int)
+    for groups in degen_at_k.values():
+        for g in groups:
+            sig_counts[tuple(sorted(g))] += 1
+    logger.info("\tDegenerate band groups and their k-point counts:")
+    for sig, count in sorted(sig_counts.items(), key=lambda x: (len(x[0]), x[0])):
+        logger.info(f"\t  bands {list(sig):}: {count} k-point(s)")
+    logger.info()
+
+    # ==================================================================
+    # Phase 2 — Form connected degenerate zones (isolated points vs zones)
+    # ==================================================================
+    logger.info("\t****  Phase 2: Forming degenerate zones  ****")
+    logger.info()
+
+    zones = build_zones(degen_at_k, neighbors, 2 * m.dimensions)
+
+    n_isolated = sum(1 for _, z in zones if len(z) == 1)
+    logger.info(f"\tFormed {len(zones)} zone(s): "
+                f"{n_isolated} isolated point(s), {len(zones) - n_isolated} multi-point zone(s)")
+    for zi, (sig, zone) in enumerate(zones):
+        kind = "isolated" if len(zone) == 1 else "zone"
+        logger.info(f"\t  Zone {zi:>4} [{kind}]: bands {sorted(sig)}, {len(zone)} k-point(s)")
+    logger.info()
+
+    # ==================================================================
+    # Phases 3 & 4 — Reference selection and BFS rotation propagation
+    # ==================================================================
+    logger.info("\t****  Phases 3 & 4: Reference selection and BFS rotation propagation  ****")
+
+    _zone_ctx.update({
+        'd_phase':               d_phase,
+        'eigenvalues':           eigenvalues,
+        'neighbors':             neighbors,
+        'noncolin':              m.noncolin,
+        'wfcdir':                m.wfcdirectory,
+        'nr':                    m.nr,
+        'n_dir':                 2 * m.dimensions,
+        'compress':              compress,
+        'ethr':                  ethr,
+        'max_refinement_iter':   max_refinement_iter,
+        'refinement_iter_cap':   refinement_iter_cap,
+        'refinement_anderson_m': refinement_anderson_m,
+        'refinement_tol':        refinement_tol,
+        'holonomy_correction':      holonomy_correction,
+        'holonomy_max_iter':        holonomy_max_iter,
+        'holonomy_tol':             holonomy_tol,
+        'holonomy_min_plaquettes':  holonomy_min_plaquettes,
+        'use_wfc_cache':            use_wfc_cache,
+        'logger_name':           logger_name,
+        'logger_level':          logger_level,
+    })
+
+    # Group consecutive zones by signature; same-signature zones have disjoint
+    # k-point sets and may run in parallel.
+    zone_groups: list = []
+    for zi, (sig, zone) in enumerate(zones):
+        if zone_groups and zone_groups[-1][0] == sig:
+            zone_groups[-1][1].append((zi, zone))
         else:
-            logger.info("\tBands that will be mixed:", nb1 + initial_band, nb2 + initial_band)
-        # k-point that has a problem: nk0
-        # k-point that has clear bands A and B: nkj
-        # dots products read from file
-        dotA1 = dotproduct[nk0, nkj, nb1, nb1]    # < nk0,nb1 | nkj,nb1 >
-        dotA2 = dotproduct[nk0, nkj, nb1, nb2]    # < nk0,nb1 | nkj,nb2 >
-        dotB1 = dotproduct[nk0, nkj, nb2, nb1]    # < nk0,nb2 | nkj,nb1 >
-        dotB2 = dotproduct[nk0, nkj, nb2, nb2]    # < nk0,nb2 | nkj,nb2 >
-        # Create array with the dot products, real and imaginary part separated, to be the parameters of func()
-        dot = np.array([np.real(dotA1), np.imag(dotA1), np.real(dotA2), np.imag(dotA2), np.real(dotB1), np.imag(dotB1), np.real(dotB2), np.imag(dotB2)])
-        
-        # Starting values for the variables we want to find
-        a1 = 0.5                 # Modulus of a_1
-        a1o = 0                  # Phase of a_1
-        a2 = np.sqrt(1 - a1**2)  # Modulus of a_2, is related to modulus of a_1 due to normalization
-        a2o = 0                  # Phase of a_2
+            zone_groups.append((sig, [(zi, zone)]))
 
-        b1 = 0.5                 # Modulus of b_1
-        b1o = 0                  # Phase of b_1
-        b2 = np.sqrt(1 - b1**2)  # Modulus of b_2, is related to modulus of b_1 due to normalization
-        b2o = 0                  # Phase of b_2
-        # Array with the initial values
-        a = np.array([a1, a1o, a2o, b1, b1o, b2o])
+    try:
+        _fork_ctx = mp.get_context('fork')
+    except ValueError:
+        _fork_ctx = None
+        if n_workers > 1:
+            logger.warning(
+                "\tParallel zone processing requires the 'fork' start method "
+                "(Linux/macOS); falling back to serial processing."
+            )
 
-        # The following is equivalent to the constraint a_1^*b_1 + a_2^*b_2 = 0
-        const = ({'type': 'eq', 'fun': lambda a: a[0]*a[3]*np.cos(a[4] - a[1]) + np.sqrt(1 - a[0]**2)*np.sqrt(1 - a[3]**2)*np.cos(a[5] - a[2])},
-                 {'type': 'eq', 'fun': lambda a: a[0]*a[3]*np.sin(a[4] - a[1]) + np.sqrt(1 - a[0]**2)*np.sqrt(1 - a[3]**2)*np.sin(a[5] - a[2])})
+    summary_rows = []
 
-        logger.info()
-
-        myoptions = {'disp': False}
-        # Bounds for the variables we want to find (modulus vary between 0 and 1 and phases between -pi and +pi)
-        bnds = ((0, 1), (-np.pi, np.pi), (-np.pi, np.pi), (0, 1), (-np.pi, np.pi), (-np.pi, np.pi))
-        # Finds the arguments a that minimizes func() with the constraint const = 0
-        res = minimize(func, a, args=dot, options = myoptions, bounds = bnds, constraints = const)
-
-        logger.info("\tResult output:", res.x)
-        ca1 = res.x[0]*np.exp(1j*res.x[1])
-        logger.info("\ta1 = ", ca1)
-        ca2 = np.sqrt(1 - res.x[0]**2)*np.exp(1j*res.x[2])
-        logger.info("\ta2 = ", ca2)
-        cb1 = res.x[3]*np.exp(1j*res.x[4])
-        logger.info("\tb1 = ", cb1)
-        cb2 = np.sqrt(1 - res.x[3]**2)*np.exp(1j*res.x[5])
-        logger.info("\tb2 = ", cb2)
-        verification = np.conjugate(ca1)*cb1 + np.conjugate(ca2)*cb2
-        logger.info(f"\tVerification, should be zero: {verification}")
-
-        # Create arrays for the new wavefunctions
-        psinewA = np.zeros((int(m.nr)), dtype=complex)
-        psinewB = np.zeros((int(m.nr)), dtype=complex)
-
-        # Load old wavefunctions
-        infile = os.path.join(m.wfcdirectory, f"k0{nk0}b0{nb1 + initial_band}.wfc")
-        logger.info()
-        logger.info("\tReading old wavefunction 1: ", infile)
-        psi1 = np.load(infile)  # puts wfc in this array
-        if isinstance(psi1, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
-            psi1 = psi1['arr_0']
-
-        infile = os.path.join(m.wfcdirectory, f"k0{nk0}b0{nb2 + initial_band}.wfc")
-        logger.info("\tReading old wavefunction 2: ", infile)
-        psi2 = np.load(infile)  # puts wfc in this array
-        if isinstance(psi2, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
-            psi2 = psi2['arr_0']
-
-        # Calculate new wavefunctions
-        psinewA = psi1*ca1 + psi2*ca2
-        psinewB = psi1*cb1 + psi2*cb2
-
-        signalfinal = set_new_signal(nk0, nb1, psinewA, bandsfinal, signalfinal, connections, logger)
-        signalfinal = set_new_signal(nk0, nb2, psinewB, bandsfinal, signalfinal, connections, logger)
-
-        # Save new wavefunctions to files with extension wfc1
-        logger.info()
-        outfile = os.path.join(m.wfcdirectory, f"k0{nk0}b0{nb1 + initial_band}.wfc1")
-        logger.info("\tWriting file: ", outfile)
-        with open(outfile, "wb") as f:
-            if compress:
-                np.savez_compressed(f, psinewA)
+    try:
+        for _sig, _sig_zone_list in zone_groups:
+            _n_zones = len(_sig_zone_list)
+            if _n_zones > 1 and n_workers > 1 and _fork_ctx is not None:
+                _n_pool = min(n_workers, _n_zones)
+                logger.info(
+                    f"\t  [Parallel zones] bands {sorted(_sig)}: "
+                    f"{_n_zones} zone(s) -> {_n_pool} worker(s)"
+                )
+                _args = [(_zi, _sig, _zone) for _zi, _zone in _sig_zone_list]
+                with ProcessPoolExecutor(max_workers=_n_pool, mp_context=_fork_ctx) as _ex:
+                    for _zone_rows in _ex.map(_process_zone_worker, _args):
+                        summary_rows.extend(_zone_rows)
             else:
-                np.save(f, psinewA)
-        outfile = os.path.join(m.wfcdirectory, f"k0{nk0}b0{nb2 + initial_band}.wfc1")
-        logger.info("\tWriting file: ", outfile)
-        with open(outfile, "wb") as f:
-            if compress:
-                np.savez_compressed(f, psinewB)
-            else:
-                np.save(f, psinewB)
+                for _zi, _zone in _sig_zone_list:
+                    _rows = _process_zone(
+                        zi=_zi, sig=_sig, zone=_zone,
+                        d_phase=d_phase, eigenvalues=eigenvalues, neighbors=neighbors,
+                        noncolin=m.noncolin, wfcdir=m.wfcdirectory, nr=m.nr,
+                        n_dir=2 * m.dimensions, compress=compress, ethr=ethr,
+                        max_refinement_iter=max_refinement_iter,
+                        refinement_iter_cap=refinement_iter_cap,
+                        refinement_anderson_m=refinement_anderson_m,
+                        refinement_tol=refinement_tol,
+                        holonomy_correction=holonomy_correction,
+                        holonomy_max_iter=holonomy_max_iter,
+                        holonomy_tol=holonomy_tol,
+                        use_wfc_cache=use_wfc_cache,
+                        n_workers=n_workers,
+                        logger=logger,
+                        holonomy_min_plaquettes=holonomy_min_plaquettes,
+                    )
+                    summary_rows.extend(_rows)
+    finally:
+        _zone_ctx.clear()
 
+    summary_rows.sort(key=lambda r: r[0])
 
-    #sys.exit("Stop")
-    ###################################################################################
+    # ==================================================================
+    # Phase 5 — Final report and output file
+    # ==================================================================
     logger.info()
-    logger.info("\t*** Final Report ***")
+    logger.info("\t****  Final Report  ****")
     logger.info()
-    nrnotattrib = np.full((max_band), -1, dtype=int)
-    SEP = " "
-    #logger.info("Bands: gives the original band that belongs to new band (nk,nb)")
-    for nb in range(max_band + 1):
-        nk = -1
-        nrnotattrib[nb] = np.count_nonzero(signalfinal[:, nb] == NOT_SOLVED)
-        logger.debug()
-        logger.debug(f"\tNew band {nb + initial_band}\t\tnr of fails: {nrnotattrib[nb]}")
-        logger.debug(_bands_numbers(m.nkx, m.nky, bandsfinal[:, nb]))
-    logger.debug()
-    logger.debug("\tSignaling")
-    nrsignal = np.zeros((max_band, FORCED+1), dtype=int)
-    for nb in range(max_band + 1):
-        nk = -1
-        for s in range(FORCED+1):
-            nrsignal[nb, s] = np.count_nonzero(signalfinal[:, nb] == s)
-
-        logger.debug()
-        logger.debug(f"\t{nb + initial_band}\t\t{NOT_SOLVED}: {nrsignal[nb, NOT_SOLVED]}")
-        logger.debug(_bands_numbers(m.nkx, m.nky, signalfinal[:, nb]))
-
-    logger.info()
-    logger.info("\tResume of results")
-    logger.info()
-    logger.info(f"\tnr k-points not attributed to a band (bandfinal={NOT_SOLVED})")
-    logger.info("\tBand\tnr k-points")
-    for nb in range(max_band + 1):
-        logger.info("\t", nb + initial_band, "\t", nrnotattrib[nb])
-
-    logger.info()
-    logger.info("\tSignaling")
-
-    signal_report = '\tBands | '
-    for signal in range(FORCED+1):
-        n_spaces = len(str(np.max(nrsignal[:, signal])))-1
-        signal_report += ' '*n_spaces+str(signal) + '   '
-    
-    signal_report += '\n\t'+'-'*len(signal_report)
-
-    for nb in range(max_band + 1):
-        signal_report += f'\n\t{nb}{" "*(4-len(str(nb)) + 1)} |' + ' '
-        for signal, value in enumerate(nrsignal[nb]):
-                n_max = len(str(np.max(nrsignal[:, signal])))
-                n_spaces = n_max - len(str(value))
-                signal_report += ' '*n_spaces+str(value) + '   '
-    logger.info(signal_report)
-
+    logger.info(f"\tTotal zones processed                : {len(summary_rows)}")
+    logger.info(f"\tTotal k-points with degenerate bands : {n_degen_kpts}")
     logger.info()
 
-    logger.info("\tBands not usable (not completed)")
-    for nb in range(max_band + 1):
-        if nrsignal[nb, NOT_SOLVED] != 0:
-            logger.info(f"\tband {nb + initial_band} failed attribution of {nrsignal[nb, NOT_SOLVED]} k-points")
-        if nrsignal[nb, MISTAKE] != 0:
-            logger.info(f"\tband {nb + initial_band} has incongruences in {nrsignal[nb, MISTAKE]} k-points")
-        if nrsignal[nb, POTENTIAL_MISTAKE] != 0:
-            logger.info(f"\tband {nb + initial_band} signals {POTENTIAL_MISTAKE} in {nrsignal[nb, POTENTIAL_MISTAKE]} k-points")
+    hdr = (
+        f"\t{'Zone':>5}  {'Bands':>24}  {'Type':>9}  "
+        f"{'Size':>5}  {'Rotated':>7}  {'Root-k':>7}  {'<Sigma>':>9}  {'Holo':>5}"
+    )
+    logger.info(hdr)
+    logger.info("\t" + "-" * (len(hdr) - 1))
+    for zi, bands, zone_sz, n_rot, root_k, ref_type, ms, n_holo, *_ in summary_rows:
+        logger.info(
+            f"\t{zi:>5}  {str(bands):>24}  {ref_type:>9}  "
+            f"{zone_sz:>5}  {n_rot:>7}  {root_k:>7}  {ms:>9.6f}  {n_holo:>5}"
+        )
+
+    # Save basisrotation_zones.npy -- each row: [zone_id, b1 ... bN (-1 padded), k-point]
+    if summary_rows:
+        max_n   = max(len(bands) for _, bands, *_ in summary_rows)
+        records = []
+        for zi, bands, _, _, _, _, _, _, zone_set, *_ in summary_rows:
+            bs = list(bands) + [-1] * (max_n - len(bands))
+            for nk in sorted(zone_set):
+                records.append([zi] + bs + [nk])
+        out_path = os.path.join(m.data_dir, "basisrotation_zones.npy")
+        np.save(out_path, np.array(records, dtype=int))
+        logger.info()
+        logger.info(f"\tZone map saved to: {out_path}")
+        logger.info(f"\t  Row format: [zone_id, b1, ..., b{max_n} (-1 if absent), k-point]")
+
     logger.info()
-
-    np.save(os.path.join(m.data_dir, 'signalfinal.npy'), signalfinal)
-
-    ###################################################################################
-    # Finished
-    ###################################################################################
     logger.footer()
 
 
 if __name__ == "__main__":
-    run_basis_rotation(9, log("basisrotation", "BASIS ROTATION", "version", logging.DEBUG))
+    run_basis_rotation()

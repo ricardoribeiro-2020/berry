@@ -118,9 +118,9 @@ berry [package options] script parameter [script options]
                                                          help="Classifies the eigenstates in bands (alternative algorithm).",
                                                          description="Classifies the eigenstates in bands (alternative algorithm).")
         if BASIS:
-            basis_parser = main_sub_parser.add_parser("basis", 
-                                                      help="Finds problematic cases and make a local basis rotation of the wavefunctions.", 
-                                                      description="Finds problematic cases and make a local basis rotation of the wavefunctions.")
+            basis_parser = main_sub_parser.add_parser("basis",
+                                                      help="Rotates degenerate wavefunctions flagged by the clustering into a smooth basis.",
+                                                      description="Reads the degenerate k-points found by cluster/cluster0 (degeneratefinal.npy), groups adjacent flagged points into zones (single flagged points stay isolated), and propagates an SVD-based (Procrustes) basis rotation through each zone. Only flagged k-points are modified. Supports colinear and noncolinear calculations. Run after cluster and before r2k.")
         if R2K:
             r2k_parser = main_sub_parser.add_parser("r2k", 
                                                     help="Converts wavefunctions from r-space to k-space.", 
@@ -388,14 +388,19 @@ berry [package options] script parameter [script options]
                                           metavar=f"Mb (0-{m.nbnd-1})"   , 
                                           choices=range(m.nbnd)             , 
                                           help="Maximum band to consider.")
-            basis_parser.add_argument("-np", 
-                                      type=int, 
-                                      default=1, 
-                                      metavar=f"[1-{os.cpu_count()}]", 
-                                      choices=range(1, os.cpu_count()+1), 
+            basis_parser.add_argument("-np",
+                                      type=int,
+                                      default=1,
+                                      metavar=f"[1-{os.cpu_count()}]",
+                                      choices=range(1, os.cpu_count()+1),
                                       help="Number of processes to use (default: 1).")
-            basis_parser.add_argument("-c", 
-                                    action="store_true", 
+            basis_parser.add_argument("-gethr",
+                                      type=float,
+                                      default=0.01,
+                                      metavar="eV",
+                                      help="Energy-coherence threshold (eV) for grouping cluster-flagged bands into one rotatable subspace (default: 0.01). Flagged pairs whose bands are farther apart than this are treated as non-degenerate and not rotated. A negative value disables the guard (trust all cluster flags).")
+            basis_parser.add_argument("-c",
+                                    action="store_true",
                                     help="Compress the output files.")
             basis_parser.add_argument("-flush", 
                                       action="store_true", 
@@ -886,6 +891,7 @@ def basisrotation_cli(args: argparse.Namespace):
     args_dict["max_band"] = args.Mb
     args_dict["compress"] = args.c
     args_dict["flush"] = args.flush
+    args_dict["group_ethr"] = None if args.gethr < 0 else args.gethr
 
     run_basis_rotation(**args_dict)
 

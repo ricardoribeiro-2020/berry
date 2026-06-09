@@ -39,10 +39,7 @@ def read_wfc_files(banda: int, npr: int) -> None:
             else:
                 wfct_k1[:, kp] = tmp
         else:
-            if signalfinal[kp, banda] == -1:                                        # if its a signaled wfc, choose corrected
-                infile = f"{m.wfcdirectory}/k0{kp}b0{b}.wfc1"
-            else:                                                                   # else choose original
-                infile = f"{m.wfcdirectory}/k0{kp}b0{b}.wfc"
+            infile = f"{m.wfcdirectory}/k0{kp}b0{b}.wfc"
 
             tmp = np.load(infile)
             if isinstance(tmp, np.lib.npyio.NpzFile): # check if is npz file, which is can compressed
@@ -166,9 +163,9 @@ def save_r2k(bpos, bgra):
 
 def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "r2k", logger_level: int = logging.INFO, compress: bool = False, flush: bool = False):
     if m.noncolin:
-        global grad, signalfinal, bandsfinal, wfct_k0, wfct_k1, wfcpos0, wfcpos1, wfcgra0, wfcgra1, logger, d_phase, initial_band, save_file, bands_pos, bands_gra
+        global grad, bandsfinal, wfct_k0, wfct_k1, wfcpos0, wfcpos1, wfcgra0, wfcgra1, logger, d_phase, initial_band, save_file, bands_pos, bands_gra
     else:
-        global grad, signalfinal, bandsfinal, wfct_k, wfcpos, wfcgra, logger, d_phase, initial_band, save_file, bands_pos, bands_gra
+        global grad, bandsfinal, wfct_k, wfcpos, wfcgra, logger, d_phase, initial_band, save_file, bands_pos, bands_gra
 
     initial_band = m.initial_band if m.initial_band != "dummy" else 0 # for backward compatibility
 
@@ -240,7 +237,6 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     else:
         grad = Gradient(h=[m.step, m.step, m.step], acc=2)
 
-    signalfinal = np.load(os.path.join(m.data_dir, "signalfinal.npy"))
     bandsfinal = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
     d_phase = np.load(os.path.join(m.data_dir, "phase.npy"))
     logger.info(f"\tSignal and bands files loaded")
