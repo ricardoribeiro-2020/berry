@@ -97,6 +97,9 @@ def berry_connection(n_pos: int, n_gra: int):
 
 
 def chern_number(curv) -> np.complex128:
+    if m.dimensions == 1:
+        logger.warning("\tChern number is not defined for 1D materials; returning 0.")
+        return 0
     chern = 0
     if m.dimensions == 2:
         chern = np.sum(curv) * (np.linalg.norm(m.b1) / m.nkx) * (np.linalg.norm(m.b2) / m.nky) / (2 * np.pi)
@@ -153,6 +156,9 @@ def berry_curvature(idx: int, idx_: int) -> None:
     """
     Calculates the Berry curvature.
     """
+    if m.dimensions == 1:
+        logger.warning("\tBerry curvature is not defined for 1D materials; skipping.")
+        return
     if m.noncolin:
         if idx == idx_:
             wfcgra0_ = wfcgra0.conj()
@@ -286,9 +292,10 @@ def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
     """
     Calculates the Berry curvature using the curl of Berry connections.
     """
+    if m.dimensions == 1:
+        logger.warning("\tBerry curvature (curl) is not defined for 1D materials; skipping.")
+        return
 
-    
-    
     if m.dimensions == 2:                # 2D case
 #        @numba_njit
         def aux_curvature() -> np.ndarray:
