@@ -76,15 +76,18 @@ class log:
         F = footer(tempo(self.STARTTIME, ENDTIME))
         self.info(F)
 
-    def percent_complete(self, step, total_steps, bar_width=60, title="", print_perc=True, min_interval=10.0):
+    def percent_complete(self, step, total_steps, bar_width=60, title="", print_perc=True, min_interval=10.0, min_percent_step=1.0):
         '''
         Log a progress line with elapsed time and an estimated time remaining (ETA),
         instead of drawing a terminal progress bar.
 
-        Per `title`, intermediate updates are rate-limited to at most one every
-        `min_interval` seconds; the first update for a title and the final update
-        (step >= total_steps) always log.  The ETA is a linear extrapolation from the
-        progress made since this title started.
+        Per `title`, intermediate updates are rate-limited: a line is logged only
+        when at least `min_interval` seconds have passed AND progress advanced by
+        at least `min_percent_step` percent since the last logged line; the first
+        update for a title and the final update (step >= total_steps) always log.
+        The percent gate caps a phase at ~100/min_percent_step lines no matter how
+        long it runs.  The ETA is a linear extrapolation from the progress made
+        since this title started.
 
         `bar_width` and `print_perc` are accepted for call-site compatibility and are
         unused.
@@ -102,24 +105,31 @@ class log:
         key = title or '_'
         state = self._progress.get(key)
         # (Re)start ETA tracking on a new title or when the counter restarts, but
-        # PRESERVE the throttle timestamp (last_emit) across restarts. Otherwise
-        # two progress sequences that share a title but run on different step
-        # scales (e.g. a sub-loop counter vs. an outer one) reset each other's
-        # timer on every call and flood the log, bypassing the rate limit.
+        # PRESERVE the throttle state (last_emit, last_perc) across restarts.
+        # Otherwise two progress sequences that share a title but run on different
+        # step scales (e.g. a sub-loop counter vs. an outer one) reset each
+        # other's timer on every call and flood the log, bypassing the rate limit.
         if state is None or step < state['last_step']:
             prev_emit = state['last_emit'] if state else None
-            state = {'start_time': now, 'start_step': step, 'last_emit': prev_emit, 'last_step': step}
+            prev_perc = state['last_perc'] if state else -1.0
+            state = {'start_time': now, 'start_step': step, 'last_emit': prev_emit,
+                     'last_perc': prev_perc, 'last_step': step}
             self._progress[key] = state
         state['last_step'] = step
 
         perc = min(100.0, 100.0 * float(step) / float(total_steps))
         is_last = step >= total_steps
-        # Emit only on: the first line for this title, completion, or once every
-        # min_interval seconds. A step-based "first" bypass is deliberately NOT
+        # Emit only on: the first line for this title, completion, or when both
+        # min_interval seconds AND min_percent_step percent have passed since the
+        # last emitted line. A step-based "first" bypass is deliberately NOT
         # used, so a counter restart cannot re-open the throttle.
-        if state['last_emit'] is not None and not is_last and (now - state['last_emit'] < min_interval):
-            return
+        if state['last_emit'] is not None and not is_last:
+            if now - state['last_emit'] < min_interval:
+                return
+            if perc - state['last_perc'] < min_percent_step:
+                return
         state['last_emit'] = now
+        state['last_perc'] = perc
 
         elapsed = now - state['start_time']
         done_since = step - state['start_step']

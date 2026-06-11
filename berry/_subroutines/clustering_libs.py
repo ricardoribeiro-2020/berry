@@ -1401,10 +1401,12 @@ class MATERIAL:
         self.logger.percent_complete(per_actual, N, title=process_name)
 
         def finish_progress():
+            # In cumulative mode (N_total given) the caller owns the counter and
+            # emits the final 100% line itself; re-logging the stale per_actual
+            # here would look like a counter restart to percent_complete and
+            # reset its elapsed/ETA baseline on every call.
             if N_total is None:
                 self.logger.percent_complete(N, N, title=process_name)
-            else:
-                self.logger.percent_complete(per_actual, N, title=process_name)
 
         result = []
         if len(iterator) == 0:
