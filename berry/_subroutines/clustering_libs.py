@@ -17,7 +17,8 @@ TODO:
 
 from __future__ import annotations
 from multiprocessing import get_context
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, FIRST_COMPLETED
+from concurrent.futures import wait as futures_wait
 from concurrent.futures.process import BrokenProcessPool
 import random
 import string
@@ -32,6 +33,7 @@ from scipy.optimize import curve_fit
 import numpy as np
 import networkx as nx
 import time
+import traceback
 
 from berry import log
 from .write_k_points import _bands_numbers
@@ -1275,6 +1277,85 @@ class MATERIAL:
 
             
 
+    ###########################################################################
+    # Stalled-worker watchdog policy (_run_chunks_parallel). The chunks are
+    # equal-sized and all start together, so once one completes the others are
+    # expected within a comparable time: a worker still silent long after the
+    # slowest successful chunk is declared stuck, killed, and its chunk
+    # recomputed serially. Before the first success there is no time scale, so
+    # no limit is applied (a legitimately slow phase is never falsely killed).
+    ###########################################################################
+    STALL_FACTOR = 10.0     # stuck if silent for FACTOR x slowest good chunk...
+    STALL_GRACE = 600.0     # ...plus this many seconds of grace
+    WAIT_SLICE = 30.0       # seconds between watchdog checks
+
+    def _run_chunks_parallel(self, chunks: list, n_proc: int, process_name: str,
+                             done: int, N: int) -> tuple[list, list, int]:
+        '''
+        Run every chunk as its own future in a fork-context ProcessPoolExecutor.
+
+        Worker-side failures never propagate: a chunk whose worker raised, died
+        (BrokenProcessPool) or stalled past the watchdog limit is reported as
+        not-ok for the caller to recompute serially in the parent, so one bad
+        worker degrades a long run instead of hanging or aborting it.
+
+        Returns
+            (results, ok, done)
+                results : list, per-chunk worker output (valid where ok is True)
+                ok      : list[bool], per-chunk success flag
+                done    : int, updated progress counter (successful chunks only)
+        '''
+        results = [None] * len(chunks)
+        ok = [False] * len(chunks)
+        stalled = False
+        executor = ProcessPoolExecutor(max_workers=n_proc, mp_context=get_context('fork'))
+        try:
+            future_of = {executor.submit(_parallel_dispatch, c): i for i, c in enumerate(chunks)}
+            pending = set(future_of)
+            t_start = last_progress = time.time()
+            slowest = 0.0
+            while pending:
+                finished, pending = futures_wait(pending, timeout=self.WAIT_SLICE,
+                                                 return_when=FIRST_COMPLETED)
+                now = time.time()
+                for fut in finished:
+                    i = future_of[fut]
+                    last_progress = now
+                    try:
+                        results[i] = fut.result()
+                    except BrokenProcessPool:
+                        # A worker died; its chunk (and any chunk still queued on
+                        # it) resolves with this error and is recomputed serially.
+                        self.logger.warning(f'{process_name}: a worker process died; '
+                                            f'chunk {i + 1}/{len(chunks)} will be recomputed serially')
+                        continue
+                    except Exception:
+                        self.logger.warning(f'{process_name}: worker for chunk {i + 1}/{len(chunks)} '
+                                            f'raised and will be recomputed serially\n'
+                                            f'{traceback.format_exc()}')
+                        continue
+                    ok[i] = True
+                    slowest = max(slowest, now - t_start)
+                    done += len(chunks[i])
+                    self.logger.percent_complete(done, N, title=process_name)
+                if pending and slowest > 0.0 and \
+                        now - last_progress > self.STALL_FACTOR * slowest + self.STALL_GRACE:
+                    stalled = True
+                    self.logger.warning(
+                        f'{process_name}: {len(pending)} worker(s) stalled (no result for '
+                        f'{now - last_progress:.0f}s; slowest healthy chunk took {slowest:.0f}s). '
+                        f'Killing them and recomputing their chunks serially')
+                    for p in list(getattr(executor, '_processes', {}).values()):
+                        try:
+                            p.kill()
+                        except Exception:
+                            pass
+                    break
+        finally:
+            # After a kill the workers may be in any state: never block on them.
+            executor.shutdown(wait=not stalled, cancel_futures=True)
+        return results, ok, done
+
     def parallelize(self, process_name: str, f: Callable, iterator: Union[list, np.ndarray], per_actual:int=0, N_total:int=None,*args) -> np.ndarray:
         '''
         Apply the function f to an iterator in parallel using a process Pool.
@@ -1354,22 +1435,27 @@ class MATERIAL:
                     done += len(chunk)
                     self.logger.percent_complete(done, N, title=process_name)
             else:
-                # A fork context lets the workers inherit the current process state
-                # (self and its arrays) copy-on-write without re-pickling it.  We use
-                # ProcessPoolExecutor instead of Pool.imap (H1): if a worker dies
-                # mid-chunk, executor.map raises BrokenProcessPool rather than blocking
-                # the parent forever.  The workers are forked after _PARALLEL_FN is
-                # published above, so they still inherit it via copy-on-write.
-                with ProcessPoolExecutor(max_workers=n_proc, mp_context=get_context('fork')) as executor:
-                    try:
-                        for chunk, value in zip(chunks, executor.map(_parallel_dispatch, chunks)):
-                            if value:
-                                result += value                                  # Store the output into result array
-                            done += len(chunk)                                   # The counter is actualized
-                            self.logger.percent_complete(done, N, title=process_name)
-                    except BrokenProcessPool:
-                        self.logger.error('A clustering worker process died without returning a result.')
-                        raise
+                ###########################################################################
+                # A fork context lets the workers inherit the current process state (self
+                # and its arrays) copy-on-write without re-pickling it; they are forked
+                # after _PARALLEL_FN is published above, so they inherit it too.
+                # Robustness: each chunk is its own future, and ANY chunk whose worker
+                # raised, died or stalled is recomputed serially here in the parent,
+                # through the exact same _parallel_dispatch path the n_proc == 1 branch
+                # uses. A worker failure therefore costs time, never the run.
+                ###########################################################################
+                chunk_results, ok, done = self._run_chunks_parallel(chunks, n_proc, process_name, done, N)
+                failed = [i for i in range(len(chunks)) if not ok[i]]
+                if failed:
+                    self.logger.warning(f'{process_name}: recomputing {len(failed)} of '
+                                        f'{len(chunks)} chunk(s) serially in the parent')
+                    for i in failed:
+                        chunk_results[i] = _parallel_dispatch(chunks[i])
+                        done += len(chunks[i])
+                        self.logger.percent_complete(done, N, title=process_name)
+                for value in chunk_results:                  # concatenate in input order
+                    if value:
+                        result += value
         finally:
             _PARALLEL_FN = None
             _PARALLEL_ARGS = ()
