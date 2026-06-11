@@ -716,13 +716,16 @@ class MATERIAL:
         self.ENERGIES = energies
 
         ###########################################################################
-        # Unit-free energy scales for the continuity gate, so no absolute eV
-        # threshold has to be hand-picked:
-        #   gap_scale  - median spacing between adjacent bands (penalty-width floor).
+        # Unit-free energy scales for the post-solve repair pass, so no absolute
+        # energy threshold has to be hand-picked:
+        #   gap_scale  - median spacing between adjacent bands.
         #   disp_scale - 99.9th-percentile single-step dispersion |E(k+1)-E(k)|
         #                (a robust "max" that ignores a rare outlier step). The
-        #                gross-jump floor is a multiple of this so a legitimate
+        #                gross-jump guard is a multiple of this so a legitimate
         #                one-step continuation (even in steep bands) is never cut.
+        # NOTE: gap_scale collapses to the SOC splitting in noncolinear systems
+        # (Kramers pairs), so it must NEVER be used as a sharp penalty width —
+        # only as a loose floor (see the e90a33a in-solve gate regression).
         ###########################################################################
         gaps = np.diff(np.sort(self.eigenvalues, axis=1), axis=1)
         gaps = gaps[gaps > 0]
@@ -739,6 +742,8 @@ class MATERIAL:
                     disp_values.append(d.ravel())
         disp_scale = float(np.percentile(np.concatenate(disp_values), 99.9)) if disp_values else 0.0
         self.disp_scale = disp_scale if disp_scale > 0 else self.gap_scale
+        self.sigma_min = 0.25 * self.gap_scale                          # min local-spread scale for _extrapolate_energy
+        self.accept_E = max(3.0 * self.disp_scale, 0.5 * self.gap_scale)  # gross-jump guard for repair/forced fills
 
         # self.nbnd = nbnd-min_band
         self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
@@ -805,7 +810,8 @@ class MATERIAL:
         unit = np.sign(idx_nb - idx_ref).astype(int)
         return idx_ref, unit, sizes
 
-    def _extrapolate_energy(self, k_ref: int, k_neighbor: int, slot: int, N: int = 4):
+    def _extrapolate_energy(self, k_ref: int, k_neighbor: int, slot: int, N: int = 4,
+                            trusted: np.ndarray = None):
         '''
         Predict the energy that band ``slot`` (in the current solution
         ``self.bands_final``) would have at ``k_neighbor`` by fitting a quadratic
@@ -814,13 +820,14 @@ class MATERIAL:
 
         Points not yet attributed (``bands_final == -1``) are skipped so the fit
         never reads a bogus energy (``eigenvalues[k, -1]`` would silently pick the
-        last band). The k-mesh is open (no BZ wrap): stepping past an edge stops
-        the trajectory.
+        last band). When a ``trusted`` mask is given, untrusted points are skipped
+        too, so the fit never reads through a suspect attribution. The k-mesh is
+        open (no BZ wrap): stepping past an edge stops the trajectory.
 
         Returns
             (E_pred, sigma) : (float, float)
                 E_pred : extrapolated energy at ``k_neighbor``.
-                sigma  : local energy spread, used as the Gaussian-penalty width.
+                sigma  : local energy spread along the trajectory.
         '''
         idx_ref, unit, sizes = self._grid_step_unit(k_ref, k_neighbor)
 
@@ -833,12 +840,17 @@ class MATERIAL:
             b = self.bands_final[kb, slot]
             if b == -1:
                 continue                                     # unattributed: skip
+            if trusted is not None and not trusted[kb, slot]:
+                continue                                     # suspect attribution: skip
             Xs.append(-m)
             Es.append(self.eigenvalues[kb, b])
 
         if len(Es) == 0:
-            # Nothing attributed along this direction: fall back to the raw energy.
-            return float(self.eigenvalues[k_ref, slot]), self.sigma_min
+            # Nothing usable along this direction: fall back to the slot's own
+            # energy at k_ref (or the raw eigenvalue ordering if unattributed).
+            b_ref = self.bands_final[k_ref, slot]
+            E_ref = self.eigenvalues[k_ref, b_ref if b_ref != -1 else slot]
+            return float(E_ref), self.sigma_min
 
         sigma = max(float(np.std(Es)), self.sigma_min) if len(Es) > 1 else self.sigma_min
         if len(Es) < 3:
@@ -859,6 +871,163 @@ class MATERIAL:
                 E_pred, _ = self._extrapolate_energy(k_nb, k, slot)
                 return E_pred
         return float(self.eigenvalues[k, slot])
+
+    def _repair_energy_discontinuities(self, max_rounds: int = 64) -> np.ndarray:
+        '''
+        A-posteriori energy-continuity repair of the solver's best solution.
+
+        The clustering solution is taken as-is and ONLY the points that failed the
+        energy-continuity validation (NOT/MIS in ``correct_signalfinal_best``) or
+        were left unattributed (-1) are revisited; trusted points are never touched.
+        For each bad k-point, all its bad slots are freed and jointly reassigned:
+        each slot's expected energy is predicted by quadratic extrapolation of that
+        slot's own trajectory (slot-correct namespace: ``E[k', bands_final[k', s]]``)
+        built from TRUSTED neighbours only, and the freed bands are redistributed to
+        the slots nearest in energy to their predictions, respecting the per-k-point
+        permutation constraint (no band used twice). A reassignment is only accepted
+        if it lands within ``self.accept_E`` of the prediction (gross-jump guard).
+
+        Repaired points become trusted, so the repair propagates from the boundary
+        of a bad island inward, one layer per round, until nothing changes. Slots
+        that cannot be repaired keep their original attribution (left for the final
+        validation to flag honestly) or stay -1 for the FORCED pass.
+
+        This replaces the in-solve energy gate (e90a33a), which regressed badly:
+        gating edges on a half-built solution shattered the graph (47 -> ~10k
+        components) and extrapolated the wrong trajectories near crossings.
+
+        Returns
+            repaired_mask : np.ndarray[bool], shape (nks, total_bands)
+                True where bands_final was reassigned (changed or newly attributed)
+                by this pass.
+        '''
+        ###########################################################################
+        # Bad = unattributed or energy-discontinuous in the best validation.
+        # Degenerate points are basisrotation's job: never freed, never reassigned.
+        ###########################################################################
+        bad = self.bands_final == -1
+        validation = getattr(self, 'correct_signalfinal_best', None)
+        if validation is not None:
+            bad |= (validation == NOT_SOLVED) | (validation == MISTAKE)
+            bad &= validation != DEGENERATE
+        bad &= self.signal_final != DEGENERATE
+
+        trusted = (~bad) & (self.bands_final != -1)
+        repaired_mask = np.zeros_like(bad)
+        n_bad_initial = int(np.sum(bad))
+        if n_bad_initial == 0:
+            return repaired_mask
+
+        all_bands = np.arange(self.total_bands)
+        neigh = np.asarray(self.neighbors)
+        n_repaired = 0
+
+        for round_ in range(max_rounds):
+            ks_bad = np.where(np.any(bad, axis=1))[0]
+            if len(ks_bad) == 0:
+                break
+            ###########################################################################
+            # Rank bad k-points by support: how many (bad slot, direction) pairs have
+            # a trusted neighbour to extrapolate from. Most-supported first, so each
+            # round peels the best-anchored boundary layer of every bad island.
+            ###########################################################################
+            support_pts = np.zeros(bad.shape, int)
+            for j in range(neigh.shape[1]):
+                nb = neigh[:, j]
+                valid = nb != -1
+                support_pts[valid] += trusted[nb[valid]]
+            support = np.sum(support_pts * bad, axis=1)[ks_bad]
+            order = np.argsort(-support, kind='stable')
+            progress = 0
+            for idx in order:
+                if support[idx] == 0:
+                    break                                   # the rest have no anchor this round
+                k = int(ks_bad[idx])
+                bad_slots = np.where(bad[k])[0]
+                ###########################################################################
+                # Free all bad slots at k; bands kept by trusted slots stay used.
+                ###########################################################################
+                kept = self.bands_final[k][~bad[k]]
+                used = np.unique(kept[kept != -1])
+                available = list(np.setdiff1d(all_bands, used))
+                avail_E = [float(self.eigenvalues[k, b]) for b in available]
+
+                # Predicted (reference) energy per bad slot, from every direction
+                # whose nearest neighbour is trusted in that slot; median for robustness.
+                refs = []
+                for s in bad_slots:
+                    preds = [self._extrapolate_energy(k_nb, k, int(s), trusted=trusted)[0]
+                             for k_nb in self.neighbors[k]
+                             if k_nb != -1 and trusted[k_nb, s]]
+                    refs.append(float(np.median(preds)) if preds else None)
+
+                original = self.bands_final[k, bad_slots].copy()
+                self.bands_final[k, bad_slots] = -1
+
+                ###########################################################################
+                # Assign predicted slots in energy order, each taking the nearest
+                # still-available band (greedy nearest with removal == 1-D optimum),
+                # accepted only within the gross-jump guard.
+                ###########################################################################
+                pred_idx = [i for i, r in enumerate(refs) if r is not None]
+                pred_idx.sort(key=lambda i: refs[i])
+                for i in pred_idx:
+                    if not available:
+                        break
+                    j = int(np.argmin([abs(e - refs[i]) for e in avail_E]))
+                    if abs(avail_E[j] - refs[i]) > self.accept_E:
+                        continue                            # nothing continuous available: leave for later
+                    s = int(bad_slots[i])
+                    self.bands_final[k, s] = available.pop(j)
+                    avail_E.pop(j)
+
+                for i, s in enumerate(bad_slots):
+                    s = int(s)
+                    if self.bands_final[k, s] != -1:
+                        # Repaired: trust it so the next layer can extrapolate through it.
+                        bad[k, s] = False
+                        trusted[k, s] = True
+                        progress += 1
+                        if self.bands_final[k, s] != original[i]:
+                            repaired_mask[k, s] = True
+                            n_repaired += 1
+                    elif original[i] != -1 and original[i] in available:
+                        # Failed: restore the original attribution (stays flagged) so
+                        # the FORCED count is not inflated; it may be repaired later.
+                        j = available.index(original[i])
+                        available.pop(j)
+                        avail_E.pop(j)
+                        self.bands_final[k, s] = original[i]
+
+            self.logger.debug(f'\t\tRepair round {round_ + 1}: {progress} point(s) re-anchored')
+            if progress == 0:
+                break
+
+        n_left = int(np.sum(bad))
+        self.logger.info(f'{BODY_INDENT}Energy repair: {n_bad_initial} flagged point(s), '
+                         f'{n_repaired} reassigned, {n_left} not repairable '
+                         f'(kept original attribution or left for the completeness pass)')
+
+        ###########################################################################
+        # Re-derive the dot-product signal of every re-anchored point (its band or
+        # its neighbourhood changed), capped at POTENTIAL_CORRECT so the final
+        # energy-continuity validation always re-examines it.
+        ###########################################################################
+        ks_r, slots_r = np.where(repaired_mask)
+        for k, s in zip(ks_r, slots_r):
+            bn1 = self.bands_final[k, s]
+            values = []
+            for i_neig, k_neig in enumerate(self.neighbors[k]):
+                if k_neig == -1:
+                    continue
+                bn2 = self.bands_final[k_neig, s]
+                if bn2 == -1:
+                    continue
+                values.append(self.connections[k, i_neig, bn1, bn2])
+            signal = evaluate_result(values) if values else NOT_SOLVED
+            self.signal_final[k, s] = min(signal, POTENTIAL_CORRECT)
+
+        return repaired_mask
 
     def _force_complete_bands(self) -> np.ndarray:
         '''
@@ -898,8 +1067,7 @@ class MATERIAL:
                 avail_E.pop(j)
         return forced_mask
 
-    def make_connections(self, tol:float=0.80, not_first_iteration:bool=False,
-                         floor_factor:float=3.0, sigma_min_factor:float=0.25) -> None:
+    def make_connections(self, tol:float=0.80, not_first_iteration:bool=False) -> None:
         '''
         This function evaluates the connection between each k point,
         and adds an edge to the graph if its connection is greater
@@ -919,70 +1087,45 @@ class MATERIAL:
         tol = 1 - 2/np.pi * np.arccos(tol) # Convert the tolerance value to arccos metric
 
         ###########################################################################
-        # Energy-continuity gate configuration (see _extrapolate_energy).
-        #   - First build (not_first_iteration=False): no clustering solution yet,
-        #     so only the loose hard floor is applied (gross-jump guard).
-        #   - Rebuilds (not_first_iteration=True): the full gate (extrapolation +
-        #     Gaussian penalty + floor) runs along the current bands_final.
+        # Edges are built from the dot product ALONE. Energy continuity is NOT
+        # enforced here: gating edges on a half-built solution shattered the graph
+        # and locked in mistakes (e90a33a regression). Energy continuity is applied
+        # a posteriori instead, by _repair_energy_discontinuities at the end of
+        # solve(), which only ever touches flagged points.
         ###########################################################################
-        self.energy_gate_full = not_first_iteration
-        # Loose gross-jump guard. Based on the max single-step dispersion so a
-        # legitimate one-step continuation is never cut, but floored at half the
-        # band spacing so it can never collapse below it for (near-)flat bands.
-        self.floor_E = max(floor_factor * self.disp_scale, 0.5 * self.gap_scale)
-        self.sigma_min = sigma_min_factor * self.gap_scale    # min Gaussian-penalty width
-
         def connection_component(vectors:np.ndarray) -> list[list[Kpoint]]:
             '''
-            Find the possible edges in the graph using the dot-product
-            information, gated by energy continuity.
-
-            For each node i_ = (k1, bn1) and each neighbour k-point k2, an edge to
-            a candidate band bn2 is created only if the candidate is continuous in
-            energy with the reference (hard floor + Gaussian penalty folded into
-            the edge weight) AND the (penalised) dot product exceeds ``tol``.
+            Find the possible edges in the graph using the information of dot product.
 
             Parameters
                 vectors : array_like
-                    Node ids to process.
+                    An array with vector representation of k points.
 
             Returns
                 edges : list[list[Kpoint]]
                     List of all edges that was found.
             '''
             edges = []
+            bands = np.repeat(np.arange(0, self.nbnd), self.number_neighbors)
             for i_ in vectors:
-                bn1 = i_ // self.nks                              # reference band slot
-                k1 = i_ % self.nks                                # reference k-point
-                for i_neig, k2 in enumerate(self.neighbors[k1]):  # one fit per (node, direction)
-                    if k2 == -1:
-                        continue                                  # no neighbour in this direction
-                    if self.energy_gate_full:
-                        # Predict where the reference band continues at k2 and how
-                        # sharply to penalise departures from that prediction.
-                        E_pred, sigma = self._extrapolate_energy(k1, k2, bn1)
-                    else:
-                        # First build: hard floor only, measured from the raw energy.
-                        E_pred, sigma = self.eigenvalues[k1, bn1], None
-
-                    E_cand = self.eigenvalues[k2]                 # energies of every band at k2
-                    dE = np.abs(E_cand - E_pred)
-                    cand = np.where(dE <= self.floor_E)[0]        # HARD FLOOR (loose gross-jump guard)
-                    if len(cand) == 0:
-                        continue
-
-                    c = self.connections[k1, i_neig, bn1, cand]   # <i|j> for surviving candidates
-                    dot = 1 - 2/np.pi * np.arccos(np.clip(c, -1.0, 1.0))
-                    if self.energy_gate_full:
-                        g = np.exp(-(dE[cand] / sigma) ** 2)      # PENALTY (fast decay with |dE|)
-                        combined = dot * g
-                    else:
-                        combined = dot
-
-                    keep = combined > tol
-                    for bn2, w in zip(cand[keep], combined[keep]):
-                        j_ = int(k2) + int(bn2) * self.nks
-                        edges.append([int(i_), j_, float(w)])     # weight = overlap x continuity
+                bn1 = i_//self.nks  # bi
+                k1 = i_ % self.nks
+                neighs = np.tile(self.neighbors[k1], self.nbnd)
+                ks = neighs + bands*self.nks
+                ks = ks[neighs != -1]
+                for j_ in ks:
+                    k2 = j_ % self.nks
+                    bn2 = j_//self.nks  # bj
+                    i_neig = np.where(self.neighbors[k1] == k2)[0]
+                    connection = self.connections[k1, i_neig,
+                                                    bn1, bn2]  # <i|j>
+                    '''
+                    for each first neighbor
+                    Edge(i,j) = 1 iff <i, j> ~ 1
+                    '''
+                    connection = 1 - 2/np.pi * np.arccos(connection)
+                    if connection > tol:
+                        edges.append([i_, j_, connection])  # Add the weighted edge
             return edges
 
         self.logger.info(f'\tTolerance: {tol}')
@@ -2148,6 +2291,12 @@ class MATERIAL:
         self.final_report += f'\n\n\tThe program has clustered without errors {len(self.completed_bands)} bands. \n\tThe information is stored in the `completed_bands.npy` file.'
         self.final_report += f'\n\t\t  Band: ' + ', '.join([str(bn+self.min_band) for bn in self.completed_bands])
 
+        n_repaired = int(np.sum(self.repaired_mask)) if getattr(self, 'repaired_mask', None) is not None else 0
+        if n_repaired > 0:
+            self.final_report += f'\n\n\t{n_repaired} point(s) were reassigned by the a-posteriori energy-continuity repair'
+            self.final_report += f'\n\tpass (extrapolated from trusted neighbouring trajectories). They were re-validated'
+            self.final_report += f'\n\tby the energy-continuity criteria like any other point.'
+
         n_forced = int(np.sum(self.forced_mask)) if getattr(self, 'forced_mask', None) is not None else 0
         if n_forced > 0:
             self.final_report += f'\n\n\t{n_forced} point(s) were force-filled (FOR) by the completeness pass to guarantee a'
@@ -2294,20 +2443,27 @@ class MATERIAL:
         
         # The best result is maintained
         self.bands_final = np.copy(self.best_bands_final)
+        self.final_score = np.copy(self.best_score)
+        self.degenerate_final = np.copy(self.degenerate_best)
+        self.signal_final = np.copy(self.best_signal_final)
+        self.max_solved = max_solved
 
         ###########################################################################
-        # Force a genuine band attribution everywhere: every slot the clustering
-        # left unattributed is filled with the closest available band in energy,
+        # A-posteriori energy-continuity repair: the points the validation flagged
+        # (NOT/MIS) and the unattributed ones are locally reassigned from trusted
+        # trajectories. Good points are never touched.
+        ###########################################################################
+        self.logger.info('\n\t\tRepairing energy discontinuities (a posteriori)')
+        self.repaired_mask = self._repair_energy_discontinuities()
+
+        ###########################################################################
+        # Force a genuine band attribution everywhere: every slot still
+        # unattributed is filled with the closest available band in energy,
         # using a continuity reference. These points are flagged FORCED so the
         # report and basisrotation can tell them apart from genuine solves.
         ###########################################################################
         self.forced_mask = self._force_complete_bands()
-
-        self.final_score = np.copy(self.best_score)
-        self.degenerate_final = np.copy(self.degenerate_best)
-        self.signal_final = np.copy(self.best_signal_final)
         self.signal_final[self.forced_mask] = FORCED
-        self.max_solved = max_solved
 
         self.correct_signal(last=True)
         self.correct_signalfinal[self.forced_mask] = FORCED_CONTINUITY
