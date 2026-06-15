@@ -1544,8 +1544,9 @@ class MATERIAL:
         ###########################################################################
         # Identify connected components inside the GRAPH
         ###########################################################################
+        self.n_components = nx.number_connected_components(self.GRAPH)   # stored for shatter detection in solve()
         self.logger.info('\n\n\t\tNumber of Components: '.rstrip('\n'))
-        self.logger.info(f'\t\t{nx.number_connected_components(self.GRAPH)}')
+        self.logger.info(f'\t\t{self.n_components}')
 
         resolution = 1
         step = 0.1 
@@ -2267,11 +2268,24 @@ class MATERIAL:
 
         total_not_solved = np.sum(self.correct_signalfinal == NOT_SOLVED) + np.sum(self.correct_signalfinal == MISTAKE)
         self.logger.info(f'{BODY_INDENT}Total not solved: ' + str(total_not_solved))
-        if self.tol > 0.1 and total_not_solved > 1000:
+        # Change 3: keep rebuilding (lower tol + fresh Louvain) while a non-trivial
+        # residual remains. The old hard-coded `> 1000` ignored the material; gate on a
+        # fraction of one band's worth of k-points instead, so it scales with the mesh.
+        # (The rebuild/shatter limit cycle the old constant drove is now terminated by
+        # the convergence check in solve(); this just removes the magic number.)
+        rebuild_thr = getattr(self, 'rebuild_unsolved_thr', 1000)
+        if self.tol > 0.1 and total_not_solved > rebuild_thr:
             print('Creating the graph')
             self.make_connections(self.tol, not_first_iteration=True)
             self.repeat_communities = True
-            self.alpha = self.init_alpha
+            # Change 4 (toggle self.sweep_alpha). OFF (default): keep the original
+            # behaviour and reset alpha to its initial value on every rebuild, pinning
+            # the sweep near init (overlap-dominated) for the whole productive phase, so
+            # the energy-weighted regime is only reached after the graph has shattered.
+            # ON: do NOT reset -- alpha keeps decaying (clamped in solve()), exercising
+            # energy-aware joining while the graph is still healthy.
+            if not getattr(self, 'sweep_alpha', False):
+                self.alpha = self.init_alpha
             self.tol *= 0.90
             for edge in edges:
                 # For each edge, the graph is built
@@ -2459,7 +2473,7 @@ class MATERIAL:
 
         return self.final_report
 
-    def solve(self, step: float=0.1, alpha : float=0.5, min_alpha: float=0) -> None:
+    def solve(self, step: float=0.1, alpha : float=0.5, min_alpha: float=0, sweep_alpha: bool=False) -> None:
         '''
         This method is the main algorithm which iterates between solutions
         trying to find the best result for the material.
@@ -2471,6 +2485,14 @@ class MATERIAL:
             min_alpha : float
                 The minimum alpha.
                 (default 0)
+            sweep_alpha : bool
+                Change-4 toggle. When False (default) alpha is reset to its initial
+                value on every graph rebuild (the original behaviour, overlap-dominated
+                throughout the productive phase). When True alpha decays monotonically
+                (clamped at min_alpha) and is NOT reset, so the energy-weighted regime
+                (low alpha) is reached while the graph is still healthy. alpha only
+                weights the sample->cluster join score, never the Louvain communities.
+                (default False)
         '''
         ###########################################################################
         # Initial preparation of data structures
@@ -2484,6 +2506,7 @@ class MATERIAL:
         self.step = step
         self.alpha = alpha # The initial alpha is 0.5. 0.5*<i|j> + 0.5*f(E)
         self.init_alpha = alpha
+        self.sweep_alpha = sweep_alpha   # Change-4 toggle (see correct_signal / docstring)
         COUNT = 0     # Counter iteration
         bands_final_flag = True
         self.final_report = ''
@@ -2500,9 +2523,32 @@ class MATERIAL:
         self.repeat_communities = False
 
         ###########################################################################
+        # Iteration control (Changes 1+2+3). The old loop ran until alpha hit
+        # min_alpha, which on MoS2 burned ~14 iterations (~44 h, ~95% of runtime)
+        # after the best result had stopped improving and the residual graph had
+        # shattered. Termination is now by CONVERGENCE, not alpha exhaustion:
+        #   - stop after STALL_PATIENCE iterations with no new best;
+        #   - stop sooner if the residual graph has clearly shattered (no clean band
+        #     structure left to cluster) and the last iteration gained nothing;
+        #   - MAX_ITER is a hard safety cap.
+        # The best solution is restored after the loop and the a-posteriori repair
+        # handles whatever remains, so stopping early does not change result quality.
+        ###########################################################################
+        STALL_PATIENCE = 3            # iterations with no new best raw result (healthy graph)
+        SHATTER_STALL = 2            # ... shorter patience once the residual graph has shattered
+        SHATTER_FACTOR = 5.0          # components > FACTOR*nbnd => no clean band structure left
+        MAX_ITER = 40                # hard safety cap
+        best_unsolved = np.inf        # smallest per-iteration raw (NOT+MIS) seen so far
+        stall = 0
+        # Change 3: material-scaled rebuild threshold (replaces the hard-coded 1000),
+        # read by correct_signal. ~0.4 * one band's worth of k-points (≈1034 for MoS2,
+        # so the validated productive phase is preserved).
+        self.rebuild_unsolved_thr = 0.4 * self.nks
+
+        ###########################################################################
         # Algorithm
         ###########################################################################
-        while bands_final_flag and self.alpha >= min_alpha:
+        while bands_final_flag and COUNT < MAX_ITER:
             COUNT += 1
             start_time = time.time()
             self.logger.info()
@@ -2516,7 +2562,14 @@ class MATERIAL:
             self.logger.info('\n\t\tValidating result using energy continuity criteria')     
             self.correct_signal()                           # Evaluate the energy continuity and perform a new Graph
             self.print_report(self.correct_signalfinal, f'Validation Report Number: {COUNT} considering  energy continuity criteria', header_text=VALIDATE_RESULT_HEADER)     # Print result
-            
+
+            # This iteration's RAW result (NOT+MIS), captured before any best-restore
+            # below. This is the convergence signal: it falls on every productive
+            # iteration, whereas the kept "best" can plateau for several iterations
+            # before a jump (so stalling on the best would cut the run off too early).
+            iter_unsolved = int(np.sum(self.correct_signalfinal == NOT_SOLVED)
+                                + np.sum(self.correct_signalfinal == MISTAKE))
+
             # Verification if the result is similar to the previous one
             bands_final_flag = np.sum(np.abs(self.bands_final_prev - self.bands_final)) != 0
             self.bands_final_prev = np.copy(self.bands_final)
@@ -2587,8 +2640,35 @@ class MATERIAL:
                 self.logger.info(f'\n\t\t\tBest result: {max_solved} bands')
                 self.print_report(self.correct_signalfinal, f'Validation Report: Best Iteration', header_text=VALIDATE_RESULT_HEADER)     # Print result
 
-            self.alpha -= step
-        
+            ###########################################################################
+            # Convergence-based early stop (Changes 1+2). The raw per-iteration result
+            # falls on every productive iteration; once it stops setting a new low the
+            # alpha sweep is no longer finding anything, so stop. A shattered residual
+            # graph (no clean band structure left) is hopeless for the graph solver, so
+            # it gets a shorter patience. The best solution is restored after the loop
+            # and the a-posteriori repair handles whatever remains, so this never
+            # degrades result quality -- it only drops the wasted stagnant tail.
+            ###########################################################################
+            if iter_unsolved < best_unsolved:
+                best_unsolved = iter_unsolved
+                stall = 0
+            else:
+                stall += 1
+            shattered = getattr(self, 'n_components', 0) > SHATTER_FACTOR * self.nbnd
+            patience = SHATTER_STALL if shattered else STALL_PATIENCE
+            if COUNT > 1 and stall >= patience:
+                self.logger.info(
+                    f'\n\t\tConverged: best raw unsolved = {best_unsolved}; no new low '
+                    f'for {stall} iteration(s)'
+                    f'{" (residual graph shattered)" if shattered else ""}. '
+                    f'Stopping the alpha sweep -- the a-posteriori repair takes over.')
+                break
+
+            # Change 4: monotone alpha sweep, clamped at min_alpha (no per-rebuild
+            # reset). Lets the energy-weighted regime be reached while the graph is
+            # still healthy. Termination is the convergence check above, not alpha.
+            self.alpha = max(min_alpha, self.alpha - self.step)
+
         # The best result is maintained
         self.bands_final = np.copy(self.best_bands_final)
         self.final_score = np.copy(self.best_score)

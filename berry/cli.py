@@ -368,6 +368,9 @@ berry [package options] script parameter [script options]
                                          default=0.5,
                                          metavar="[0.0-1.0]",
                                          help="Initial alpha value (default: 0.5).")
+            cluster0_parser.add_argument("-sweep_alpha",
+                                         action="store_true",
+                                         help="Sweep alpha monotonically toward min (no per-rebuild reset), so energy-weighted joining is reached while the graph is still healthy. Default off (original per-rebuild reset).")
             cluster0_parser.add_argument("-flush",
                                          action="store_true",
                                          help="Flushes output into stdout.")
@@ -874,6 +877,7 @@ def clustering0_cli(args: argparse.Namespace):
     args_dict["tol"] = args.t
     args_dict["step"] = args.step
     args_dict["alpha"] = args.alpha
+    args_dict["sweep_alpha"] = args.sweep_alpha
     args_dict["flush"] = args.flush
 
     run_clustering(**args_dict)
