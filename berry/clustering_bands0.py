@@ -15,7 +15,7 @@ except:
     pass
 
 
-def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : float = 0.5, step : float = 0.1, sweep_alpha: bool = False, npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False):
+def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : float = 0.5, step : float = 0.1, npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False):
     logger = log(logger_name, "CLUSTER", level=logger_level, flush=flush)
 
     logger.header()
@@ -36,8 +36,7 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : 
 
     logger.info(f'\tMin band: {min_band}    Max band: {max_band}')
     logger.info(f'\tTolerance: {tol}')
-    logger.info(f'\tNumber of CPUs: {npr}')
-    logger.info(f'\tInitial alpha: {alpha}    Step: {step}    Alpha sweep: {"on (monotone, no per-rebuild reset)" if sweep_alpha else "off (reset per rebuild)"}\n')
+    logger.info(f'\tNumber of CPUs: {npr}\n')
 
     logger.info(f"\tUnique reference of run: {m.refname}")
     logger.info(f"\tDirectory where the wfc are: {m.wfcdirectory}")
@@ -66,7 +65,7 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : 
     material.make_connections(tol=tol)
 
     logger.info('\tSolving problem')
-    material.solve(step=step, alpha=alpha, sweep_alpha=sweep_alpha)
+    material.solve(step=step, alpha=alpha)
 
     logger.info('\n\tClustering Done')
 
