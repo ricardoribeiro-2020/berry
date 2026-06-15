@@ -223,7 +223,8 @@ def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
     return MISTAKE
 
 def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_matrix: np.ndarray,
-                   signal: np.ndarray, bands: np.ndarray, energies: np.ndarray) -> Tuple[int, list[int]]:
+                   signal: np.ndarray, bands: np.ndarray, energies: np.ndarray,
+                   accept_E: float = np.inf) -> Tuple[int, list[int]]:
     '''
     Assign a signal value depending on energy continuity.
 
@@ -245,7 +246,14 @@ def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_ma
             An array with the information of current solution of band clustering.
         energies: array_like
             It contais the energy value for each k point.
-    
+        accept_E: float
+            Absolute gross-jump scale (in the eigenvalue energy unit). A direction
+            breaks continuity when the band's own energy at k departs from its
+            extrapolated trajectory by more than this, *independent* of the relative
+            min/delta ratio. The relative ratio alone lets large jumps pass in a dense
+            band manifold or near a band edge; this is the absolute backstop. Default
+            np.inf disables the absolute test (pure relative criterion, old behaviour).
+
     Returns
         (signal, scores): Tuple[int, list[int]]
             scores: list[int]
@@ -297,6 +305,12 @@ def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_ma
         '''
         min_energy = np.min(np.abs(Enew-energies[k]))           # Computes all possible energy values for this k point
         delta_energy = np.abs(Enew-Ek)                          # Actual difference between Ek and Enew
+        if delta_energy > accept_E:
+            # Absolute gross-jump guard: the band's own energy at k departs from its
+            # extrapolated trajectory by more than the gross-jump scale. The relative
+            # min/delta ratio can still look acceptable (dense manifold / band edge),
+            # so it is overridden here -> this direction does NOT preserve continuity.
+            return 0.0
         return min_energy/delta_energy if delta_energy else 1   # Score
 
 
@@ -874,6 +888,40 @@ class MATERIAL:
                 return E_pred
         return float(self.eigenvalues[k, slot])
 
+    def _energy_cliff_mask(self) -> np.ndarray:
+        '''
+        Boolean mask (nks, total_bands) of attributed slots that sit on an ABSOLUTE
+        energy cliff: the assigned band's energy steps by more than the gross-jump
+        scale ``self.accept_E`` to at least one same-slot neighbour.
+
+        This catches the discontinuities the relative energy-continuity criterion
+        (``min_energy/delta_energy`` in evaluate_point) lets through -- large jumps in
+        a dense band manifold or near a band edge, which is why ~94% of MoS2's
+        >50 meV cliffs were stored as OTHER/CORRECT and never revisited. Both
+        endpoints of a cliff are flagged, so the repair can re-anchor from whichever
+        side stays trusted. Unattributed (-1) slots are skipped (already bad), and a
+        step to/from an unattributed neighbour is never counted as a cliff.
+
+        Returns
+            cliff : np.ndarray[bool], shape (nks, total_bands)
+        '''
+        attributed = self.bands_final != -1
+        safe_bf = np.where(attributed, self.bands_final, 0)
+        Eslot = np.take_along_axis(self.eigenvalues, safe_bf, axis=1).astype(float)
+        Eslot[~attributed] = np.nan                       # jumps to/from -1 become NaN -> never flagged
+
+        cliff = np.zeros_like(attributed)
+        neigh = np.asarray(self.neighbors)
+        for j in range(neigh.shape[1]):
+            nb = neigh[:, j]
+            valid = nb != -1
+            dE = np.abs(Eslot[valid] - Eslot[nb[valid]])  # (n_valid, total_bands); NaN where either side is -1
+            with np.errstate(invalid='ignore'):
+                jump = dE > self.accept_E                 # NaN > x is False
+            cliff[valid] |= jump
+        cliff &= attributed
+        return cliff
+
     def _repair_energy_discontinuities(self, max_rounds: int = 64) -> np.ndarray:
         '''
         A-posteriori energy-continuity repair of the solver's best solution.
@@ -911,6 +959,17 @@ class MATERIAL:
         validation = getattr(self, 'correct_signalfinal_best', None)
         if validation is not None:
             bad |= (validation == NOT_SOLVED) | (validation == MISTAKE)
+
+        ###########################################################################
+        # Absolute energy-cliff mask (Layer 2): an attributed slot whose band steps
+        # by more than accept_E to ANY same-slot neighbour is a discontinuity, even
+        # where the relative continuity validation only marked it OTHER/CORRECT.
+        # Free and re-anchor these like any other bad point.
+        ###########################################################################
+        bad |= self._energy_cliff_mask()
+
+        # Degenerate points are basisrotation's job: never freed, never reassigned.
+        if validation is not None:
             bad &= validation != DEGENERATE
         bad &= self.signal_final != DEGENERATE
 
@@ -2046,7 +2105,8 @@ class MATERIAL:
             for k, bn in iterator:
                 signal, scores = evaluate_point(self.dimensions, k, bn, self.kpoints_index,
                                                 self.matrix, self.signal_final,
-                                                self.bands_final, self.eigenvalues)     # Obtain the new signal
+                                                self.bands_final, self.eigenvalues,
+                                                self.accept_E)                          # Obtain the new signal
                 chunk_result.append([k, bn, signal, scores])
             return chunk_result
 
