@@ -811,7 +811,7 @@ class MATERIAL:
         return idx_ref, unit, sizes
 
     def _extrapolate_energy(self, k_ref: int, k_neighbor: int, slot: int, N: int = 4,
-                            trusted: np.ndarray = None):
+                            trusted: np.ndarray = None, same_band: bool = False):
         '''
         Predict the energy that band ``slot`` (in the current solution
         ``self.bands_final``) would have at ``k_neighbor`` by fitting a quadratic
@@ -821,8 +821,12 @@ class MATERIAL:
         Points not yet attributed (``bands_final == -1``) are skipped so the fit
         never reads a bogus energy (``eigenvalues[k, -1]`` would silently pick the
         last band). When a ``trusted`` mask is given, untrusted points are skipped
-        too, so the fit never reads through a suspect attribution. The k-mesh is
-        open (no BZ wrap): stepping past an edge stops the trajectory.
+        too, so the fit never reads through a suspect attribution. With
+        ``same_band=True`` the trajectory is restricted to the single raw band held
+        at the anchor (first usable point): the walk stops at the first change of
+        band index, so the fit is never taken across a crossing / mis-attribution
+        (the discrete form of a cliff). The k-mesh is open (no BZ wrap): stepping
+        past an edge stops the trajectory.
 
         Returns
             (E_pred, sigma) : (float, float)
@@ -832,6 +836,7 @@ class MATERIAL:
         idx_ref, unit, sizes = self._grid_step_unit(k_ref, k_neighbor)
 
         Xs, Es = [], []
+        b_anchor = None
         for m in range(N):                                   # m=0 -> k_ref, m>0 -> behind it
             idx_b = idx_ref - m * unit
             if np.any(idx_b < 0) or np.any(idx_b >= sizes):
@@ -842,8 +847,22 @@ class MATERIAL:
                 continue                                     # unattributed: skip
             if trusted is not None and not trusted[kb, slot]:
                 continue                                     # suspect attribution: skip
+            E_b = float(self.eigenvalues[kb, b])
+            if Es:
+                # Cliff between this point and the last kept one -> stop the walk so the
+                # quadratic is never fitted ACROSS a discontinuity. Cliff detection uses
+                # BOTH criteria, never the band index alone: an energy step exceeding the
+                # gross-jump scale accept_E, OR -- with same_band -- a change of raw band
+                # index. (A step can break continuity either by jumping in energy or by
+                # swapping bands; both must be caught.) Fitting through a cliff throws the
+                # one-step prediction by ~100 mHa (median) in the entangled manifold;
+                # truncating to the continuous segment nearest k_ref brings it to ~1 mHa.
+                if abs(E_b - Es[-1]) > self.accept_E or (same_band and b != b_anchor):
+                    break
+            else:
+                b_anchor = b                                 # first kept point sets the reference band
             Xs.append(-m)
-            Es.append(self.eigenvalues[kb, b])
+            Es.append(E_b)
 
         if len(Es) == 0:
             # Nothing usable along this direction: fall back to the slot's own
@@ -856,20 +875,35 @@ class MATERIAL:
         if len(Es) < 3:
             return float(Es[0]), sigma                       # nearest-neighbour energy fallback
         w = _extrap_weights(tuple(Xs))                       # cached quadratic-extrapolation weights
-        return float(w @ np.asarray(Es)), sigma              # predict one step forward (k_neighbor)
+        E_pred = float(w @ np.asarray(Es))                   # predict one step forward (k_neighbor)
+        # Clip the one-step prediction to a local band window. A band cannot move
+        # more than ~one (99.9-pct) dispersion step between adjacent k, so a larger
+        # excursion is the quadratic overshooting -- the heavy error tail seen in the
+        # entangled manifold. Bound it to E(nearest trajectory point) +/- disp_scale.
+        # Smooth bands are unaffected (their prediction is already inside the window).
+        E0 = float(Es[0])
+        E_pred = min(max(E_pred, E0 - self.disp_scale), E0 + self.disp_scale)
+        return E_pred, sigma
 
     def _slot_reference_energy(self, k: int, slot: int) -> float:
         '''
-        Reference energy for an unattributed (k, slot): extrapolate from an
-        attributed neighbour of k along that slot's trajectory; fall back to the
-        raw eigenvalue-ordering energy when the slot has no attributed neighbour.
+        Reference energy for (k, slot): the MEDIAN of one-step extrapolations taken
+        from every attributed neighbour of k, each constrained (``same_band=True``)
+        to the single band held at that neighbour -- so no direction's fit is ever
+        taken across a band swap, and the points it uses are well attributed. The
+        median makes the reference robust to a single bad direction. Falls back to
+        the raw eigenvalue-ordering energy when no neighbour is attributed.
         '''
+        preds = []
         for k_nb in self.neighbors[k]:
             if k_nb == -1:
                 continue
-            if self.bands_final[k_nb, slot] != -1:
-                E_pred, _ = self._extrapolate_energy(k_nb, k, slot)
-                return E_pred
+            if self.bands_final[k_nb, slot] == -1:
+                continue
+            E_pred, _ = self._extrapolate_energy(k_nb, k, slot, same_band=True)
+            preds.append(E_pred)
+        if preds:
+            return float(np.median(preds))
         return float(self.eigenvalues[k, slot])
 
     def _repair_energy_discontinuities(self, max_rounds: int = 64) -> np.ndarray:
