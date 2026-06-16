@@ -17,8 +17,7 @@ TODO:
 
 from __future__ import annotations
 from multiprocessing import get_context
-from concurrent.futures import ProcessPoolExecutor, FIRST_COMPLETED
-from concurrent.futures import wait as futures_wait
+from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 import random
 import string
@@ -33,7 +32,6 @@ from scipy.optimize import curve_fit
 import numpy as np
 import networkx as nx
 import time
-import traceback
 
 from berry import log
 from .write_k_points import _bands_numbers
@@ -813,7 +811,7 @@ class MATERIAL:
         return idx_ref, unit, sizes
 
     def _extrapolate_energy(self, k_ref: int, k_neighbor: int, slot: int, N: int = 4,
-                            trusted: np.ndarray = None, same_band: bool = False):
+                            trusted: np.ndarray = None):
         '''
         Predict the energy that band ``slot`` (in the current solution
         ``self.bands_final``) would have at ``k_neighbor`` by fitting a quadratic
@@ -823,12 +821,8 @@ class MATERIAL:
         Points not yet attributed (``bands_final == -1``) are skipped so the fit
         never reads a bogus energy (``eigenvalues[k, -1]`` would silently pick the
         last band). When a ``trusted`` mask is given, untrusted points are skipped
-        too, so the fit never reads through a suspect attribution. With
-        ``same_band=True`` the trajectory is restricted to the single raw band held
-        at the anchor (first usable point): the walk stops at the first change of
-        band index, so the fit is never taken across a crossing / mis-attribution
-        (the discrete form of a cliff). The k-mesh is open (no BZ wrap): stepping
-        past an edge stops the trajectory.
+        too, so the fit never reads through a suspect attribution. The k-mesh is
+        open (no BZ wrap): stepping past an edge stops the trajectory.
 
         Returns
             (E_pred, sigma) : (float, float)
@@ -838,7 +832,6 @@ class MATERIAL:
         idx_ref, unit, sizes = self._grid_step_unit(k_ref, k_neighbor)
 
         Xs, Es = [], []
-        b_anchor = None
         for m in range(N):                                   # m=0 -> k_ref, m>0 -> behind it
             idx_b = idx_ref - m * unit
             if np.any(idx_b < 0) or np.any(idx_b >= sizes):
@@ -849,22 +842,8 @@ class MATERIAL:
                 continue                                     # unattributed: skip
             if trusted is not None and not trusted[kb, slot]:
                 continue                                     # suspect attribution: skip
-            E_b = float(self.eigenvalues[kb, b])
-            if Es:
-                # Cliff between this point and the last kept one -> stop the walk so the
-                # quadratic is never fitted ACROSS a discontinuity. Cliff detection uses
-                # BOTH criteria, never the band index alone: an energy step exceeding the
-                # gross-jump scale accept_E, OR -- with same_band -- a change of raw band
-                # index. (A step can break continuity either by jumping in energy or by
-                # swapping bands; both must be caught.) Fitting through a cliff throws the
-                # one-step prediction by ~100 mHa (median) in the entangled manifold;
-                # truncating to the continuous segment nearest k_ref brings it to ~1 mHa.
-                if abs(E_b - Es[-1]) > self.accept_E or (same_band and b != b_anchor):
-                    break
-            else:
-                b_anchor = b                                 # first kept point sets the reference band
             Xs.append(-m)
-            Es.append(E_b)
+            Es.append(self.eigenvalues[kb, b])
 
         if len(Es) == 0:
             # Nothing usable along this direction: fall back to the slot's own
@@ -877,35 +856,20 @@ class MATERIAL:
         if len(Es) < 3:
             return float(Es[0]), sigma                       # nearest-neighbour energy fallback
         w = _extrap_weights(tuple(Xs))                       # cached quadratic-extrapolation weights
-        E_pred = float(w @ np.asarray(Es))                   # predict one step forward (k_neighbor)
-        # Clip the one-step prediction to a local band window. A band cannot move
-        # more than ~one (99.9-pct) dispersion step between adjacent k, so a larger
-        # excursion is the quadratic overshooting -- the heavy error tail seen in the
-        # entangled manifold. Bound it to E(nearest trajectory point) +/- disp_scale.
-        # Smooth bands are unaffected (their prediction is already inside the window).
-        E0 = float(Es[0])
-        E_pred = min(max(E_pred, E0 - self.disp_scale), E0 + self.disp_scale)
-        return E_pred, sigma
+        return float(w @ np.asarray(Es)), sigma              # predict one step forward (k_neighbor)
 
     def _slot_reference_energy(self, k: int, slot: int) -> float:
         '''
-        Reference energy for (k, slot): the MEDIAN of one-step extrapolations taken
-        from every attributed neighbour of k, each constrained (``same_band=True``)
-        to the single band held at that neighbour -- so no direction's fit is ever
-        taken across a band swap, and the points it uses are well attributed. The
-        median makes the reference robust to a single bad direction. Falls back to
-        the raw eigenvalue-ordering energy when no neighbour is attributed.
+        Reference energy for an unattributed (k, slot): extrapolate from an
+        attributed neighbour of k along that slot's trajectory; fall back to the
+        raw eigenvalue-ordering energy when the slot has no attributed neighbour.
         '''
-        preds = []
         for k_nb in self.neighbors[k]:
             if k_nb == -1:
                 continue
-            if self.bands_final[k_nb, slot] == -1:
-                continue
-            E_pred, _ = self._extrapolate_energy(k_nb, k, slot, same_band=True)
-            preds.append(E_pred)
-        if preds:
-            return float(np.median(preds))
+            if self.bands_final[k_nb, slot] != -1:
+                E_pred, _ = self._extrapolate_energy(k_nb, k, slot)
+                return E_pred
         return float(self.eigenvalues[k, slot])
 
     def _repair_energy_discontinuities(self, max_rounds: int = 64) -> np.ndarray:
@@ -1166,7 +1130,7 @@ class MATERIAL:
 
         self.logger.info(f'\tTolerance: {tol}')
         # Parallelize the edges calculation
-        edges = self.parallelize('\tComputing Edges', connection_component, range(len(self.vectors)))
+        edges = self.parallelize('Computing Edges', connection_component, range(len(self.vectors)))
         # Establish the edges on the graph from edges array
         self.GRAPH.add_weighted_edges_from(edges)
 
@@ -1311,85 +1275,6 @@ class MATERIAL:
 
             
 
-    ###########################################################################
-    # Stalled-worker watchdog policy (_run_chunks_parallel). The chunks are
-    # equal-sized and all start together, so once one completes the others are
-    # expected within a comparable time: a worker still silent long after the
-    # slowest successful chunk is declared stuck, killed, and its chunk
-    # recomputed serially. Before the first success there is no time scale, so
-    # no limit is applied (a legitimately slow phase is never falsely killed).
-    ###########################################################################
-    STALL_FACTOR = 10.0     # stuck if silent for FACTOR x slowest good chunk...
-    STALL_GRACE = 600.0     # ...plus this many seconds of grace
-    WAIT_SLICE = 30.0       # seconds between watchdog checks
-
-    def _run_chunks_parallel(self, chunks: list, n_proc: int, process_name: str,
-                             done: int, N: int) -> tuple[list, list, int]:
-        '''
-        Run every chunk as its own future in a fork-context ProcessPoolExecutor.
-
-        Worker-side failures never propagate: a chunk whose worker raised, died
-        (BrokenProcessPool) or stalled past the watchdog limit is reported as
-        not-ok for the caller to recompute serially in the parent, so one bad
-        worker degrades a long run instead of hanging or aborting it.
-
-        Returns
-            (results, ok, done)
-                results : list, per-chunk worker output (valid where ok is True)
-                ok      : list[bool], per-chunk success flag
-                done    : int, updated progress counter (successful chunks only)
-        '''
-        results = [None] * len(chunks)
-        ok = [False] * len(chunks)
-        stalled = False
-        executor = ProcessPoolExecutor(max_workers=n_proc, mp_context=get_context('fork'))
-        try:
-            future_of = {executor.submit(_parallel_dispatch, c): i for i, c in enumerate(chunks)}
-            pending = set(future_of)
-            t_start = last_progress = time.time()
-            slowest = 0.0
-            while pending:
-                finished, pending = futures_wait(pending, timeout=self.WAIT_SLICE,
-                                                 return_when=FIRST_COMPLETED)
-                now = time.time()
-                for fut in finished:
-                    i = future_of[fut]
-                    last_progress = now
-                    try:
-                        results[i] = fut.result()
-                    except BrokenProcessPool:
-                        # A worker died; its chunk (and any chunk still queued on
-                        # it) resolves with this error and is recomputed serially.
-                        self.logger.warning(f'{process_name}: a worker process died; '
-                                            f'chunk {i + 1}/{len(chunks)} will be recomputed serially')
-                        continue
-                    except Exception:
-                        self.logger.warning(f'{process_name}: worker for chunk {i + 1}/{len(chunks)} '
-                                            f'raised and will be recomputed serially\n'
-                                            f'{traceback.format_exc()}')
-                        continue
-                    ok[i] = True
-                    slowest = max(slowest, now - t_start)
-                    done += len(chunks[i])
-                    self.logger.percent_complete(done, N, title=process_name)
-                if pending and slowest > 0.0 and \
-                        now - last_progress > self.STALL_FACTOR * slowest + self.STALL_GRACE:
-                    stalled = True
-                    self.logger.warning(
-                        f'{process_name}: {len(pending)} worker(s) stalled (no result for '
-                        f'{now - last_progress:.0f}s; slowest healthy chunk took {slowest:.0f}s). '
-                        f'Killing them and recomputing their chunks serially')
-                    for p in list(getattr(executor, '_processes', {}).values()):
-                        try:
-                            p.kill()
-                        except Exception:
-                            pass
-                    break
-        finally:
-            # After a kill the workers may be in any state: never block on them.
-            executor.shutdown(wait=not stalled, cancel_futures=True)
-        return results, ok, done
-
     def parallelize(self, process_name: str, f: Callable, iterator: Union[list, np.ndarray], per_actual:int=0, N_total:int=None,*args) -> np.ndarray:
         '''
         Apply the function f to an iterator in parallel using a process Pool.
@@ -1435,12 +1320,10 @@ class MATERIAL:
         self.logger.percent_complete(per_actual, N, title=process_name)
 
         def finish_progress():
-            # In cumulative mode (N_total given) the caller owns the counter and
-            # emits the final 100% line itself; re-logging the stale per_actual
-            # here would look like a counter restart to percent_complete and
-            # reset its elapsed/ETA baseline on every call.
             if N_total is None:
                 self.logger.percent_complete(N, N, title=process_name)
+            else:
+                self.logger.percent_complete(per_actual, N, title=process_name)
 
         result = []
         if len(iterator) == 0:
@@ -1471,27 +1354,22 @@ class MATERIAL:
                     done += len(chunk)
                     self.logger.percent_complete(done, N, title=process_name)
             else:
-                ###########################################################################
-                # A fork context lets the workers inherit the current process state (self
-                # and its arrays) copy-on-write without re-pickling it; they are forked
-                # after _PARALLEL_FN is published above, so they inherit it too.
-                # Robustness: each chunk is its own future, and ANY chunk whose worker
-                # raised, died or stalled is recomputed serially here in the parent,
-                # through the exact same _parallel_dispatch path the n_proc == 1 branch
-                # uses. A worker failure therefore costs time, never the run.
-                ###########################################################################
-                chunk_results, ok, done = self._run_chunks_parallel(chunks, n_proc, process_name, done, N)
-                failed = [i for i in range(len(chunks)) if not ok[i]]
-                if failed:
-                    self.logger.warning(f'{process_name}: recomputing {len(failed)} of '
-                                        f'{len(chunks)} chunk(s) serially in the parent')
-                    for i in failed:
-                        chunk_results[i] = _parallel_dispatch(chunks[i])
-                        done += len(chunks[i])
-                        self.logger.percent_complete(done, N, title=process_name)
-                for value in chunk_results:                  # concatenate in input order
-                    if value:
-                        result += value
+                # A fork context lets the workers inherit the current process state
+                # (self and its arrays) copy-on-write without re-pickling it.  We use
+                # ProcessPoolExecutor instead of Pool.imap (H1): if a worker dies
+                # mid-chunk, executor.map raises BrokenProcessPool rather than blocking
+                # the parent forever.  The workers are forked after _PARALLEL_FN is
+                # published above, so they still inherit it via copy-on-write.
+                with ProcessPoolExecutor(max_workers=n_proc, mp_context=get_context('fork')) as executor:
+                    try:
+                        for chunk, value in zip(chunks, executor.map(_parallel_dispatch, chunks)):
+                            if value:
+                                result += value                                  # Store the output into result array
+                            done += len(chunk)                                   # The counter is actualized
+                            self.logger.percent_complete(done, N, title=process_name)
+                    except BrokenProcessPool:
+                        self.logger.error('A clustering worker process died without returning a result.')
+                        raise
         finally:
             _PARALLEL_FN = None
             _PARALLEL_ARGS = ()
@@ -1673,7 +1551,7 @@ class MATERIAL:
                 break
         
             #self.n_process = 10 # min(self.n_process, len(samples))
-            evaluate_samples_result = self.parallelize('\tClustering Samples', evaluate_sample, range(len(samples)), per_actual=count[0], N_total=count[1])
+            evaluate_samples_result = self.parallelize('Clustering Samples', evaluate_sample, range(len(samples)), per_actual=count[0], N_total=count[1])
             count[0] += len(samples)
             for i_s, res, sample_scores in evaluate_samples_result:
                 samples[i_s].scores = sample_scores
@@ -1728,132 +1606,11 @@ class MATERIAL:
 
         self.clusters : list[COMPONENT] = clusters
 
-    def _assignment_fit(self, k: int, b: int, slot: int) -> float:
-        '''
-        Blended quality of placing raw band ``b`` into ``slot`` at ``k``:
-        wavefunction-overlap continuity with the band already attributed to that
-        slot at k's neighbours, plus energy continuity with the slot's own
-        extrapolated trajectory. Both terms are in [0, 1]; higher is better.
-
-        Overlap alone cannot separate a band sitting inside a self-consistent wrong
-        patch (the patch is internally smooth, so its overlap is high), so the
-        energy term -- taken against the slot's trajectory rather than the band's
-        own -- is what discriminates at patch boundaries.
-        '''
-        overlaps = []
-        for i_neig, k_neig in enumerate(self.neighbors[k]):
-            if k_neig == -1:
-                continue
-            b2 = self.bands_final[k_neig, slot]
-            if b2 == -1:
-                continue
-            overlaps.append(self.connections[k, i_neig, b, b2])
-        overlap = float(np.mean(overlaps)) if overlaps else 0.0
-        ref = self._slot_reference_energy(k, slot)
-        dE = abs(float(self.eigenvalues[k, b]) - ref)
-        e_score = max(0.0, 1.0 - dE / self.accept_E)        # 1 at perfect continuity, 0 at the gross-jump scale
-        return overlap + e_score                            # equal blend (tunable); each term in [0, 1]
-
-    def _recompute_slot_signal(self, k: int, slot: int) -> None:
-        '''
-        Re-derive ``signal_final[k, slot]`` from the current ``bands_final`` after
-        the bijection resolver changes a (k, slot) attribution. Unattributed
-        neighbours contribute 0, matching obtain_output's own convention.
-        '''
-        b = self.bands_final[k, slot]
-        if b == -1:
-            self.signal_final[k, slot] = NOT_SOLVED
-            return
-        values = []
-        for i_neig, k_neig in enumerate(self.neighbors[k]):
-            if k_neig == -1:
-                continue
-            b2 = self.bands_final[k_neig, slot]
-            values.append(self.connections[k, i_neig, b, b2] if b2 != -1 else 0)
-        self.signal_final[k, slot] = evaluate_result(values) if values else NOT_SOLVED
-
-    def _resolve_duplicates(self) -> None:
-        '''
-        Enforce the per-k bijection invariant on ``self.bands_final``: at every k
-        each raw band occupies AT MOST ONE slot (or none). The emission loops in
-        obtain_output can write the same raw band into two slots, because a cluster
-        bumped off its preferred slot still writes its own raw bands. For every k
-        that carries a duplicate this pass:
-          1. keeps the band in the slot it fits best (``_assignment_fit``) and frees
-             it from the others;
-          2. re-homes each freed slot to the best still-available band whose energy
-             is within the gross-jump scale (|dE| <= accept_E), else leaves it -1 for
-             the completeness pass;
-          3. recomputes the signal of every slot it touched.
-        Slots that were already unique are never touched. The result is guaranteed a
-        valid partial permutation: step 1 removes every duplicate and step 2 only
-        ever assigns a band not currently used at k.
-        '''
-        all_bands = np.arange(self.total_bands)
-        for k in range(self.nks):
-            row = self.bands_final[k]
-            attributed = row[row != -1]
-            if attributed.size == 0:
-                continue
-            uniq, counts = np.unique(attributed, return_counts=True)
-            dup_bands = uniq[counts > 1]
-            if dup_bands.size == 0:
-                continue                                    # already a valid partial permutation
-
-            freed = []
-            # (1) keep each duplicated band in its best-fitting slot, free the rest
-            for b in dup_bands:
-                slots = np.where(row == b)[0]
-                fits = [self._assignment_fit(k, int(b), int(s)) for s in slots]
-                keep = int(slots[int(np.argmax(fits))])
-                for s in slots:
-                    if int(s) != keep:
-                        self.bands_final[k, int(s)] = -1
-                        freed.append(int(s))
-
-            # (2) re-home freed slots to the best still-available, energy-eligible band
-            used = set(int(x) for x in self.bands_final[k] if x != -1)
-            available = [int(b) for b in all_bands if b not in used]
-            ranked = []
-            for s in freed:
-                ref = self._slot_reference_energy(k, s)
-                for b in available:
-                    if abs(float(self.eigenvalues[k, b]) - ref) > self.accept_E:
-                        continue                            # energy exclusion: not a continuous continuation
-                    ranked.append((self._assignment_fit(k, b, s), s, b))
-            ranked.sort(key=lambda t: t[0], reverse=True)   # greedy: best (slot, band) fit first
-            for _, s, b in ranked:
-                if self.bands_final[k, s] == -1 and b not in used:
-                    self.bands_final[k, s] = b
-                    used.add(b)
-
-            # (3) refresh the signal of every slot we changed
-            for s in freed:
-                self._recompute_slot_signal(k, s)
-
-    def _assert_unique_bands(self, where: str = '') -> None:
-        '''
-        Hard guard: no raw band may occupy two slots at the same k. The resolver and
-        the repair/completeness passes all preserve this, so it never fires on a
-        correct run -- it exists so a regression can never silently reach the output.
-        '''
-        bf = self.bands_final
-        for k in range(self.nks):
-            row = bf[k][bf[k] != -1]
-            if row.size != np.unique(row).size:
-                raise AssertionError(f'[cluster0] duplicate band attribution at k={k} '
-                                     f'after {where}: {bf[k].tolist()}')
-
     def obtain_output(self, last=False) -> None:
         '''
         This function prepares the final data structures
         that are essential to other programs.
         '''
-
-        # Re-emit from scratch every iteration: a slot that no cluster covers this
-        # iteration must not keep a stale attribution from a previous one.
-        self.bands_final[:] = -1
-        self.signal_final[:] = NOT_SOLVED
 
         ###########################################################################
         # Obtain the resultant bands' attribution and the k-point's signal.
@@ -1934,14 +1691,6 @@ class MATERIAL:
 
                 self.signal_final[k, bn] = evaluate_result(connections)             # Computes the k-point's signal
 
-
-        ###########################################################################
-        # Enforce the per-k bijection (each raw band in at most one slot) before any
-        # downstream consumer reads bands_final. The emission above de-dupes only the
-        # SLOT index, never the raw bands written into it.
-        ###########################################################################
-        self._resolve_duplicates()
-        self._assert_unique_bands('obtain_output')
 
         ###########################################################################
         # Scoring the result.
@@ -2215,7 +1964,7 @@ class MATERIAL:
 
         # The evaluation of each (k, bn) point is independent, so it is parallelized
         kbnds = list(zip(ks, bnds))
-        evaluated_points = self.parallelize('\tCorrecting signal', evaluate_points_chunk, kbnds) \
+        evaluated_points = self.parallelize('Correcting signal', evaluate_points_chunk, kbnds) \
             if len(kbnds) > 0 else []
 
         for k, bn, signal, scores in evaluated_points:
@@ -2706,7 +2455,6 @@ class MATERIAL:
         ###########################################################################
         self.logger.info('\n\t\tRepairing energy discontinuities (a posteriori)')
         self.repaired_mask = self._repair_energy_discontinuities()
-        self._assert_unique_bands('repair')
 
         ###########################################################################
         # Force a genuine band attribution everywhere: every slot still
@@ -2715,7 +2463,6 @@ class MATERIAL:
         # report and basisrotation can tell them apart from genuine solves.
         ###########################################################################
         self.forced_mask = self._force_complete_bands()
-        self._assert_unique_bands('force-complete')
         self.signal_final[self.forced_mask] = FORCED
 
         self.correct_signal(last=True)
