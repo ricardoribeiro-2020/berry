@@ -106,6 +106,64 @@ def _extrap_weights(offsets: tuple) -> np.ndarray:
     return w
 
 
+###########################################################################
+# In-loop f(E) diagnostics (fE_debug)
+###########################################################################
+# The in-loop energy term (fit_energy/predict_energy + difference_energy inside
+# COMPONENT.get_cluster_score) decides how a sample attaches to a cluster. To
+# find out WHY f(E) helps or hurts, the hot path accumulates a handful of
+# counters into this module-global dict. Every field is an int/float so two
+# dicts merge by summation -- this is what lets the per-chunk counts collected
+# inside the forked Pool workers be returned and summed in the parent without a
+# shared-memory Manager (same copy-on-write discipline as _PARALLEL_FN). The
+# residual buckets are counts of |E_pred - E_neighbour| / disp_scale falling in
+# fixed ranges, so the distribution shape is mergeable too. _FE_DEBUG gates the
+# accumulation so a production run pays nothing when it is off.
+_FE_DEBUG: bool = True
+_FE_RESID_EDGES = (0.5, 1.0, 2.0, 5.0)      # residual / disp_scale bucket edges
+
+def _fe_stats_new() -> dict:
+    '''A zeroed f(E)-diagnostics accumulator.'''
+    return {
+        'calls': 0,          # predict_energy invocations
+        'fit': 0,            # ... that produced a fitted (used) energy
+        'fallback': 0,       # ... that returned None (no continuous segment) -> nearest-E default
+        'clip_hit': 0,       # fitted predictions clamped by the disp_scale window
+        'trunc': 0,          # trajectories shortened by the cliff-break
+        'kept_len_sum': 0,   # sum of kept-trajectory lengths (for a mean)
+        'brk_ejump': 0,      # cliff-break caused by an energy step > accept_E
+        'brk_band': 0,       # cliff-break caused by a raw-band-index change
+        'pair_n': 0,         # scored (k-edge, neighbour) pairs
+        'conn_sum': 0.0,     # sum of alpha*connection contributions
+        'eng_sum': 0.0,      # sum of (1-alpha)*energy_val contributions
+        'resid_n': 0,        # predictions with a measurable residual
+        'resid_buckets': [0, 0, 0, 0, 0],   # |resid|/disp_scale in [<0.5,<1,<2,<5,>=5]
+    }
+
+def _fe_stats_merge(dst: dict, src: dict) -> None:
+    '''Sum-merge ``src`` into ``dst`` (both produced by _fe_stats_new).'''
+    for key, val in src.items():
+        if key == 'resid_buckets':
+            for i in range(len(val)):
+                dst[key][i] += val[i]
+        else:
+            dst[key] += val
+
+# Per-worker live accumulator. Reset at the start of each evaluate_sample chunk,
+# its delta returned to the parent at the end of the chunk.
+_FE_STATS: dict = _fe_stats_new()
+
+def _fe_resid_bucket(resid: float, disp_scale: float) -> int:
+    '''Index of the residual/disp_scale bucket for ``resid``.'''
+    if not disp_scale or disp_scale <= 0:
+        return len(_FE_RESID_EDGES)
+    r = abs(resid) / disp_scale
+    for i, edge in enumerate(_FE_RESID_EDGES):
+        if r < edge:
+            return i
+    return len(_FE_RESID_EDGES)
+
+
 EVALUATE_RESULT_HELP = '''
     ---------------------- Report considering dot-product information ----------------------------
             C -> Mean dot-product |<i|j>| of each k-point
@@ -740,10 +798,36 @@ class MATERIAL:
                 d = np.abs(self.eigenvalues[nb[valid]] - self.eigenvalues[valid])
                 if d.size:
                     disp_values.append(d.ravel())
-        disp_scale = float(np.percentile(np.concatenate(disp_values), 99.9)) if disp_values else 0.0
+        disp_all = np.concatenate(disp_values) if disp_values else np.array([])
+        disp_scale = float(np.percentile(disp_all, 99.9)) if disp_all.size else 0.0
         self.disp_scale = disp_scale if disp_scale > 0 else self.gap_scale
         self.sigma_min = 0.25 * self.gap_scale                          # min local-spread scale for _extrapolate_energy
         self.accept_E = max(3.0 * self.disp_scale, 0.5 * self.gap_scale)  # gross-jump guard for repair/forced fills
+
+        ###########################################################################
+        # f(E) diagnostics, Tier 3: report the energy scales f(E) depends on, once.
+        # If gap_scale has collapsed relative to the typical single-step dispersion
+        # (the SOC/Kramers-pair trap), accept_E's 0.5*gap_scale floor and the
+        # disp_scale clip are mis-scaled -- flag it so a bad f(E) result can be
+        # traced to the scales rather than the logic.
+        ###########################################################################
+        if disp_all.size:
+            d_med = float(np.median(disp_all))
+            d_p95 = float(np.percentile(disp_all, 95))
+            d_max = float(disp_all.max())
+        else:
+            d_med = d_p95 = d_max = 0.0
+        gap_disp_ratio = (self.gap_scale / self.disp_scale) if self.disp_scale else float('inf')
+        self.logger.info(f'{BODY_INDENT}f(E) scales: gap_scale={self.gap_scale:.4g}  '
+                         f'disp_scale(p99.9)={self.disp_scale:.4g}  accept_E={self.accept_E:.4g}  '
+                         f'sigma_min={self.sigma_min:.4g}')
+        self.logger.info(f'{BODY_INDENT}f(E) single-step dispersion |E(k+1)-E(k)|: '
+                         f'median={d_med:.4g}  p95={d_p95:.4g}  max={d_max:.4g}  '
+                         f'(gap/disp={gap_disp_ratio:.3g})')
+        if gap_disp_ratio < 1.0:
+            self.logger.warning(f'{BODY_INDENT}f(E) WARNING: gap_scale < disp_scale -- the band gap '
+                                f'looks collapsed (SOC/Kramers degeneracy?); accept_E/disp_scale '
+                                f'may be mis-scaled and f(E) predictions unreliable.')
 
         # self.nbnd = nbnd-min_band
         self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
@@ -1101,7 +1185,7 @@ class MATERIAL:
                 avail_E.pop(j)
         return forced_mask
 
-    def make_connections(self, tol:float=0.80, not_first_iteration:bool=False) -> None:
+    def make_connections(self, tol:float=0.80, not_first_iteration:bool=False, node_subset=None) -> None:
         '''
         This function evaluates the connection between each k point,
         and adds an edge to the graph if its connection is greater
@@ -1113,6 +1197,12 @@ class MATERIAL:
             tol : float
                 It is the minimum connection value that will be accepted as an edge.
                 default: 0.95
+            node_subset : array_like or None
+                If given, dot-product edges are computed ONLY from these node ids
+                (the edges are undirected, so an edge to a node outside the subset
+                is still created). Used by the error-region-only rebuild so the
+                good bands keep just their continuity edges and are not re-clustered.
+                default: None (every node, i.e. the full graph)
         '''
         ###########################################################################
         # Find the edges on the graph
@@ -1163,8 +1253,10 @@ class MATERIAL:
             return edges
 
         self.logger.info(f'\tTolerance: {tol}')
-        # Parallelize the edges calculation
-        edges = self.parallelize('\tComputing Edges', connection_component, range(len(self.vectors)))
+        # Parallelize the edges calculation (over every node, or just the subset
+        # when an error-region rebuild restricts which nodes originate edges).
+        nodes_iter = range(len(self.vectors)) if node_subset is None else list(node_subset)
+        edges = self.parallelize('\tComputing Edges', connection_component, nodes_iter)
         # Establish the edges on the graph from edges array
         self.GRAPH.add_weighted_edges_from(edges)
 
@@ -1411,6 +1503,64 @@ class MATERIAL:
         finish_progress()
         return result
 
+    def _log_fE_stats(self, stats: dict) -> None:
+        '''
+        f(E) diagnostics, Tiers 1-2: per-(solve-iteration) summary of the in-loop
+        energy term. Reports how often the predictor fit vs fell back to the
+        nearest-neighbour default, how aggressively the cliff-break truncated and
+        the disp_scale window clipped, the residual distribution (|E_pred - E_neigh|
+        in units of disp_scale), and how much weight the energy term carried in the
+        blended score relative to the dot product. Together these say WHETHER f(E)
+        influenced the clustering and whether its predictions were any good.
+        '''
+        if not _FE_DEBUG or stats['calls'] == 0:
+            return
+        calls = stats['calls']
+        kept_mean = stats['kept_len_sum'] / calls if calls else 0.0
+        pair_n = stats['pair_n']
+        conn = stats['conn_sum'] / pair_n if pair_n else 0.0
+        eng = stats['eng_sum'] / pair_n if pair_n else 0.0
+        total_w = conn + eng
+        eng_frac = (eng / total_w) if total_w else 0.0
+        rn = stats['resid_n']
+        rb = stats['resid_buckets']
+        rb_pct = [100.0 * b / rn for b in rb] if rn else [0.0] * len(rb)
+        self.logger.info(
+            f'{BODY_INDENT}f(E) iter: calls={calls} fit={stats["fit"]} '
+            f'fallback={stats["fallback"]} ({100.0*stats["fallback"]/calls:.0f}%) '
+            f'clip_hit={stats["clip_hit"]} trunc={stats["trunc"]} kept_len={kept_mean:.2f}')
+        self.logger.info(
+            f'{BODY_INDENT}f(E) breaks: Ejump={stats["brk_ejump"]} bandchg={stats["brk_band"]} | '
+            f'term weight conn={conn:.3f} eng={eng:.3f} (eng/total={eng_frac:.2f})')
+        self.logger.info(
+            f'{BODY_INDENT}f(E) resid/disp [<0.5,<1,<2,<5,>=5] %: '
+            f'[{", ".join(f"{p:.0f}" for p in rb_pct)}]  (n={rn})')
+
+    def _log_fE_outcome(self) -> None:
+        '''
+        f(E) diagnostics, Tier 4: the energy-continuity validation outcome of the
+        k-points attached during the last get_components call (the joins the
+        sample-to-cluster score, and therefore f(E), helped decide) compared to the
+        whole grid. If the attached points are disproportionately NOT/MIS, the
+        attachment scoring is making bad joins in exactly the region it acted on.
+        '''
+        if not _FE_DEBUG:
+            return
+        attached = getattr(self, 'fE_attached_k', None)
+        val = getattr(self, 'correct_signalfinal', None)
+        if attached is None or val is None or len(attached) == 0:
+            return
+
+        def bad_frac(rows):
+            sub = val[rows]
+            bad = int(np.sum((sub == NOT_SOLVED) | (sub == MISTAKE)))
+            return (100.0 * bad / sub.size) if sub.size else 0.0
+
+        all_rows = np.arange(val.shape[0])
+        self.logger.info(
+            f'{BODY_INDENT}f(E) attached this iter: {len(attached)} k-point(s) | '
+            f'NOT/MIS over them: {bad_frac(attached):.1f}%  vs grid {bad_frac(all_rows):.1f}%')
+
     def get_components(self, alpha: float=0.5, compute_communities=False) -> None:
         '''
         The make_connections function constructs the graph, in which
@@ -1548,6 +1698,10 @@ class MATERIAL:
         # Assigning samples to clusters by selecting the best option
         ###########################################################################
         def evaluate_sample(iterator):
+            if _FE_DEBUG:
+                # Per-chunk reset; the chunk's delta is returned below and summed in
+                # the parent (forked workers each carry their own copy).
+                _FE_STATS.clear(); _FE_STATS.update(_fe_stats_new())
             result = []
             for i_s in iterator:
                 sample = samples[i_s]
@@ -1567,12 +1721,18 @@ class MATERIAL:
                                                            self.neighbors,
                                                            self.ENERGIES,
                                                            self.connections,
-                                                           alpha=alpha)             # Calculate the score
+                                                           alpha=alpha,
+                                                           accept_E=self.accept_E,
+                                                           disp_scale=self.disp_scale)  # Calculate the score (new f(E))
                 result.append([i_s, [np.max(scores), np.argmax(scores)], sample.scores])
 
+            if _FE_DEBUG:
+                result.append(['__FE_STATS__', dict(_FE_STATS), None])           # chunk's f(E) counts
             return result
-         
+
         count = np.array([0, len(samples) * len(samples)])
+        fe_agg = _fe_stats_new()                                                 # f(E) diagnostics for this get_components call
+        fe_attached_k = set()                                                    # k-points joined this call (Tier 4)
         while len(samples) > 0:
             evaluate_samples = np.zeros((len(samples), 2))                          # Samples' scores storage
             self.logger.debug(f'Len samples: {len(samples)}')
@@ -1588,6 +1748,9 @@ class MATERIAL:
             evaluate_samples_result = self.parallelize('\tClustering Samples', evaluate_sample, range(len(samples)), per_actual=count[0], N_total=count[1])
             count[0] += len(samples)
             for i_s, res, sample_scores in evaluate_samples_result:
+                if i_s == '__FE_STATS__':
+                    _fe_stats_merge(fe_agg, res)                      # res = this chunk's f(E) counts
+                    continue
                 samples[i_s].scores = sample_scores
                 evaluate_samples[i_s] = np.array(res)                 # Store the best cluster's score
 
@@ -1609,8 +1772,10 @@ class MATERIAL:
                 bn_list.append(bn)
                 sample = samples[arg_max]                                               # Get the sample
                 count[0] += 1                                                           # Update the counter
-                clusters[bn].join(sample)                                               # Join the sample to the best cluster               
+                clusters[bn].join(sample)                                               # Join the sample to the best cluster
                 clusters[bn].was_modified = True
+                if _FE_DEBUG:
+                    fe_attached_k.update((np.array(sample.GRAPH.nodes) % self.nks).tolist())  # Tier 4
     
                 self.logger.percent_complete(count[0], count[1], title='Clustering Samples')
                 self.logger.debug(f'\t\t{count[0]}/{count[1]} Sample corrected: {score}')
@@ -1633,6 +1798,8 @@ class MATERIAL:
             clusters = new_clusters
 
         self.logger.percent_complete(count[1], count[1], title='Clustering Samples')
+        self.fE_attached_k = np.array(sorted(fe_attached_k), dtype=int)          # for the Tier-4 outcome log
+        self._log_fE_stats(fe_agg)                                               # Tier 1 + 2 per-iteration block
         self.logger.info(f'\t\tPhase 2: {len(self.solved)}/{self.nbnd} Solved')
 
         if len(self.solved)/self.nbnd < 1:
@@ -2155,9 +2322,34 @@ class MATERIAL:
         self.logger.info(f'{BODY_INDENT}Total not solved: ' + str(total_not_solved))
         if self.tol > 0.1 and total_not_solved > 1000:
             print('Creating the graph')
-            self.make_connections(self.tol, not_first_iteration=True)
+            ###########################################################################
+            # Error-region-only rebuild. A k-point is "bad" if any of its slots failed
+            # the energy-continuity validation (NOT_SOLVED / MISTAKE / OTHER). Only the
+            # nodes of the bad k-points (across all bands, since the band identity there
+            # is uncertain) originate fresh dot-product edges, so the bad region can
+            # re-cluster and re-attach to good bands at its boundary. The good bands keep
+            # ONLY their same-band continuity edges (added in the loop below) and survive
+            # intact as components -- unlike the previous full-graph rebuild, whose dense
+            # cross-band edges + Louvain shattered the done bands on every iteration.
+            ###########################################################################
+            bad_mask = ((self.correct_signalfinal == NOT_SOLVED) |
+                        (self.correct_signalfinal == MISTAKE) |
+                        (self.correct_signalfinal == OTHER))
+            bad_k = np.where(np.any(bad_mask, axis=1))[0]
+            all_bands = np.arange(self.total_bands)
+            error_nodes = (bad_k[:, None] + all_bands[None, :] * self.nks).ravel()
+            self.logger.info(f'{BODY_INDENT}Error-region rebuild: {len(bad_k)} bad k-point(s), '
+                             f'{len(error_nodes)} node(s) of {len(self.vectors)} '
+                             f'({100.0*len(error_nodes)/max(len(self.vectors),1):.0f}%)')
+            self.make_connections(self.tol, not_first_iteration=True, node_subset=error_nodes)
             self.repeat_communities = True
-            self.alpha = self.init_alpha
+            # Do NOT reset alpha to init_alpha here. Resetting it on every rebuild
+            # yanked the sweep straight back to the top (alpha became init_alpha - step
+            # again next iteration), so the designed alpha descent never happened and
+            # the done bands were re-clustered at the same alpha each time. alpha is now
+            # left untouched here -- it is held during the rebuild phase (see the
+            # decrement guard in solve()) and allowed to descend only once the bands
+            # have mostly closed and rebuilds stop.
             self.tol *= 0.90
             for edge in edges:
                 # For each edge, the graph is built
@@ -2401,6 +2593,7 @@ class MATERIAL:
 
             self.logger.info('\n\t\tValidating result using energy continuity criteria')     
             self.correct_signal()                           # Evaluate the energy continuity and perform a new Graph
+            self._log_fE_outcome()                          # f(E) diagnostics, Tier 4: outcome over attached points
             self.print_report(self.correct_signalfinal, f'Validation Report Number: {COUNT} considering  energy continuity criteria', header_text=VALIDATE_RESULT_HEADER)     # Print result
             
             # Verification if the result is similar to the previous one
@@ -2473,8 +2666,15 @@ class MATERIAL:
                 self.logger.info(f'\n\t\t\tBest result: {max_solved} bands')
                 self.print_report(self.correct_signalfinal, f'Validation Report: Best Iteration', header_text=VALIDATE_RESULT_HEADER)     # Print result
 
-            self.alpha -= step
-        
+            # Advance the alpha sweep only when no rebuild is pending. During the
+            # tolerance-relaxation (rebuild) phase alpha is held, so the sweep is not
+            # consumed by re-clustering iterations and the tolerance descent is not cut
+            # short; alpha descends once rebuilds stop (bands mostly closed), which also
+            # restores termination (alpha eventually drops below min_alpha). When no
+            # rebuild ever fires (easy systems) this is identical to the old behaviour.
+            if not self.repeat_communities:
+                self.alpha -= step
+
         # The best result is maintained
         self.bands_final = np.copy(self.best_bands_final)
         self.final_score = np.copy(self.best_score)
@@ -2711,7 +2911,8 @@ class COMPONENT:
             self.k_edges = self.nodes % self.nks
 
     def get_cluster_score(self, cluster : COMPONENT, min_band : int, max_band : int,
-                          neighbors : np.ndarray, energies : np.ndarray, connections : np.ndarray, alpha : float = 0.5) -> float:
+                          neighbors : np.ndarray, energies : np.ndarray, connections : np.ndarray, alpha : float = 0.5,
+                          accept_E : float = None, disp_scale : float = None) -> float:
         '''
         This function returns the similarity between components taking
         into account the dot product of all essential points and their
@@ -2767,6 +2968,7 @@ class COMPONENT:
                 kk1 = iK1[2]
                 kk_n = iK2[2]
 
+            predicted = Ei is not None                                     # f(E) prediction path (Ei=Enew) vs default
             energies_candidates = lambda bn: energies[bn, ik_n] if self.dimensions == 1 else energies[bn, ik_n, jk_n] if self.dimensions == 2 else energies[bn, ik_n, jk_n, kk_n]
 
             if self.dimensions == 1:
@@ -2780,6 +2982,11 @@ class COMPONENT:
             min_energy = np.min([np.abs(Ei-energies_candidates(bn))        # The energy difference between Ei and all possibilities
                                     for bn in bands])
             delta_energy = np.abs(Ei-energies_candidates(bn2))             # Actual energy difference
+            if _FE_DEBUG and predicted:
+                # f(E) diagnostics, Tier 2: residual = how far the extrapolated
+                # energy (Ei=Enew) lands from the neighbour it is scored against.
+                _FE_STATS['resid_n'] += 1
+                _FE_STATS['resid_buckets'][_fe_resid_bucket(float(delta_energy), disp_scale)] += 1
             return min_energy/delta_energy if delta_energy else 1           # score
         
         def fit_energy(bn1 : int, bn2 : int, iK1 : list[int], iK2: list[int]) -> float:
@@ -2801,6 +3008,70 @@ class COMPONENT:
                     Result of difference_energy function using the computed Energy.
             '''
             N = 4                                                               # Number of points to take account into the curve fitting
+
+            ###########################################################################
+            # New f(E): cliff-aware, dispersion-clipped one-step extrapolation,
+            # applied here in the IN-LOOP score term (mirrors the post-loop
+            # MATERIAL._extrapolate_energy). Enabled only when accept_E/disp_scale
+            # are supplied; otherwise predict_energy reproduces the original plain
+            # quadratic fit exactly, so the change is a no-op unless wired in.
+            ###########################################################################
+            use_new_fE = accept_E is not None and disp_scale is not None
+            _accept_E  = accept_E if accept_E is not None else np.inf
+            _disp      = disp_scale if disp_scale is not None else np.inf
+            pol = lambda x, a, b, c: a*x**2 + b*x + c                            # Second order polynomial
+
+            def predict_energy(X, Es, bands, new_x):
+                '''
+                One-step energy prediction at ``new_x`` from the band's own trajectory.
+                ``X``/``Es``/``bands`` are ordered anchor-first: X[0] is the k-point
+                nearest the neighbour. With the new f(E) enabled the walk is truncated
+                at the first cliff -- an energy step exceeding the gross-jump scale
+                ``accept_E`` OR a change of raw band index -- so the quadratic is never
+                fitted across a discontinuity, and the prediction is clipped to a local
+                dispersion window E(anchor) +/- ``disp_scale``. Returns None when fewer
+                than 4 continuous points remain (caller falls back to the
+                nearest-neighbour energy default). With the new f(E) disabled it is the
+                original plain quadratic fit over all supplied points.
+                '''
+                X = np.asarray(X, dtype=float)
+                Es = np.asarray(Es, dtype=float)
+                bands = np.asarray(bands)
+                if _FE_DEBUG:
+                    _FE_STATS['calls'] += 1
+                if use_new_fE:
+                    Xt, Et = [X[0]], [Es[0]]
+                    b_anchor = bands[0]
+                    for x, e, b in zip(X[1:], Es[1:], bands[1:]):
+                        ejump = abs(e - Et[-1]) > _accept_E
+                        if ejump or b != b_anchor:
+                            if _FE_DEBUG:
+                                _FE_STATS['brk_ejump' if ejump else 'brk_band'] += 1
+                            break                                               # cliff: stop the walk
+                        Xt.append(x); Et.append(e)
+                    if _FE_DEBUG:
+                        _FE_STATS['kept_len_sum'] += len(Et)
+                        if len(Et) < len(X):
+                            _FE_STATS['trunc'] += 1
+                    if len(Et) <= 3:
+                        if _FE_DEBUG:
+                            _FE_STATS['fallback'] += 1
+                        return None                                             # too few continuous points
+                else:
+                    Xt, Et = X, Es
+                    if _FE_DEBUG:
+                        _FE_STATS['kept_len_sum'] += len(Et)
+                popt, _ = curve_fit(pol, Xt, Et)
+                Enew = float(pol(new_x, *popt))
+                if use_new_fE:
+                    E0 = float(Et[0])
+                    clipped = min(max(Enew, E0 - _disp), E0 + _disp)            # local dispersion window
+                    if _FE_DEBUG and clipped != Enew:
+                        _FE_STATS['clip_hit'] += 1
+                    Enew = clipped
+                if _FE_DEBUG:
+                    _FE_STATS['fit'] += 1
+                return Enew
             ik1 = iK1[0]
             ik_n = iK2[0]
             if self.dimensions >= 2:
@@ -2840,11 +3111,9 @@ class COMPONENT:
                 X = i                                                               # Obtain the x values for Es.
                 new_x = ik_n                                                         # Get the position to approximate the energy
 
-                pol = lambda x, a, b, c: a*x**2 + b*x + c                           # Second order polynomial
-                popt, pcov = curve_fit(pol, X, Es)                                  # Get the optimum parameters
-                Enew = pol(new_x, *popt)                                            # Calculates the new energy
-                # Ei = energies[bn1, ik1, jk1]
-                # LOG.debug(f'Actual Energy: {Ei} Energy founded: {Enew} for {bn1} with {len(i)} points.')
+                Enew = predict_energy(X, Es, bands, new_x)                          # Cliff-aware, clipped prediction
+                if Enew is None:
+                    return difference_energy(bn1, bn2, iK1, iK2)                    # no continuous segment -> default
                 return difference_energy(bn1, bn2, iK1, iK2, Ei = Enew)             # Score
 
             if self.dimensions == 2:
@@ -2890,11 +3159,9 @@ class COMPONENT:
                 X = i if jk1 == jk_n else j                                             # Obtain the x values for Es.
                 new_x = ik_n if jk1 == jk_n else jk_n                                   # Get the position to approximate the energy
 
-                pol = lambda x, a, b, c: a*x**2 + b*x + c                               # Second order polynomial
-                popt, pcov = curve_fit(pol, X, Es)                                      # Get the optimum parameters
-                Enew = pol(new_x, *popt)                                                # Calculates the new energy
-                # Ei = energies[bn1, ik1, jk1]
-                # LOG.debug(f'Actual Energy: {Ei} Energy founded: {Enew} for {bn1} with {len(i)} points.')
+                Enew = predict_energy(X, Es, bands, new_x)                              # Cliff-aware, clipped prediction
+                if Enew is None:
+                    return difference_energy(bn1, bn2, iK1, iK2)                        # no continuous segment -> default
                 return difference_energy(bn1, bn2, iK1, iK2, Ei = Enew)                 # Score
 
             if self.dimensions == 3:
@@ -2953,11 +3220,9 @@ class COMPONENT:
                 X = i if jk1 == jk_n and kk1 == kk_n else j if ik1 == ik_n and kk1 == kk_n else k # Obtain the x values for Es.
                 new_x = ik_n if jk1 == jk_n and kk1 == kk_n else jk_n if ik1 == ik_n and kk1 == kk_n else kk_n # Get the position to approximate the energy
 
-                pol = lambda x, a, b, c: a*x**2 + b*x + c                               # Second order polynomial
-                popt, pcov = curve_fit(pol, X, Es)                                      # Get the optimum parameters
-                Enew = pol(new_x, *popt)                                                # Calculates the new energy
-                # Ei = energies[bn1, ik1, jk1]
-                # LOG.debug(f'Actual Energy: {Ei} Energy founded: {Enew} for {bn1} with {len(i)} points.')
+                Enew = predict_energy(X, Es, bands, new_x)                              # Cliff-aware, clipped prediction
+                if Enew is None:
+                    return difference_energy(bn1, bn2, iK1, iK2)                        # no continuous segment -> default
                 return difference_energy(bn1, bn2, iK1, iK2, Ei = Enew)                 # Score
                 
 
@@ -3005,6 +3270,12 @@ class COMPONENT:
                 bn2 = cluster.bands_number[k_n]                                     # neighbor's band
                 connection = connections[k, i_neig, bn1, bn2]                       # Dot product between k-point and his neighbor
                 energy_val = fit_energy(bn1, bn2, ik_point_index, ik_n_point_index)
+                if _FE_DEBUG:
+                    # f(E) diagnostics, Tier 1: relative weight each term carries in
+                    # the blended score. If eng_sum << conn_sum, f(E) is drowned out.
+                    _FE_STATS['pair_n'] += 1
+                    _FE_STATS['conn_sum'] += float(alpha * connection)
+                    _FE_STATS['eng_sum'] += float((1 - alpha) * energy_val)
                 score += alpha*connection + (1-alpha)*energy_val                    # Calculates the final k-point score
         score /= count_k if count_k > 0 else 1                                             # Get the final score
         self.scores[cluster.__id__] = score                                         # Store the score
