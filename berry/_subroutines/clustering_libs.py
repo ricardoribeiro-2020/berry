@@ -1164,7 +1164,7 @@ class MATERIAL:
 
         self.logger.info(f'\tTolerance: {tol}')
         # Parallelize the edges calculation
-        edges = self.parallelize('Computing Edges', connection_component, range(len(self.vectors)))
+        edges = self.parallelize('\tComputing Edges', connection_component, range(len(self.vectors)))
         # Establish the edges on the graph from edges array
         self.GRAPH.add_weighted_edges_from(edges)
 
@@ -1585,7 +1585,7 @@ class MATERIAL:
                 break
         
             #self.n_process = 10 # min(self.n_process, len(samples))
-            evaluate_samples_result = self.parallelize('Clustering Samples', evaluate_sample, range(len(samples)), per_actual=count[0], N_total=count[1])
+            evaluate_samples_result = self.parallelize('\tClustering Samples', evaluate_sample, range(len(samples)), per_actual=count[0], N_total=count[1])
             count[0] += len(samples)
             for i_s, res, sample_scores in evaluate_samples_result:
                 samples[i_s].scores = sample_scores
@@ -1998,7 +1998,7 @@ class MATERIAL:
 
         # The evaluation of each (k, bn) point is independent, so it is parallelized
         kbnds = list(zip(ks, bnds))
-        evaluated_points = self.parallelize('Correcting signal', evaluate_points_chunk, kbnds) \
+        evaluated_points = self.parallelize('\tCorrecting signal', evaluate_points_chunk, kbnds) \
             if len(kbnds) > 0 else []
 
         for k, bn, signal, scores in evaluated_points:
