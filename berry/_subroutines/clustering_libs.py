@@ -695,7 +695,7 @@ class MATERIAL:
             self.energies: It contains the energy values for each band distributed
                         in a matrix.
         '''
-        process_name = 'Making Vectors'
+        process_name = '\tMaking Vectors'
         self.logger.percent_complete(0, 100, title=process_name)
 
         ###########################################################################
@@ -764,7 +764,7 @@ class MATERIAL:
             return degenerates
 
         # Parallelize the verification process
-        self.degenerados = self.parallelize('Finding degenerate points', obtain_degenerates, enumerate(self.vectors))
+        self.degenerados = self.parallelize('\tFinding degenerate points', obtain_degenerates, enumerate(self.vectors))
 
         if len(self.degenerados) > 0:
             self.logger.debug('\tDegenerate Points: ')
@@ -1777,7 +1777,7 @@ class MATERIAL:
                 if _FE_DEBUG:
                     fe_attached_k.update((np.array(sample.GRAPH.nodes) % self.nks).tolist())  # Tier 4
     
-                self.logger.percent_complete(count[0], count[1], title='Clustering Samples')
+                self.logger.percent_complete(count[0], count[1], title='\tClustering Samples')
                 self.logger.debug(f'\t\t{count[0]}/{count[1]} Sample corrected: {score}')
                 if clusters[bn].N == self.nks:
                     #  If the number of nodes inside the component equals the total number of k points, the cluster is considered solved
@@ -1797,7 +1797,7 @@ class MATERIAL:
 
             clusters = new_clusters
 
-        self.logger.percent_complete(count[1], count[1], title='Clustering Samples')
+        self.logger.percent_complete(count[1], count[1], title='\tClustering Samples')
         self.fE_attached_k = np.array(sorted(fe_attached_k), dtype=int)          # for the Tier-4 outcome log
         self._log_fE_stats(fe_agg)                                               # Tier 1 + 2 per-iteration block
         self.logger.info(f'\t\tPhase 2: {len(self.solved)}/{self.nbnd} Solved')
