@@ -164,6 +164,42 @@ def _fe_resid_bucket(resid: float, disp_scale: float) -> int:
     return len(_FE_RESID_EDGES)
 
 
+def _energy_continuity_score(Enew: float, Ecand: float,
+                             accept_E: float = None, disp_scale: float = None) -> float:
+    '''
+    Directional energy-continuity score in [0, 1] between a predicted energy
+    ``Enew`` (extrapolated along the line joining the reference and the new
+    point) and a specific candidate energy ``Ecand`` (the neighbour's band).
+
+    This REPLACES the old ``min(|Enew - E_all_bands|) / |Enew - Ecand|`` objective,
+    which scored how close ``Ecand`` was to being the *globally nearest* band --
+    a non-directional, scale-blind measure that (a) rewarded the energetically
+    nearest band rather than the continuous one (wrong at crossings) and (b)
+    could not forbid a gross inter-group jump, since it only ever looked at the
+    nearest of all bands.
+
+    New behaviour:
+      * Gross-jump gate: if |Enew - Ecand| exceeds ``accept_E`` (a LOOSE
+        gross-jump scale ~ 3*disp_scale, wider than any legitimate one-step
+        dispersion but far below a genuine inter-band wall), return 0.0 -- the
+        candidate is on the far side of an energy wall and must never be joined.
+        This is deliberately NOT keyed to gap_scale (the SOC-pair splitting),
+        which is what shattered the graph in the e90a33a regression.
+      * Otherwise a smooth, scale-aware match: 1.0 at a perfect match, decaying
+        on the ``disp_scale`` (local one-step dispersion) scale.
+
+    With ``accept_E``/``disp_scale`` unset this reduces to a plain closeness in
+    [0, 1] so callers that do not pass the scales keep working.
+    '''
+    resid = abs(Enew - Ecand)
+    if accept_E is not None and resid > accept_E:
+        return 0.0                                   # gross-jump veto (loose, accept_E)
+    sigma = disp_scale if (disp_scale and disp_scale > 0) else accept_E
+    if not sigma or sigma <= 0:
+        return 1.0 if resid == 0 else 0.0
+    return float(sigma / (sigma + resid))            # continuity-residual, scale-aware
+
+
 EVALUATE_RESULT_HELP = '''
     ---------------------- Report considering dot-product information ----------------------------
             C -> Mean dot-product |<i|j>| of each k-point
@@ -279,7 +315,8 @@ def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
     return MISTAKE
 
 def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_matrix: np.ndarray,
-                   signal: np.ndarray, bands: np.ndarray, energies: np.ndarray) -> Tuple[int, list[int]]:
+                   signal: np.ndarray, bands: np.ndarray, energies: np.ndarray,
+                   accept_E: float = None, disp_scale: float = None) -> Tuple[int, list[int]]:
     '''
     Assign a signal value depending on energy continuity.
 
@@ -322,7 +359,19 @@ def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_ma
     MISTAKE = 1
     OTHER = 3
 
-    TOL = 0.9                       # Tolerance to consider that exist energy continuity
+    # Continuity threshold, re-tuned for the directional continuity-residual score
+    # (difference_energy now returns disp_scale/(disp_scale+resid), not the old
+    # min/delta ratio). A direction "preserves continuity" when its prediction
+    # error is within ~one local dispersion step:
+    #     score = disp_scale/(disp_scale + resid) >= 0.5  <=>  resid <= disp_scale.
+    # The old TOL=0.9 was calibrated to the min/delta ratio and is far too strict
+    # here (it would demand resid < disp_scale/9 and flag smooth bands / legitimate
+    # anticrossings). Gross inter-group jumps are vetoed by the gate (resid >
+    # accept_E -> score 0) regardless of this threshold. This is the primary tunable
+    # knob: lower it toward 1/3 (resid <= 2*disp_scale) if smooth bands over-flag.
+    # If no scales are passed (unwired path) keep the original 0.9 so behaviour is
+    # unchanged for any caller that does not supply disp_scale.
+    TOL = 0.5 if disp_scale is not None else 0.9
     N = 4                           # Number of points to fit the curve
     N_NEIGS = 2 * dimension         # Number of neighbors to consider the continuity
 
@@ -340,20 +389,22 @@ def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_ma
 
     def difference_energy(Ek: float, Enew: float) -> float:
         '''
-        Attributes a value that score how close is Ek to Enew.
+        Directional energy-continuity score in [0, 1] between the assigned energy
+        ``Ek`` and the energy ``Enew`` extrapolated along ONE direction (the line
+        joining this k-point to that direction's neighbours). The direction is
+        "continuous" when the band's own energy matches the prediction from that
+        direction's trajectory, within the local dispersion ``disp_scale``, with a
+        gross-jump veto at ``accept_E`` for inter-group walls.
 
-        Parameters
-            Ek: float
-                K point's energy value.
-            Enew: float
-                Energy value to compare.
-        Returns
-            score: float [0, 1]
-                Value that measures the closeness between Ek and Enew consider the other possible values.
+        This replaces the old ``min(|Enew - E_all_bands|) / |Enew - Ek|`` ratio,
+        which scored "is Ek the globally nearest band" -- non-directional and
+        unreliable once the gap collapses below disp_scale (SOC/Kramers manifold),
+        where the nearest band is no longer the continuous one. See the shared
+        ``_energy_continuity_score`` for the gate/decay definition; ``accept_E``
+        and ``disp_scale`` are threaded in from the caller.
         '''
-        min_energy = np.min(np.abs(Enew-energies[k]))           # Computes all possible energy values for this k point
-        delta_energy = np.abs(Enew-Ek)                          # Actual difference between Ek and Enew
-        return min_energy/delta_energy if delta_energy else 1   # Score
+        return _energy_continuity_score(float(Ek), float(Enew),
+                                        accept_E=accept_E, disp_scale=disp_scale)
 
 
     if dimension == 1:
@@ -789,6 +840,14 @@ class MATERIAL:
         gaps = gaps[gaps > 0]
         self.gap_scale = float(np.median(gaps)) if gaps.size else 1.0
 
+        # interband_scale: a robust INTER-band gap that ignores the near-zero
+        # SOC/Kramers-pair splittings which dominate (and collapse) gap_scale.
+        # Used only as a loose reference for diagnostics; the gross-jump gate
+        # itself keys to accept_E (3*disp_scale), which is already wider than any
+        # legitimate one-step dispersion and far below a genuine inter-band wall.
+        nondeg = gaps[gaps > self.gap_scale] if gaps.size else gaps
+        self.interband_scale = float(np.median(nondeg)) if nondeg.size else self.gap_scale
+
         disp_values = []
         neigh = np.asarray(self.neighbors)
         for j in range(neigh.shape[1]):
@@ -824,10 +883,21 @@ class MATERIAL:
         self.logger.info(f'{BODY_INDENT}f(E) single-step dispersion |E(k+1)-E(k)|: '
                          f'median={d_med:.4g}  p95={d_p95:.4g}  max={d_max:.4g}  '
                          f'(gap/disp={gap_disp_ratio:.3g})')
+        # fe_eweight: down-weight the f(E) score term when the gap has collapsed
+        # below the single-step dispersion. In that regime (SOC/Kramers manifold,
+        # gap_disp_ratio < 1) energy continuity simply CANNOT separate adjacent
+        # bands -- the prediction error (disp_scale) is larger than the gap, so
+        # f(E) is noise. We therefore lean on the dot product and keep f(E) only
+        # as a gross-jump gate (see ENERGY_GATE below). Clipped to [0.1, 1.0] so
+        # f(E) is never fully zeroed (it still provides the gate) and never
+        # over-trusted. When bands are well separated (ratio >= 1) this is 1.0
+        # and the original f(E) weight is recovered exactly.
+        self.fe_eweight = float(np.clip(gap_disp_ratio, 0.1, 1.0)) if np.isfinite(gap_disp_ratio) else 1.0
         if gap_disp_ratio < 1.0:
             self.logger.warning(f'{BODY_INDENT}f(E) WARNING: gap_scale < disp_scale -- the band gap '
-                                f'looks collapsed (SOC/Kramers degeneracy?); accept_E/disp_scale '
-                                f'may be mis-scaled and f(E) predictions unreliable.')
+                                f'looks collapsed (SOC/Kramers degeneracy?); down-weighting the f(E) '
+                                f'score term to fe_eweight={self.fe_eweight:.3g} and relying on the '
+                                f'dot product, with f(E) kept as a gross-jump gate at accept_E={self.accept_E:.4g}.')
 
         # self.nbnd = nbnd-min_band
         self.bands_final = np.full((self.nks, self.total_bands), -1, dtype=int)
@@ -1723,7 +1793,8 @@ class MATERIAL:
                                                            self.connections,
                                                            alpha=alpha,
                                                            accept_E=self.accept_E,
-                                                           disp_scale=self.disp_scale)  # Calculate the score (new f(E))
+                                                           disp_scale=self.disp_scale,
+                                                           fe_eweight=self.fe_eweight)  # Calculate the score (new f(E))
                 result.append([i_s, [np.max(scores), np.argmax(scores)], sample.scores])
 
             if _FE_DEBUG:
@@ -2159,7 +2230,8 @@ class MATERIAL:
             for k, bn in iterator:
                 signal, scores = evaluate_point(self.dimensions, k, bn, self.kpoints_index,
                                                 self.matrix, self.signal_final,
-                                                self.bands_final, self.eigenvalues)     # Obtain the new signal
+                                                self.bands_final, self.eigenvalues,
+                                                accept_E=self.accept_E, disp_scale=self.disp_scale)  # Obtain the new signal
                 chunk_result.append([k, bn, signal, scores])
             return chunk_result
 
@@ -2912,7 +2984,7 @@ class COMPONENT:
 
     def get_cluster_score(self, cluster : COMPONENT, min_band : int, max_band : int,
                           neighbors : np.ndarray, energies : np.ndarray, connections : np.ndarray, alpha : float = 0.5,
-                          accept_E : float = None, disp_scale : float = None) -> float:
+                          accept_E : float = None, disp_scale : float = None, fe_eweight : float = 1.0) -> float:
         '''
         This function returns the similarity between components taking
         into account the dot product of all essential points and their
@@ -2978,16 +3050,19 @@ class COMPONENT:
             else:
                 Ei = energies[bn1, ik1, jk1, kk1] if Ei is None else Ei        
 
-            bands = np.arange(0, max_band - min_band + 1)                         # Bands in analysis
-            min_energy = np.min([np.abs(Ei-energies_candidates(bn))        # The energy difference between Ei and all possibilities
-                                    for bn in bands])
-            delta_energy = np.abs(Ei-energies_candidates(bn2))             # Actual energy difference
+            Ecand = energies_candidates(bn2)                               # Candidate (neighbour band) energy
+            delta_energy = np.abs(Ei - Ecand)                              # Directional residual: prediction vs THIS candidate
             if _FE_DEBUG and predicted:
                 # f(E) diagnostics, Tier 2: residual = how far the extrapolated
                 # energy (Ei=Enew) lands from the neighbour it is scored against.
                 _FE_STATS['resid_n'] += 1
                 _FE_STATS['resid_buckets'][_fe_resid_bucket(float(delta_energy), disp_scale)] += 1
-            return min_energy/delta_energy if delta_energy else 1           # score
+            # Directional continuity-residual with a gross-jump gate, replacing the
+            # old min(|Ei - E_all_bands|)/delta_energy ratio: score the candidate
+            # band against the prediction along the join line ONLY, and veto any
+            # jump beyond accept_E (a real inter-group wall can never be crossed).
+            return _energy_continuity_score(float(Ei), float(Ecand),
+                                            accept_E=accept_E, disp_scale=disp_scale)
         
         def fit_energy(bn1 : int, bn2 : int, iK1 : list[int], iK2: list[int]) -> float:
             '''
@@ -3270,13 +3345,26 @@ class COMPONENT:
                 bn2 = cluster.bands_number[k_n]                                     # neighbor's band
                 connection = connections[k, i_neig, bn1, bn2]                       # Dot product between k-point and his neighbor
                 energy_val = fit_energy(bn1, bn2, ik_point_index, ik_n_point_index)
+                # Gross-jump gate: fit_energy returns exactly 0.0 only when the
+                # candidate band sits across an energy wall (|dE| > accept_E).
+                # Veto the WHOLE edge then -- a spuriously high dot product must
+                # never pull a band across a genuine inter-group gap (the band-1
+                # leak across the 0.46 Ry MoS2 wall). Loose gate (accept_E), so it
+                # only ever cuts gross jumps, not intra-manifold continuations.
+                gate = 0.0 if energy_val == 0.0 else 1.0
+                # Down-weight f(E) when the gap has collapsed (fe_eweight < 1) and
+                # renormalise so the dot product carries the freed weight. With
+                # fe_eweight == 1 (well-separated bands) this is the original
+                # alpha*conn + (1-alpha)*f(E) exactly.
+                w_e = (1 - alpha) * fe_eweight
+                w_c = 1 - w_e
                 if _FE_DEBUG:
                     # f(E) diagnostics, Tier 1: relative weight each term carries in
                     # the blended score. If eng_sum << conn_sum, f(E) is drowned out.
                     _FE_STATS['pair_n'] += 1
-                    _FE_STATS['conn_sum'] += float(alpha * connection)
-                    _FE_STATS['eng_sum'] += float((1 - alpha) * energy_val)
-                score += alpha*connection + (1-alpha)*energy_val                    # Calculates the final k-point score
+                    _FE_STATS['conn_sum'] += float(gate * w_c * connection)
+                    _FE_STATS['eng_sum'] += float(gate * w_e * energy_val)
+                score += gate * (w_c*connection + w_e*energy_val)                   # Calculates the final k-point score
         score /= count_k if count_k > 0 else 1                                             # Get the final score
         self.scores[cluster.__id__] = score                                         # Store the score
         return score
