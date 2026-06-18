@@ -2392,22 +2392,37 @@ class MATERIAL:
 
         total_not_solved = np.sum(self.correct_signalfinal == NOT_SOLVED) + np.sum(self.correct_signalfinal == MISTAKE)
         self.logger.info(f'{BODY_INDENT}Total not solved: ' + str(total_not_solved))
-        if self.tol > 0.1 and total_not_solved > 1000:
-            print('Creating the graph')
+        self.total_not_solved = total_not_solved        # exposed so solve() can pace the alpha sweep by convergence
+
+        # Which k-points still carry an error in any band. A k-point is "bad" if any of
+        # its slots failed the energy-continuity validation (NOT_SOLVED / MISTAKE / OTHER);
+        # these are the nodes that must originate fresh dot-product edges.
+        bad_mask = ((self.correct_signalfinal == NOT_SOLVED) |
+                    (self.correct_signalfinal == MISTAKE) |
+                    (self.correct_signalfinal == OTHER))
+        bad_k = np.where(np.any(bad_mask, axis=1))[0]
+
+        if len(bad_k) > 0:
             ###########################################################################
-            # Error-region-only rebuild. A k-point is "bad" if any of its slots failed
-            # the energy-continuity validation (NOT_SOLVED / MISTAKE / OTHER). Only the
-            # nodes of the bad k-points (across all bands, since the band identity there
-            # is uncertain) originate fresh dot-product edges, so the bad region can
-            # re-cluster and re-attach to good bands at its boundary. The good bands keep
-            # ONLY their same-band continuity edges (added in the loop below) and survive
-            # intact as components -- unlike the previous full-graph rebuild, whose dense
-            # cross-band edges + Louvain shattered the done bands on every iteration.
+            # Error-region-only rebuild. Only the nodes of the bad k-points (across all
+            # bands, since the band identity there is uncertain) originate fresh
+            # dot-product edges, so the bad region can re-cluster and re-attach to good
+            # bands at its boundary. The good bands keep ONLY their same-band continuity
+            # edges (added in the loop below) and survive intact as components -- unlike a
+            # full-graph rebuild, whose dense cross-band edges + Louvain shattered the
+            # done bands on every iteration.
+            #
+            # This rebuild used to be gated on `total_not_solved > 1000`. That gate was
+            # REMOVED: once not_solved dropped below 1000 the code fell through to the
+            # continuity-only `else`, which omits these dot-product edges. With a freshly
+            # reset graph (every node isolated) plus only sparse continuity edges, the
+            # graph fragmented into thousands of singleton components and get_components
+            # then ran the O(samples^2) assignment (count = len(samples)**2) -- a ~2.4e8
+            # evaluation blow-up (~11 h for a single step on MoS2). The dot-product
+            # reconnection must stay active for the whole descent, so it now fires whenever
+            # ANY error remains; the alpha sweep is paced by convergence in solve()
+            # instead of by this point count.
             ###########################################################################
-            bad_mask = ((self.correct_signalfinal == NOT_SOLVED) |
-                        (self.correct_signalfinal == MISTAKE) |
-                        (self.correct_signalfinal == OTHER))
-            bad_k = np.where(np.any(bad_mask, axis=1))[0]
             all_bands = np.arange(self.total_bands)
             error_nodes = (bad_k[:, None] + all_bands[None, :] * self.nks).ravel()
             self.logger.info(f'{BODY_INDENT}Error-region rebuild: {len(bad_k)} bad k-point(s), '
@@ -2415,14 +2430,6 @@ class MATERIAL:
                              f'({100.0*len(error_nodes)/max(len(self.vectors),1):.0f}%)')
             self.make_connections(self.tol, not_first_iteration=True, node_subset=error_nodes)
             self.repeat_communities = True
-            # Do NOT reset alpha to init_alpha here. Resetting it on every rebuild
-            # yanked the sweep straight back to the top (alpha became init_alpha - step
-            # again next iteration), so the designed alpha descent never happened and
-            # the done bands were re-clustered at the same alpha each time. alpha is now
-            # left untouched here -- it is held during the rebuild phase (see the
-            # decrement guard in solve()) and allowed to descend only once the bands
-            # have mostly closed and rebuilds stop.
-            self.tol *= 0.90
             for edge in edges:
                 # For each edge, the graph is built
                 p, pn = edge
@@ -2433,10 +2440,58 @@ class MATERIAL:
                     # Otherwise, the edge is created
                     self.GRAPH.add_edge(p, pn, weight=1)
         else:
+            # No remaining errors: the continuity edges already connect each band into a
+            # single component, so plain connected-components clustering is correct and
+            # cheap. No dot-product edges are needed here.
             self.repeat_communities = False
             edges = np.array(edges)
             self.GRAPH.add_edges_from(edges)                                                        # Build the identified edges
             # self.correct_signalfinal[k_ot, bn_ot] = CORRECT-1                                       # Signaling as CORRECT the repeated k-points
+
+        # Structural anti-shatter safety net: guarantee no node is left isolated,
+        # independent of the `tol` threshold or which branch built the graph above.
+        self._ensure_connectivity()
+
+    def _ensure_connectivity(self) -> None:
+        '''
+        Connectivity guard (anti-shatter safety net). No node may be left as a degree-0
+        singleton: thousands of isolated nodes would each become their own community and
+        feed the O(samples^2) assignment loop in get_components (count = len(samples)**2)
+        -- the ~2.4e8-evaluation blow-up seen on MoS2 (~11 h for one step). The
+        error-region dot-product rebuild normally reconnects the bad nodes, but it only
+        keeps edges whose overlap clears `tol`; a high `tol`, or a bad point whose every
+        neighbour is also bad, can still leave slots edgeless. Here every remaining orphan
+        is wired to its single best-overlap same-band k-space neighbour, ignoring `tol`.
+        One best-overlap edge per orphan is the most defensible link: it bounds the
+        connected-component count by construction, cannot create dense cross-band merges,
+        and is a weak link the validation can still override on the next pass.
+        '''
+        isolated = [n for n in self.GRAPH.nodes if self.GRAPH.degree(n) == 0]
+        if not isolated:
+            return
+        added = 0
+        for node in isolated:
+            bn = node // self.nks                       # band slot of this node
+            k1 = node % self.nks
+            best_w = -2.0
+            best_pn = None
+            for kn in self.neighbors[k1]:
+                if kn == -1:
+                    continue                            # neighbour outside the BZ grid
+                i_neig = np.where(self.neighbors[k1] == kn)[0]
+                conn = float(self.connections[k1, i_neig, bn, bn])      # <psi_{k,bn}|psi_{kn,bn}>
+                w = 1 - 2 / np.pi * np.arccos(np.clip(conn, -1.0, 1.0))  # same metric as the edge build
+                if w > best_w:
+                    best_w = w
+                    best_pn = kn + bn * self.nks
+            if best_pn is not None and best_pn != node:
+                if self.GRAPH.has_edge(node, best_pn):
+                    self.GRAPH[node][best_pn]['weight'] += 1
+                else:
+                    self.GRAPH.add_edge(node, best_pn, weight=max(best_w, 1e-6))
+                added += 1
+        self.logger.info(f'{BODY_INDENT}Connectivity guard: linked {added} orphan node(s) '
+                         f'of {len(isolated)} isolated to best-overlap neighbour')
 
     def report(self):
         self.final_report += '*************************************************************************************************\n'
@@ -2609,7 +2664,7 @@ class MATERIAL:
 
         return self.final_report
 
-    def solve(self, step: float=0.1, alpha : float=0.5, min_alpha: float=0) -> None:
+    def solve(self, step: float=0.1, alpha : float=0.5, min_alpha: float=0, alpha_patience: int=3) -> None:
         '''
         This method is the main algorithm which iterates between solutions
         trying to find the best result for the material.
@@ -2648,6 +2703,14 @@ class MATERIAL:
         max_solved = 0  # The maximum number of solved bands
 
         self.repeat_communities = False
+        # Convergence-paced alpha sweep: hold the current alpha while not_solved keeps
+        # setting new lows here, and descend only after it stalls for `alpha_patience`
+        # consecutive iterations. Any new best resets the stall counter, so brief
+        # oscillations are absorbed -- alpha descends only when improvement at the
+        # current alpha has genuinely stopped persisting.
+        self.alpha_best_ns = np.inf      # lowest not_solved seen at the current alpha
+        self.alpha_stall = 0             # consecutive iterations with no new best
+        self.total_not_solved = np.inf   # set by correct_signal() each iteration
 
         ###########################################################################
         # Algorithm
@@ -2667,7 +2730,12 @@ class MATERIAL:
             self.correct_signal()                           # Evaluate the energy continuity and perform a new Graph
             self._log_fE_outcome()                          # f(E) diagnostics, Tier 4: outcome over attached points
             self.print_report(self.correct_signalfinal, f'Validation Report Number: {COUNT} considering  energy continuity criteria', header_text=VALIDATE_RESULT_HEADER)     # Print result
-            
+
+            # This iteration's attempt, captured BEFORE the best-result revert below may
+            # overwrite self.total_not_solved (the else branch re-runs correct_signal on
+            # the reverted best). The convergence test uses the attempt's quality.
+            attempt_not_solved = self.total_not_solved
+
             # Verification if the result is similar to the previous one
             bands_final_flag = np.sum(np.abs(self.bands_final_prev - self.bands_final)) != 0
             self.bands_final_prev = np.copy(self.bands_final)
@@ -2738,14 +2806,30 @@ class MATERIAL:
                 self.logger.info(f'\n\t\t\tBest result: {max_solved} bands')
                 self.print_report(self.correct_signalfinal, f'Validation Report: Best Iteration', header_text=VALIDATE_RESULT_HEADER)     # Print result
 
-            # Advance the alpha sweep only when no rebuild is pending. During the
-            # tolerance-relaxation (rebuild) phase alpha is held, so the sweep is not
-            # consumed by re-clustering iterations and the tolerance descent is not cut
-            # short; alpha descends once rebuilds stop (bands mostly closed), which also
-            # restores termination (alpha eventually drops below min_alpha). When no
-            # rebuild ever fires (easy systems) this is identical to the old behaviour.
-            if not self.repeat_communities:
+            # Pace the alpha sweep by convergence at the current alpha (not by the rebuild
+            # flag). Hold alpha while not_solved keeps making new lows; descend once it
+            # stalls for `alpha_patience` consecutive iterations. A new best resets the
+            # stall counter, so brief oscillations are absorbed and alpha drops only when
+            # the current alpha has genuinely stopped improving. The tolerance is relaxed
+            # one notch per descent (bounded, floored at 0.10 -- unlike the old
+            # per-iteration decay), and the alpha sweep still guarantees termination
+            # (alpha eventually drops below min_alpha).
+            if attempt_not_solved < self.alpha_best_ns:
+                self.alpha_best_ns = attempt_not_solved
+                self.alpha_stall = 0
+            else:
+                self.alpha_stall += 1
+                self.logger.info(f'\n\t\tAlpha {self.alpha:.4f}: no improvement '
+                                 f'({attempt_not_solved} vs best {self.alpha_best_ns}) -- '
+                                 f'stall {self.alpha_stall}/{alpha_patience}')
+
+            if self.alpha_stall >= alpha_patience:
                 self.alpha -= step
+                self.tol = max(self.tol * 0.90, 0.10)
+                self.alpha_best_ns = np.inf
+                self.alpha_stall = 0
+                self.logger.info(f'\n\t\tAlpha converged -- descending to '
+                                 f'{self.alpha:.4f} (tol={self.tol:.4f})')
 
         # The best result is maintained
         self.bands_final = np.copy(self.best_bands_final)
