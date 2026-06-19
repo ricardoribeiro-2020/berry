@@ -2475,10 +2475,9 @@ class MATERIAL:
             k1 = node % self.nks
             best_w = -2.0
             best_pn = None
-            for kn in self.neighbors[k1]:
+            for i_neig, kn in enumerate(self.neighbors[k1]):
                 if kn == -1:
                     continue                            # neighbour outside the BZ grid
-                i_neig = np.where(self.neighbors[k1] == kn)[0]
                 conn = float(self.connections[k1, i_neig, bn, bn])      # <psi_{k,bn}|psi_{kn,bn}>
                 w = 1 - 2 / np.pi * np.arccos(np.clip(conn, -1.0, 1.0))  # same metric as the edge build
                 if w > best_w:
