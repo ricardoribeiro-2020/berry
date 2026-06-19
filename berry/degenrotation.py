@@ -33,7 +33,7 @@ except Exception:
     pass
 
 
-ENERGY_THRESHOLD = 0.0001  # eigenvalue units (eV for standard QE XML output)
+ENERGY_THRESHOLD = 0.005  # eigenvalue units (eV for standard QE XML output); CLI -ethr overrides
 
 
 from berry._subroutines.rotation_core import (

@@ -167,9 +167,9 @@ berry [package options] script parameter [script options]
             degenrot_parser.add_argument(
                 "-ethr",
                 type=float,
-                default=0.0001,
+                default=0.001,
                 metavar="",
-                help="Energy threshold for degeneracy detection in eigenvalue units (default: 0.0001).",
+                help="Energy threshold for degeneracy detection in eigenvalue units (default: 0.001).",
             )
             degenrot_parser.add_argument(
                 "-c",

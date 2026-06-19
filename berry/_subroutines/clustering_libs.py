@@ -1318,15 +1318,32 @@ class MATERIAL:
                     Edge(i,j) = 1 iff <i, j> ~ 1
                     '''
                     connection = 1 - 2/np.pi * np.arccos(connection)
-                    if connection > tol:
-                        edges.append([i_, j_, connection])  # Add the weighted edge
+                    if connection <= tol:
+                        continue
+                    # Cross-band guard (anti-bridge). A cross-band edge (bn1 != bn2)
+                    # is only physical at a genuine crossing, where band bn1 has lost
+                    # its own continuity at k2. If bn1 still connects strongly to
+                    # itself (<bn1@k1|bn1@k2> > tol), this cross-band link is a
+                    # spurious bridge: connected components are transitive, so a
+                    # single such edge fuses two otherwise-separate bands (e.g. a
+                    # Kramers-degenerate pair) into one component and collapses a band
+                    # slot (the empty-band symptom). Drop it -- the same-band edge
+                    # already carries the continuity. Dropping only the edges where
+                    # the same band stays strong cannot disconnect a band from its own
+                    # chain; genuine crossings (same-band overlap collapsed) are kept.
+                    if bn1 != bn2:
+                        same = self.connections[k1, i_neig, bn1, bn1]   # <bn1@k1|bn1@k2>
+                        same = 1 - 2/np.pi * np.arccos(same)
+                        if same > tol:
+                            continue
+                    edges.append([i_, j_, connection])  # Add the weighted edge
             return edges
 
-        self.logger.info(f'\tTolerance: {tol}')
+        self.logger.info(f'\t\tTolerance: {tol}')
         # Parallelize the edges calculation (over every node, or just the subset
         # when an error-region rebuild restricts which nodes originate edges).
         nodes_iter = range(len(self.vectors)) if node_subset is None else list(node_subset)
-        edges = self.parallelize('\tComputing Edges', connection_component, nodes_iter)
+        edges = self.parallelize('\t\tComputing Edges', connection_component, nodes_iter)
         # Establish the edges on the graph from edges array
         self.GRAPH.add_weighted_edges_from(edges)
 
@@ -1816,7 +1833,7 @@ class MATERIAL:
                 break
         
             #self.n_process = 10 # min(self.n_process, len(samples))
-            evaluate_samples_result = self.parallelize('\tClustering Samples', evaluate_sample, range(len(samples)), per_actual=count[0], N_total=count[1])
+            evaluate_samples_result = self.parallelize('\t\tClustering Samples', evaluate_sample, range(len(samples)), per_actual=count[0], N_total=count[1])
             count[0] += len(samples)
             for i_s, res, sample_scores in evaluate_samples_result:
                 if i_s == '__FE_STATS__':
@@ -1900,8 +1917,12 @@ class MATERIAL:
                 solved.bands = solved.bands[1:]                                     # Update the bands array
             
             if bn in solved_bands and len(solved.bands) == 0:
-                # If the cluster does not belong to any band is ignored
-                break
+                # This component's every candidate band is already taken: skip
+                # only THIS component. (Was `break`, which aborted the whole
+                # loop and left every remaining component unassigned -- the
+                # smallest clusters, processed last, are the degenerate-partner
+                # fragments, so a single duplicate left whole bands empty.)
+                continue
 
             solved_bands.append(bn)                                                 # Append the solved band
             # self.bands_final[solved.k_points, bn] = bands + self.min_band           # Update the resultant bands' attribution array
@@ -1938,8 +1959,11 @@ class MATERIAL:
                 cluster.bands = cluster.bands[1:]
 
             if bn in solved_bands and len(cluster.bands) == 0:
-                # If the cluster does not belong to any band is ignored
-                break
+                # This cluster's every candidate band is already taken: skip
+                # only THIS cluster. (Was `break`, which aborted the whole loop
+                # -- clusters are processed largest-first, so it sacrificed the
+                # smallest/contaminated fragments and left whole bands empty.)
+                continue
 
             solved_bands.append(bn)                                                 # Append the solved band
             # self.bands_final[cluster.k_points, bn] = bands + self.min_band          # Update the resultant bands' attribution array
@@ -2237,7 +2261,7 @@ class MATERIAL:
 
         # The evaluation of each (k, bn) point is independent, so it is parallelized
         kbnds = list(zip(ks, bnds))
-        evaluated_points = self.parallelize('\tCorrecting signal', evaluate_points_chunk, kbnds) \
+        evaluated_points = self.parallelize('\t\tCorrecting signal', evaluate_points_chunk, kbnds) \
             if len(kbnds) > 0 else []
 
         for k, bn, signal, scores in evaluated_points:
@@ -2391,7 +2415,7 @@ class MATERIAL:
         self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)                       # Save the currect result
 
         total_not_solved = np.sum(self.correct_signalfinal == NOT_SOLVED) + np.sum(self.correct_signalfinal == MISTAKE)
-        self.logger.info(f'{BODY_INDENT}Total not solved: ' + str(total_not_solved))
+        self.logger.info(f'\n{BODY_INDENT}Total not solved: ' + str(total_not_solved) + '\n')
         self.total_not_solved = total_not_solved        # exposed so solve() can pace the alpha sweep by convergence
 
         # Which k-points still carry an error in any band. A k-point is "bad" if any of
