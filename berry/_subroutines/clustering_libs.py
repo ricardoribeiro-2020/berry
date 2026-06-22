@@ -19,6 +19,7 @@ from __future__ import annotations
 from multiprocessing import get_context
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
+from collections import deque
 import random
 import string
 import textwrap
@@ -1902,35 +1903,136 @@ class MATERIAL:
         '''
 
         ###########################################################################
-        # Obtain the resultant bands' attribution and the k-point's signal.
+        # Conflict-aware slot assignment (option 3: 0.6*dot-product + 0.4*energy).
+        #
+        # Each component (a "solved" full-grid band or a partial cluster) is placed
+        # into the output column ``bn`` (a raw band index) that maximises its
+        # fitness:
+        #     fitness(C, bn) = W_DP * dp_coherence(C) + W_E * energy_fit(C, bn)
+        # restricted to the bands the component actually contains AND to those
+        # whose energy line stays within the gross-jump limit ``self.accept_E``
+        # (the "limit in difference of energy"). When two components want the same
+        # column the fitter one keeps it and the loser is re-placed at its next-best
+        # admissible band -- the conflict solver is re-applied to the loser. Every
+        # component only ever advances down its own preference list, so this is a
+        # deferred-acceptance assignment that always terminates; a component that
+        # exhausts its admissible bands is left unattributed for a later iteration.
+        #
+        # NOTE: self.bands_final is intentionally NOT reset here. Stale entries from
+        # earlier iterations therefore persist (cross-iteration carry-over is under
+        # separate review); this change only makes THIS pass's contested columns be
+        # decided by fitness instead of by arrival order.
         ###########################################################################
-        solved_bands = []
-        for solved in self.solved:
-            bands = solved.get_bands()                                              # Getting the k-points' raw bands inside the solved cluster
-            # bn = solved.bands[0] + self.min_band                                    # Select the most repeated band and apply the initial band correction
-            bn = solved.bands[0]                                                    # Select the most repeated band and apply the initial band correction
-            solved.bands = solved.bands[1:]                                         # Update the bands array
-            while bn in solved_bands and len(solved.bands) > 0:
-                # If the band to be solved is already solved, the next most repeated band is selected
-                # bn = solved.bands[0] + self.min_band                                # initial band correction
-                bn = solved.bands[0]                                                # initial band correction
-                solved.bands = solved.bands[1:]                                     # Update the bands array
-            
-            if bn in solved_bands and len(solved.bands) == 0:
-                # This component's every candidate band is already taken: skip
-                # only THIS component. (Was `break`, which aborted the whole
-                # loop and left every remaining component unassigned -- the
-                # smallest clusters, processed last, are the degenerate-partner
-                # fragments, so a single duplicate left whole bands empty.)
-                continue
+        W_DP, W_E = 0.6, 0.4
 
-            solved_bands.append(bn)                                                 # Append the solved band
-            # self.bands_final[solved.k_points, bn] = bands + self.min_band           # Update the resultant bands' attribution array
+        def _dp_coherence(comp) -> float:
+            # Mean intra-component dot product: how coherent the band trajectory is.
+            kset = set(int(k) for k in comp.k_points)
+            total = 0.0
+            n = 0
+            for k in comp.k_points:
+                bk = comp.bands_number[k]
+                for i_neig, k_neig in enumerate(self.neighbors[k]):
+                    if k_neig == -1 or int(k_neig) not in kset:
+                        continue
+                    bkn = comp.bands_number.get(k_neig)
+                    if bkn is None:
+                        continue
+                    total += self.connections[k, i_neig, bk, bkn]
+                    n += 1
+            return total / n if n else 0.0
+
+        def _energy_fit(comp, bn: int) -> Tuple[bool, float]:
+            # Agreement of the component's energy trajectory with band-slot bn's
+            # energy line. Returns (admissible, score); ``admissible`` is the hard
+            # energy-difference gate: mean |E_C - E(.,bn)| <= accept_E.
+            resid_sum = 0.0
+            score_sum = 0.0
+            n = 0
+            for k in comp.k_points:
+                Ec = float(self.eigenvalues[k, comp.bands_number[k]])
+                Es = float(self.eigenvalues[k, bn])
+                resid_sum += abs(Ec - Es)
+                score_sum += _energy_continuity_score(Ec, Es, accept_E=self.accept_E, disp_scale=self.disp_scale)
+                n += 1
+            if n == 0:
+                return False, 0.0
+            admissible = (resid_sum / n) <= self.accept_E
+            return admissible, score_sum / n
+
+        def _candidates(comp) -> list:
+            # Ranked (band, fitness) preference list over the component's own raw
+            # bands, energy-admissible only, best first.
+            comp.get_bands()                                                        # sets comp.bands / bands_number / k_points
+            dp = _dp_coherence(comp)
+            prefs = []
+            for bn in comp.bands:
+                admissible, eng = _energy_fit(comp, int(bn))
+                if not admissible:
+                    continue
+                prefs.append((int(bn), W_DP * dp + W_E * eng))
+            prefs.sort(key=lambda t: t[1], reverse=True)
+            return prefs
+
+        def _assign(components, forbidden: set) -> dict:
+            # Deferred-acceptance assignment with eviction. ``forbidden`` is the set
+            # of columns already owned by an earlier phase (immovable here).
+            prefs = [_candidates(c) for c in components]
+            owner = {}                                                              # column -> component index holding it
+            owner_fit = {}                                                          # column -> that holder's fitness
+            placed = {}                                                             # component index -> column
+            rank = [0] * len(components)
+            queue = deque(range(len(components)))
+            guard = 0
+            guard_max = (len(components) + 1) * (self.total_bands + 2) + 16
+            while queue:
+                guard += 1
+                if guard > guard_max:                                               # belt-and-suspenders: cannot loop forever
+                    self.logger.warning(f'{BODY_INDENT}conflict solver guard hit; '
+                                        f'{len(queue)} component(s) left unattributed')
+                    break
+                ci = queue.popleft()
+                pl = prefs[ci]
+                r = rank[ci]
+                while r < len(pl):
+                    bn, fit = pl[r]
+                    if bn in forbidden:                                             # owned by an earlier phase
+                        r += 1
+                        continue
+                    if bn not in owner:                                             # free column: take it
+                        owner[bn] = ci; owner_fit[bn] = fit
+                        placed[ci] = bn; rank[ci] = r
+                        break
+                    if fit > owner_fit[bn]:                                         # better suited: evict the holder
+                        cj = owner[bn]
+                        placed.pop(cj, None)
+                        owner[bn] = ci; owner_fit[bn] = fit
+                        placed[ci] = bn; rank[ci] = r
+                        rank[cj] += 1                                               # loser resumes past the lost band
+                        queue.append(cj)                                           # re-apply the conflict solver to it
+                        break
+                    r += 1                                                          # lose this column, try our next band
+                else:
+                    rank[ci] = len(pl)                                              # exhausted: unattributed this iteration
+            return placed
+
+        # Phase 1: full-grid solved components compete among themselves.
+        solved_slot = _assign(self.solved, set())
+        # Phase 2: partial clusters fill the columns the solved bands did not take.
+        cluster_slot = _assign(self.clusters, set(solved_slot.values()))
+
+        ###########################################################################
+        # Write the resolved attribution and the per-k signal.
+        ###########################################################################
+        for ci, solved in enumerate(self.solved):
+            bn = solved_slot.get(ci)
+            if bn is None:                                                          # unattributed this iteration
+                continue
+            bands = solved.get_bands()                                              # Getting the k-points' raw bands inside the solved cluster
             self.bands_final[solved.k_points, bn] = bands                           # Update the resultant bands' attribution array
 
             for k in solved.k_points:
                 # For each k-point is calculate the solution score
-                # bn1 = solved.bands_number[k] + self.min_band                        # The k-point's band
                 bn1 = solved.bands_number[k]                                        # The k-point's band
                 connections = []                                                    # The array that store the dot-product with the k-point's neighbors
                 for i_neig, k_neig in enumerate(self.neighbors[k]):
@@ -1939,38 +2041,19 @@ class MATERIAL:
                         continue
                     if solved.bands_number.get(k_neig) is None:
                         solved.calculate_values()
-                    # bn2 = solved.bands_number[k_neig] + self.min_band               # The neighbor's band
                     bn2 = solved.bands_number[k_neig]                               # The neighbor's band
                     connections.append(self.connections[k, i_neig, bn1, bn2])       # <k, k neighbor>
 
                 self.signal_final[k, bn] = evaluate_result(connections)             # Computes the k-point's signal
 
-        clusters_sort = np.argsort([c.N for c in self.clusters])                    # Sort the remaining clusters
-        for i_arg in clusters_sort[::-1]:
-            cluster = self.clusters[i_arg]
-            bands = cluster.get_bands()                                             # Getting the k-points' raw bands inside the cluster
-            # bn = cluster.bands[0] + self.min_band                                   # Select the most repeated band and apply the initial band correction
-            bn = cluster.bands[0]                                                   # Select the most repeated band and apply the initial band correction
-            cluster.bands = cluster.bands[1:]                                       # Update the bands array
-            while bn in solved_bands and len(cluster.bands) > 0:
-                # If the band to be solved is already solved, the next most repeated band is selected
-                # bn = cluster.bands[0] + self.min_band
-                bn = cluster.bands[0]
-                cluster.bands = cluster.bands[1:]
-
-            if bn in solved_bands and len(cluster.bands) == 0:
-                # This cluster's every candidate band is already taken: skip
-                # only THIS cluster. (Was `break`, which aborted the whole loop
-                # -- clusters are processed largest-first, so it sacrificed the
-                # smallest/contaminated fragments and left whole bands empty.)
+        for ci, cluster in enumerate(self.clusters):
+            bn = cluster_slot.get(ci)
+            if bn is None:                                                          # unattributed this iteration
                 continue
-
-            solved_bands.append(bn)                                                 # Append the solved band
-            # self.bands_final[cluster.k_points, bn] = bands + self.min_band          # Update the resultant bands' attribution array
+            bands = cluster.get_bands()                                             # Getting the k-points' raw bands inside the cluster
             self.bands_final[cluster.k_points, bn] = bands                          # Update the resultant bands' attribution array
             for k in cluster.k_points:
                 # For each k-point is calculate the solution score
-                # bn1 = cluster.bands_number[k] + self.min_band                       # The k-point's band
                 bn1 = cluster.bands_number[k]                                       # The k-point's band
                 connections = []                                                    # The array that store the dot-product with the k-point's neighbors
                 for i_neig, k_neig in enumerate(self.neighbors[k]):
@@ -1981,7 +2064,6 @@ class MATERIAL:
                         # If the neighbor does not exist inside the cluster, the dot-product is 0
                         connections.append(0)
                         continue
-                    # bn2 = cluster.bands_number[k_neig] + self.min_band              # The neighbor's band
                     bn2 = cluster.bands_number[k_neig]                              # The neighbor's band
                     connections.append(self.connections[k, i_neig, bn1, bn2])       # <k, k neighbor>
 
@@ -2289,6 +2371,24 @@ class MATERIAL:
                     self.correct_signalfinal[k, bn] = OTHER
                     self.signal_final[k, bn] = POTENTIAL_CORRECT
 
+        ###########################################################################
+        # Invalidate the canvas only where the attribution failed energy continuity
+        # (NOT_SOLVED / MISTAKE -- not OTHER). A stale or duplicated value there can
+        # no longer (a) survive in the output array nor (b) seed a bogus continuity
+        # edge in the rebuild below; the cell is re-derived next iteration. CORRECT
+        # cells and the completed bands are left untouched. The continuity-edge
+        # builder below guards against the resulting -1 (an invalidated cell
+        # originates no edge).
+        ###########################################################################
+        wrong = (self.correct_signalfinal == NOT_SOLVED) | (self.correct_signalfinal == MISTAKE)
+        self.bands_final[wrong] = -1
+
+        # Restore the per-k bijection: resolve any band attributed to more than one
+        # slot, reassigning each losing slot to a band missing from that k-point's
+        # row (best energy fit). Runs before the graph rebuild so the continuity
+        # edges below are built from a duplicate-free canvas.
+        self._enforce_bijection()
+
         # k_ot = k_other[other_same]                                                  # Store these repeated k-points
         # bn_ot = bn_other[other_same]                                                # Save their bands
         # not_same = np.logical_not(other_same)                                       # Identify which points are different
@@ -2355,10 +2455,12 @@ class MATERIAL:
                             continue
                         kneig = self.matrix[kn]                                                 # Neighbor k-point
                         if not identify_points[kn]:
-                            # p = kp + (self.bands_final[k, bn] - self.min_band)*self.nks
-                            p = kp + (self.bands_final[k, bn])*self.nks
-                            # pn = kneig + (self.bands_final[kn, bn] - self.min_band)*self.nks
-                            pn = kneig + (self.bands_final[kn, bn])*self.nks
+                            b_p = self.bands_final[k, bn]
+                            b_pn = self.bands_final[kn, bn]
+                            if b_p < 0 or b_pn < 0:
+                                continue                                                        # invalidated cell -> no continuity edge
+                            p = kp + b_p*self.nks
+                            pn = kneig + b_pn*self.nks
                             edges.append([p, pn])                                               # Establish an edge between nodes p (k-point) and pn (neighbor)
 
             if self.dimensions == 2:
@@ -2380,10 +2482,12 @@ class MATERIAL:
                                 continue
                             kneig = self.matrix[ikn, jkn]                                               # Neighbor k-point
                             if not identify_points[ikn, jkn]:
-                                # p = kp + (self.bands_final[kp, bn] - self.min_band)*self.nks            # The kpoint's node id
-                                p = kp + (self.bands_final[kp, bn])*self.nks            # The kpoint's node id
-                                # pn = kneig + (self.bands_final[kneig, bn] - self.min_band)*self.nks     # The neighbor's node id
-                                pn = kneig + (self.bands_final[kneig, bn])*self.nks     # The neighbor's node id
+                                b_p = self.bands_final[kp, bn]                          # The kpoint's attributed band
+                                b_pn = self.bands_final[kneig, bn]                      # The neighbor's attributed band
+                                if b_p < 0 or b_pn < 0:
+                                    continue                                            # invalidated cell -> no continuity edge
+                                p = kp + b_p*self.nks                                   # The kpoint's node id
+                                pn = kneig + b_pn*self.nks                              # The neighbor's node id
                                 edges.append([p, pn])                                                   # Establish an edge between nodes p (k-point) and pn (neighbor)
 
             if self.dimensions == 3:
@@ -2406,10 +2510,12 @@ class MATERIAL:
                                     continue
                                 kneig = self.matrix[ikn, jkn, kkn]                                            # Neighbor k-point
                                 if not identify_points[ikn, jkn, kkn]:
-                                    # p = kp + (self.bands_final[kp, bn] - self.min_band)*self.nks             # The kpoint's node id
-                                    p = kp + (self.bands_final[kp, bn])*self.nks             # The kpoint's node id
-                                    # pn = kneig + (self.bands_final[kneig, bn] - self.min_band)*self.nks
-                                    pn = kneig + (self.bands_final[kneig, bn])*self.nks
+                                    b_p = self.bands_final[kp, bn]                            # The kpoint's attributed band
+                                    b_pn = self.bands_final[kneig, bn]                       # The neighbor's attributed band
+                                    if b_p < 0 or b_pn < 0:
+                                        continue                                             # invalidated cell -> no continuity edge
+                                    p = kp + b_p*self.nks                                     # The kpoint's node id
+                                    pn = kneig + b_pn*self.nks                                # The neighbor's node id
                                     edges.append([p, pn])                                                       # Establish an edge between nodes p (k-point) and pn (neighbor)
 
         self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)                       # Save the currect result
@@ -2475,6 +2581,107 @@ class MATERIAL:
         # Structural anti-shatter safety net: guarantee no node is left isolated,
         # independent of the `tol` threshold or which branch built the graph above.
         self._ensure_connectivity()
+
+        # Invariant check before the next solver iteration: every k-point must map
+        # each band index to at most one slot (a per-k bijection over attributed
+        # cells). The wrong-cell invalidation above removes the NOT_SOLVED/MISTAKE
+        # copies; anything still duplicated here is surfaced as a warning.
+        self._verify_no_duplicates()
+
+    def _verify_no_duplicates(self) -> int:
+        '''
+        Verify that ``self.bands_final`` is a per-k bijection: at each k-point no
+        band index is attributed to more than one slot. Unattributed cells (-1) are
+        ignored. Logs an explicit OK/violation line and returns the number of excess
+        (duplicate) attributions so a caller could gate on it.
+        '''
+        bf = self.bands_final
+        nk, nb = bf.shape
+        # counts[k, b] = how many slots at k hold band index b (ignoring -1).
+        counts = np.zeros((nk, self.total_bands), dtype=int)
+        for col in range(nb):
+            valid = bf[:, col] >= 0
+            np.add.at(counts, (np.where(valid)[0], bf[valid, col]), 1)
+        dup = counts > 1
+        excess = int((counts[dup] - 1).sum())
+        if excess:
+            dup_k = int(np.any(dup, axis=1).sum())
+            self.logger.warning(f'{BODY_INDENT}Duplicate-attribution check: bijection VIOLATED -- '
+                                f'{dup_k} k-point(s) hold a band index in >1 slot '
+                                f'({excess} excess attribution(s))')
+        else:
+            self.logger.info(f'{BODY_INDENT}Duplicate-attribution check: OK '
+                             f'(every k-point maps each band to at most one slot)')
+        return excess
+
+    def _slot_energy_penalty(self, k: int, c: int, b: int) -> float:
+        '''
+        Energy mismatch of putting band ``b`` in slot ``c`` at k-point ``k``: the mean
+        |E(k,b) - E(neighbour, band-currently-in-slot-c)| over the k-point's attributed
+        neighbours in that slot. Falls back to |E(k,b) - E(k,c)| (slot index used as the
+        band-energy proxy) when slot c has no attributed neighbour. Lower is better.
+        '''
+        Eb = float(self.eigenvalues[k, b])
+        diffs = []
+        for kn in self.neighbors[k]:
+            if kn == -1:
+                continue
+            bn = self.bands_final[kn, c]
+            if bn < 0:
+                continue
+            diffs.append(abs(Eb - float(self.eigenvalues[kn, bn])))
+        if diffs:
+            return float(np.mean(diffs))
+        return abs(Eb - float(self.eigenvalues[k, c]))
+
+    def _enforce_bijection(self) -> int:
+        '''
+        Make ``self.bands_final`` injective per k-point. For every band index attributed
+        to more than one slot at a k-point, the copy in the best slot is kept (highest
+        energy-continuity signal in ``correct_signalfinal``, ties broken by smallest
+        energy residual to that slot's neighbours) and each LOSING slot is reassigned to
+        a band missing from that k-point's row, matched by best energy fit. Invalidated
+        (-1) slots are left untouched for the repair/force passes. Returns the number of
+        slots reassigned.
+        '''
+        bf = self.bands_final
+        sig = self.correct_signalfinal
+        nk, nb = bf.shape
+        reassigned = 0
+        for k in range(nk):
+            row = bf[k]
+            where = {}                                                              # band value -> slots holding it (attributed only)
+            for c in range(nb):
+                v = int(row[c])
+                if v >= 0:
+                    where.setdefault(v, []).append(c)
+            dup_vals = [v for v, cs in where.items() if len(cs) > 1]
+            if not dup_vals:
+                continue
+            missing = [b for b in range(self.total_bands) if b not in where]        # bands absent from the whole row
+            if not missing:
+                continue
+            # Keep each duplicated band in its best slot; collect the losing slots.
+            loser_slots = []
+            for v in dup_vals:
+                cs = where[v]
+                keep = max(cs, key=lambda c: (sig[k, c], -self._slot_energy_penalty(k, c, v)))
+                loser_slots.extend(c for c in cs if c != keep)
+            # Greedily reassign loser slots to missing bands, smallest energy penalty first.
+            pairs = sorted(((self._slot_energy_penalty(k, c, b), c, b)
+                            for c in loser_slots for b in missing),
+                           key=lambda t: t[0])
+            used_c, used_b = set(), set()
+            for _pen, c, b in pairs:
+                if c in used_c or b in used_b:
+                    continue
+                bf[k, c] = b
+                used_c.add(c); used_b.add(b)
+                reassigned += 1
+        if reassigned:
+            self.logger.info(f'{BODY_INDENT}Bijection enforcement: reassigned {reassigned} '
+                             f'duplicate slot(s) to missing bands')
+        return reassigned
 
     def _ensure_connectivity(self) -> None:
         '''
