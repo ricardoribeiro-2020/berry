@@ -1061,13 +1061,64 @@ class MATERIAL:
             return float(np.median(preds))
         return float(self.eigenvalues[k, slot])
 
+    def _energy_outlier_mask(self, bad0: np.ndarray, min_support: int = 2,
+                             sigma_mult: float = 3.0) -> np.ndarray:
+        '''
+        Flag trusted slots whose currently-assigned band is energy-discontinuous
+        with the trajectory their TRUSTED neighbours predict, even though the solver
+        never flagged them NOT/MIS.
+
+        The NOT/MIS trigger used by the repair is overlap-based; it misses slots that
+        hold a valid (bijective) but wrong band -- e.g. a multi-band permutation cycle
+        at a near-degenerate k-point that survives as POTENTIAL_MISTAKE / FORCED /
+        CORRECT and shows up only as an energy jump in the band plot. Such a slot sits
+        far from the quadratic trajectory its trusted neighbours extrapolate.
+
+        A slot is flagged only when (a) it is currently trusted and not degenerate,
+        (b) it has at least ``min_support`` trusted neighbours in that slot (so the
+        prediction is robust to a single contaminated neighbour, taken via median) and
+        (c) ``|E_current - median(prediction)|`` exceeds both the gross-jump guard
+        ``accept_E`` and ``sigma_mult`` times the local trajectory spread. Prediction
+        reuses ``_extrapolate_energy``, so legitimately steep bands are predicted
+        correctly and are not flagged.
+
+        Returns
+            outlier : np.ndarray[bool], shape (nks, total_bands)
+                True where a trusted slot is energy-discontinuous with its neighbours.
+        '''
+        trusted0 = (~bad0) & (self.bands_final != -1)
+        outlier = np.zeros_like(bad0)
+        for k in np.where(np.any(trusted0, axis=1))[0]:
+            for s in np.where(trusted0[k])[0]:
+                if self.signal_final[k, s] == DEGENERATE:
+                    continue
+                preds, sigmas = [], []
+                for k_nb in self.neighbors[k]:
+                    if k_nb == -1 or not trusted0[k_nb, s]:
+                        continue
+                    E_pred, sigma = self._extrapolate_energy(int(k_nb), int(k),
+                                                             int(s), trusted=trusted0)
+                    preds.append(E_pred)
+                    sigmas.append(sigma)
+                if len(preds) < min_support:
+                    continue                              # too few anchors to judge robustly
+                pred = float(np.median(preds))
+                tol = max(self.accept_E, sigma_mult * float(np.median(sigmas)))
+                E_cur = float(self.eigenvalues[k, self.bands_final[k, s]])
+                if abs(E_cur - pred) > tol:
+                    outlier[k, s] = True
+        return outlier
+
     def _repair_energy_discontinuities(self, max_rounds: int = 64) -> np.ndarray:
         '''
         A-posteriori energy-continuity repair of the solver's best solution.
 
-        The clustering solution is taken as-is and ONLY the points that failed the
-        energy-continuity validation (NOT/MIS in ``correct_signalfinal_best``) or
-        were left unattributed (-1) are revisited; trusted points are never touched.
+        The clustering solution is taken as-is and ONLY the bad points are revisited;
+        trusted points are never touched. Bad = points that failed the energy-continuity
+        validation (NOT/MIS in ``correct_signalfinal_best``), were left unattributed
+        (-1), or hold a bijective-but-energy-discontinuous band that escaped the NOT/MIS
+        overlap trigger (``_energy_outlier_mask`` -- catches permutation cycles at
+        near-degenerate k-points that surface only as an energy jump in the band plot).
         For each bad k-point, all its bad slots are freed and jointly reassigned:
         each slot's expected energy is predicted by quadratic extrapolation of that
         slot's own trajectory (slot-correct namespace: ``E[k', bands_final[k', s]]``)
@@ -1100,6 +1151,20 @@ class MATERIAL:
             bad |= (validation == NOT_SOLVED) | (validation == MISTAKE)
             bad &= validation != DEGENERATE
         bad &= self.signal_final != DEGENERATE
+
+        ###########################################################################
+        # Widen 'bad' with energy-continuity outliers: bijective-but-wrong bands
+        # (permutation cycles at near-degenerate k-points) that escaped the NOT/MIS
+        # overlap trigger above but sit far from the trajectory their trusted
+        # neighbours predict. Freeing them lets the joint reassignment re-sort them.
+        ###########################################################################
+        n_signal_bad = int(np.sum(bad))
+        bad |= self._energy_outlier_mask(bad)
+        bad &= self.signal_final != DEGENERATE
+        n_outlier = int(np.sum(bad)) - n_signal_bad
+        if n_outlier:
+            self.logger.info(f'{BODY_INDENT}Energy-outlier widening: {n_outlier} '
+                             f'additional energy-discontinuous slot(s) flagged for repair')
 
         trusted = (~bad) & (self.bands_final != -1)
         repaired_mask = np.zeros_like(bad)
