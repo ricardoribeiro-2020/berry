@@ -64,6 +64,11 @@ def corrected(args):
     f.close()
     print(" bandsfinal loaded")
 
+    n_unsolved = int(np.count_nonzero(bandsfinal[:, startband:endband + 1] < 0))
+    if n_unsolved:
+        print(f" WARNING: {n_unsolved} unsolved point(s) (bandsfinal == -1) in the"
+              " selected range; they will be left blank (NaN) instead of plotted.")
+
     if m.dimensions == 1:
         xarray = np.zeros(nkx)
         yarray = np.zeros(nkx)
@@ -74,8 +79,9 @@ def corrected(args):
         for banda in range(startband, endband + 1):
             count = -1
             for i in range(nkx):
-                count = count + 1            
-                yarray[i] = eigenvalues[count, bandsfinal[count, banda]]
+                count = count + 1
+                bf = bandsfinal[count, banda]
+                yarray[i] = eigenvalues[count, bf] if bf >= 0 else np.nan
             plt.plot(xarray,yarray)
 
 
@@ -97,7 +103,8 @@ def corrected(args):
             for j in range(nky):
                 for i in range(nkx):
                     count = count + 1
-                    zarray[i, j] = eigenvalues[count, bandsfinal[count, banda]]
+                    bf = bandsfinal[count, banda]
+                    zarray[i, j] = eigenvalues[count, bf] if bf >= 0 else np.nan
             colorband = np.mod(banda,20)
             ax.plot_wireframe(xarray, yarray, zarray, color=cores[colorband])
 
