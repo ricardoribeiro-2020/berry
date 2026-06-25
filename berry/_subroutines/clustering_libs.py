@@ -1877,7 +1877,8 @@ class MATERIAL:
                                                            alpha=alpha,
                                                            accept_E=self.accept_E,
                                                            disp_scale=self.disp_scale,
-                                                           fe_eweight=self.fe_eweight)  # Calculate the score (new f(E))
+                                                           fe_eweight=self.fe_eweight,
+                                                           tol=self.tol)  # Calculate the score (new f(E))
                 result.append([i_s, [np.max(scores), np.argmax(scores)], sample.scores])
 
             if _FE_DEBUG:
@@ -2701,52 +2702,80 @@ class MATERIAL:
 
     def _enforce_bijection(self) -> int:
         '''
-        Make ``self.bands_final`` injective per k-point. For every band index attributed
-        to more than one slot at a k-point, the copy in the best slot is kept (highest
-        energy-continuity signal in ``correct_signalfinal``, ties broken by smallest
-        energy residual to that slot's neighbours) and each LOSING slot is reassigned to
-        a band missing from that k-point's row, matched by best energy fit. Invalidated
-        (-1) slots are left untouched for the repair/force passes. Returns the number of
-        slots reassigned.
+        Make ``self.bands_final`` a per-k permutation, repairing both bijection defects:
+
+          (a) DUPLICATE: a band attributed to more than one slot. The copy in the best
+              slot is kept (highest energy-continuity signal in ``correct_signalfinal``,
+              ties broken by smallest energy residual to that slot's neighbours) and each
+              LOSING slot is reassigned to a band missing from the row, by best energy fit
+              (ungated -- a duplicate must always move).
+
+          (b) GAP: an empty slot (-1) together with a band absent from the row. The
+              duplicate logic never reaches it (empty slots are not in ``where``), so it
+              used to be left for the force pass. Here every empty slot is paired ONE-TO-
+              ONE to a missing band by best energy fit, GATED by ``accept_E`` so a band is
+              never forced across a gross energy jump (an inadmissible slot stays -1 for
+              the force/repair pass). This is the near-degenerate partner the community
+              partition dropped -- see the get_cluster_score cross-band veto.
+
+        Returns the total number of slots reassigned or filled.
         '''
         bf = self.bands_final
         sig = self.correct_signalfinal
         nk, nb = bf.shape
-        reassigned = 0
+        accept_E = getattr(self, 'accept_E', np.inf)                                # gross-jump gate for the gap branch
+        reassigned = 0                                                              # (a) duplicate-loser reassignments
+        filled = 0                                                                  # (b) empty-slot gap fills
         for k in range(nk):
-            row = bf[k]
+            row = bf[k]                                                             # view: reflects edits made below
             where = {}                                                              # band value -> slots holding it (attributed only)
             for c in range(nb):
                 v = int(row[c])
                 if v >= 0:
                     where.setdefault(v, []).append(c)
             dup_vals = [v for v, cs in where.items() if len(cs) > 1]
-            if not dup_vals:
-                continue
             missing = [b for b in range(self.total_bands) if b not in where]        # bands absent from the whole row
-            if not missing:
-                continue
-            # Keep each duplicated band in its best slot; collect the losing slots.
-            loser_slots = []
-            for v in dup_vals:
-                cs = where[v]
-                keep = max(cs, key=lambda c: (sig[k, c], -self._slot_energy_penalty(k, c, v)))
-                loser_slots.extend(c for c in cs if c != keep)
-            # Greedily reassign loser slots to missing bands, smallest energy penalty first.
-            pairs = sorted(((self._slot_energy_penalty(k, c, b), c, b)
-                            for c in loser_slots for b in missing),
-                           key=lambda t: t[0])
-            used_c, used_b = set(), set()
-            for _pen, c, b in pairs:
-                if c in used_c or b in used_b:
-                    continue
-                bf[k, c] = b
-                used_c.add(c); used_b.add(b)
-                reassigned += 1
-        if reassigned:
+
+            # (a) Duplicate branch (unchanged): move each duplicate's losing slot(s)
+            #     onto a missing band by best energy fit, ungated.
+            if dup_vals and missing:
+                loser_slots = []
+                for v in dup_vals:
+                    cs = where[v]
+                    keep = max(cs, key=lambda c: (sig[k, c], -self._slot_energy_penalty(k, c, v)))
+                    loser_slots.extend(c for c in cs if c != keep)
+                pairs = sorted(((self._slot_energy_penalty(k, c, b), c, b)
+                                for c in loser_slots for b in missing),
+                               key=lambda t: t[0])
+                used_c, used_b = set(), set()
+                for _pen, c, b in pairs:
+                    if c in used_c or b in used_b:
+                        continue
+                    bf[k, c] = b
+                    used_c.add(c); used_b.add(b)
+                    reassigned += 1
+                missing = [b for b in missing if b not in used_b]                   # bands consumed above are no longer missing
+
+            # (b) Gap branch (new): pair empty slots to remaining missing bands, one-to-
+            #     one by smallest energy penalty first, gated by accept_E.
+            empty_slots = [c for c in range(nb) if int(row[c]) == -1]
+            if empty_slots and missing:
+                pairs = sorted(((self._slot_energy_penalty(k, c, b), c, b)
+                                for c in empty_slots for b in missing),
+                               key=lambda t: t[0])
+                used_c, used_b = set(), set()
+                for pen, c, b in pairs:
+                    if c in used_c or b in used_b:
+                        continue
+                    if pen > accept_E:                                              # nothing continuous fits: leave -1
+                        continue
+                    bf[k, c] = b
+                    used_c.add(c); used_b.add(b)
+                    filled += 1
+        if reassigned or filled:
             self.logger.info(f'{BODY_INDENT}Bijection enforcement: reassigned {reassigned} '
-                             f'duplicate slot(s) to missing bands')
-        return reassigned
+                             f'duplicate slot(s) and filled {filled} empty slot(s) with missing bands')
+        return reassigned + filled
 
     def _ensure_connectivity(self) -> None:
         '''
@@ -3363,7 +3392,8 @@ class COMPONENT:
 
     def get_cluster_score(self, cluster : COMPONENT, min_band : int, max_band : int,
                           neighbors : np.ndarray, energies : np.ndarray, connections : np.ndarray, alpha : float = 0.5,
-                          accept_E : float = None, disp_scale : float = None, fe_eweight : float = 1.0) -> float:
+                          accept_E : float = None, disp_scale : float = None, fe_eweight : float = 1.0,
+                          tol : float = None) -> float:
         '''
         This function returns the similarity between components taking
         into account the dot product of all essential points and their
@@ -3731,6 +3761,21 @@ class COMPONENT:
                 # leak across the 0.46 Ry MoS2 wall). Loose gate (accept_E), so it
                 # only ever cuts gross jumps, not intra-manifold continuations.
                 gate = 0.0 if energy_val == 0.0 else 1.0
+                # Cross-band dot-product veto (mirror of the make_connections
+                # anti-bridge guard). A cross-band join (bn1 != bn2) is only
+                # physical at a genuine crossing, where the sample band bn1 has
+                # LOST its own continuity here. If bn1 still overlaps itself
+                # strongly across this edge (<bn1@k|bn1@k_n> > tol), bn1 has its
+                # own continuation and does NOT belong in the bn2 cluster: this is
+                # the near-degenerate-partner swap (a band-15 fragment pulled into
+                # the band-14 slot on the strength of f(E)~1 alone while the cross
+                # overlap <15|14> = 0). Veto the edge so energy continuity can never
+                # bridge two orthogonal (degenerate-pair) partners. Genuine
+                # crossings -- where the same-band overlap has collapsed -- keep
+                # same <= tol and are NOT vetoed.
+                if tol is not None and bn1 != bn2 and \
+                        connections[k, i_neig, bn1, bn1] > tol:
+                    gate = 0.0
                 # Down-weight f(E) when the gap has collapsed (fe_eweight < 1) and
                 # renormalise so the dot product carries the freed weight. With
                 # fe_eweight == 1 (well-separated bands) this is the original
