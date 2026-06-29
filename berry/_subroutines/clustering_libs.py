@@ -1245,6 +1245,14 @@ class MATERIAL:
                         if self.bands_final[k, s] != original[i]:
                             repaired_mask[k, s] = True
                             n_repaired += 1
+                            if self.logger.level <= logging.DEBUG:
+                                nb_ = int(self.bands_final[k, s])
+                                rE = refs[i]
+                                self.logger.debug(
+                                    f'{BODY_INDENT}  [repair] k={k} slot={s}: '
+                                    f'band {int(original[i])}->{nb_}  '
+                                    f'E={float(self.eigenvalues[k, nb_]):.4f}  '
+                                    f'refE={("%.4f" % rE) if rE is not None else "n/a"}  round={round_ + 1}')
                     elif original[i] != -1 and original[i] in available:
                         # Failed: restore the original attribution (stays flagged) so
                         # the FORCED count is not inflated; it may be repaired later.
@@ -1315,11 +1323,141 @@ class MATERIAL:
                 s = int(empty_slots[idx])
                 if not available:
                     self.bands_final[k, s] = s          # last resort (permutation defect)
+                    if self.logger.level <= logging.DEBUG:
+                        self.logger.debug(f'{BODY_INDENT}  [forced] k={k} slot={s}: '
+                                          f'no band available -> last-resort band {s}')
                     continue
                 j = int(np.argmin([abs(e - refs[idx]) for e in avail_E]))
+                chosen = int(available[j])
+                dE = abs(avail_E[j] - refs[idx])
                 self.bands_final[k, s] = available.pop(j)
                 avail_E.pop(j)
+                if self.logger.level <= logging.DEBUG:
+                    self.logger.debug(f'{BODY_INDENT}  [forced] k={k} slot={s}: '
+                                      f'-1->band {chosen}  E={float(self.eigenvalues[k, chosen]):.4f}  '
+                                      f'refE={float(refs[idx]):.4f}  |dE|={dE:.4f}')
         return forced_mask
+
+    def _nn_energy_jump_map(self) -> np.ndarray:
+        '''
+        Per (k, slot) the largest |E(k, slot) - E(neighbour, slot)| over the slot's
+        attributed in-BZ neighbours (slot-correct namespace: the energy of whatever
+        band each slot holds). NaN where the slot is unattributed or has no attributed
+        neighbour. This is the diagnostic that exposes silent mis-attributions: a slot
+        sitting on a gross energy wall relative to its own neighbours, even when the
+        validation flag marks it solved. Used only by the verbose provenance log.
+        '''
+        nks, nb = self.bands_final.shape
+        jumps = np.full((nks, nb), np.nan)
+        neigh = np.asarray(self.neighbors)
+        for k in range(nks):
+            for s in range(nb):
+                b = self.bands_final[k, s]
+                if b < 0:
+                    continue
+                Ek = self.eigenvalues[k, b]
+                best = np.nan
+                for kn in neigh[k]:
+                    if kn == -1:
+                        continue
+                    bn = self.bands_final[kn, s]
+                    if bn < 0:
+                        continue
+                    d = abs(Ek - self.eigenvalues[kn, bn])
+                    best = d if np.isnan(best) else max(best, d)
+                jumps[k, s] = best
+        return jumps
+
+    def _log_solution_provenance(self, inloop_bands: np.ndarray, inloop_csf: np.ndarray) -> None:
+        '''
+        Verbose (-v / DEBUG) post-mortem of the final solution. For every slot it
+        reports where its value came from -- solved IN-LOOP by the clustering, REPAIRED
+        by the a-posteriori energy-continuity pass, or FORCE-FILLED by the completeness
+        pass -- and surfaces what is likely wrong:
+
+          1. SLOT PROVENANCE & HEALTH table: per slot, counts of in-loop / repaired /
+             forced, plus how many points the final flag failed (csf<3) and -- the key
+             column -- how many PASS the flag (csf>=3) yet sit on a gross energy jump
+             (> accept_E). That last count is the silent mis-attribution the report hides.
+          2. POST-LOOP SLOT SWAPS: every (k, slot) whose band changed from the in-loop
+             best to the final solution (repair + bijection reassignments + gap fills),
+             with old->new band and energies.
+          3. SILENT DISCONTINUITIES: each (k, slot) that passes validation but jumps
+             > accept_E vs its own neighbours, sorted worst first, with provenance.
+
+        Skipped unless the logger is at DEBUG level, since it scans every (k, slot).
+        Takes the in-loop best (bands + validation) snapshotted before the post-loop
+        passes ran.
+        '''
+        if self.logger.level > logging.DEBUG:
+            return
+        CSF_SOLVED = 3          # correct_signalfinal: >=3 (OTHER/CORRECT/FORCED_CONT) == "solved/reported-OK"
+        CSF_NAME = {0: 'NOT_SOLVED', 1: 'MISTAKE', 2: 'DEGENERATE',
+                    3: 'OTHER', 4: 'CORRECT', 5: 'FORCED_CONT'}
+        nks, nb = self.bands_final.shape
+        csf = self.correct_signalfinal
+        repaired = getattr(self, 'repaired_mask', None)
+        if repaired is None:
+            repaired = np.zeros((nks, nb), bool)
+        forced = getattr(self, 'forced_mask', None)
+        if forced is None:
+            forced = np.zeros((nks, nb), bool)
+        jumps = self._nn_energy_jump_map()
+        gross = float(self.accept_E)
+
+        def prov(k: int, s: int) -> str:
+            if forced[k, s]:
+                return 'FORCED'
+            if repaired[k, s]:
+                return 'REPAIRED'
+            if inloop_csf[k, s] >= CSF_SOLVED:
+                return 'IN-LOOP'
+            return 'IN-LOOP(flag)'
+
+        self.logger.debug('\n\t\t==================== SOLUTION PROVENANCE & HEALTH (verbose) ===================='
+                          f'\n\t\tgross-jump threshold accept_E = {gross:.4f} Ha')
+        self.logger.debug('\t\tslot | in-loop  repaired  forced | csf<3(fail) | SILENT-DISC(csf>=3 & jump>accept_E)')
+        for s in range(nb):
+            kept_flag = ((inloop_csf[:, s] < CSF_SOLVED) & ~repaired[:, s] & ~forced[:, s]).sum()
+            n_inloop = ((inloop_csf[:, s] >= CSF_SOLVED) & ~repaired[:, s] & ~forced[:, s]).sum()
+            n_rep = (repaired[:, s] & ~forced[:, s]).sum()
+            n_forced = forced[:, s].sum()
+            n_fail = (csf[:, s] < CSF_SOLVED).sum()
+            col_jump = jumps[:, s]
+            n_silent = ((csf[:, s] >= CSF_SOLVED) & (col_jump > gross)).sum()
+            self.logger.debug(f'\t\t{s:4d} | {int(n_inloop):7d} {int(n_rep):9d} {int(n_forced):7d} | '
+                              f'{int(n_fail):11d} | {int(n_silent):d}'
+                              + (f'   (+{int(kept_flag)} in-loop slots kept though flagged)' if kept_flag else ''))
+
+        # 2. Post-loop swaps (band changed vs the in-loop best solution).
+        sk, ss = np.where(inloop_bands != self.bands_final)
+        self.logger.debug(f'\n\t\t==================== POST-LOOP SLOT SWAPS: {len(sk)} ====================')
+        if len(sk):
+            self.logger.debug('\t\t    k  slot  band(in->out)   E(in->out) [Ha]      nn-jump  provenance     final-csf')
+            for k, s in sorted(zip(sk.tolist(), ss.tolist())):
+                ob, nbd = int(inloop_bands[k, s]), int(self.bands_final[k, s])
+                oE = float(self.eigenvalues[k, ob]) if ob >= 0 else float('nan')
+                nE = float(self.eigenvalues[k, nbd]) if nbd >= 0 else float('nan')
+                jv = jumps[k, s]
+                self.logger.debug(f'\t\t{k:5d} {s:4d}   {ob:3d}->{nbd:<3d}      {oE:8.4f}->{nE:<8.4f}   '
+                                  f'{(jv if not np.isnan(jv) else -1):8.4f}  {prov(k, s):13s}  '
+                                  f'{CSF_NAME.get(int(csf[k, s]), int(csf[k, s]))}')
+
+        # 3. Silent discontinuities: pass validation but jump > accept_E, worst first.
+        hk, hs = np.where((csf >= CSF_SOLVED) & (jumps > gross))
+        self.logger.debug(f'\n\t\t==================== SILENT DISCONTINUITIES (pass validation, '
+                          f'jump>accept_E): {len(hk)} ====================')
+        if len(hk):
+            self.logger.debug('\t\t    k  slot  band     E [Ha]    nn-jump  provenance     in-loop-band  final-csf')
+            order = np.argsort(-jumps[hk, hs])
+            for i in order:
+                k, s = int(hk[i]), int(hs[i])
+                b = int(self.bands_final[k, s])
+                ib = int(inloop_bands[k, s])
+                self.logger.debug(f'\t\t{k:5d} {s:4d}  {b:4d}  {float(self.eigenvalues[k, b]):8.4f}  '
+                                  f'{jumps[k, s]:8.4f}  {prov(k, s):13s}  {ib:11d}   '
+                                  f'{CSF_NAME.get(int(csf[k, s]), int(csf[k, s]))}')
+        self.logger.debug('\t\t===============================================================================\n')
 
     def make_connections(self, tol:float=0.80, not_first_iteration:bool=False, node_subset=None) -> None:
         '''
@@ -2726,6 +2864,7 @@ class MATERIAL:
         accept_E = getattr(self, 'accept_E', np.inf)                                # gross-jump gate for the gap branch
         reassigned = 0                                                              # (a) duplicate-loser reassignments
         filled = 0                                                                  # (b) empty-slot gap fills
+        dbg = self.logger.level <= logging.DEBUG                                    # verbose (-v): per-action trace
         for k in range(nk):
             row = bf[k]                                                             # view: reflects edits made below
             where = {}                                                              # band value -> slots holding it (attributed only)
@@ -2751,6 +2890,9 @@ class MATERIAL:
                 for _pen, c, b in pairs:
                     if c in used_c or b in used_b:
                         continue
+                    if dbg:
+                        self.logger.debug(f'{BODY_INDENT}  [bijection] dup  k={k} slot={c}: '
+                                          f'band {int(bf[k, c])}(duplicate)->{b}  penalty={_pen:.4f}')
                     bf[k, c] = b
                     used_c.add(c); used_b.add(b)
                     reassigned += 1
@@ -2769,6 +2911,9 @@ class MATERIAL:
                         continue
                     if pen > accept_E:                                              # nothing continuous fits: leave -1
                         continue
+                    if dbg:
+                        self.logger.debug(f'{BODY_INDENT}  [bijection] gap  k={k} slot={c}: '
+                                          f'-1->band {b}  penalty={pen:.4f}')
                     bf[k, c] = b
                     used_c.add(c); used_b.add(b)
                     filled += 1
@@ -3162,6 +3307,12 @@ class MATERIAL:
         self.signal_final = np.copy(self.best_signal_final)
         self.max_solved = max_solved
 
+        # Snapshot the in-loop best (bands + validation) BEFORE the post-loop passes
+        # run, so the verbose provenance log can tell genuine in-loop solves apart from
+        # a-posteriori repairs and force-fills, and list the resulting band swaps.
+        _prov_inloop_bands = np.copy(self.bands_final)
+        _prov_inloop_csf = np.copy(self.correct_signalfinal_best)
+
         ###########################################################################
         # A-posteriori energy-continuity repair: the points the validation flagged
         # (NOT/MIS) and the unattributed ones are locally reassigned from trusted
@@ -3182,6 +3333,11 @@ class MATERIAL:
         self.correct_signal(last=True)
         self.correct_signalfinal[self.forced_mask] = FORCED_CONTINUITY
         self.logger.info(self.report())
+
+        # Verbose (-v) post-mortem: per-slot provenance (in-loop / repaired / forced),
+        # every post-loop band swap, and the silent energy discontinuities that pass
+        # the validation flag. No-op unless the logger is at DEBUG level.
+        self._log_solution_provenance(_prov_inloop_bands, _prov_inloop_csf)
 
 class COMPONENT:
     '''

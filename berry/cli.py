@@ -375,6 +375,11 @@ berry [package options] script parameter [script options]
                                          default="cluster0",
                                          type=str, metavar="file_path",
                                          help="Name of output log file. Extension will be .log regardless of user input.")
+            cluster0_parser.add_argument("-v",
+                                         action="store_true",
+                                         help="Increases output verbosity (DEBUG): per-slot provenance "
+                                              "(in-loop vs repaired vs force-filled), every post-loop band "
+                                              "swap, and silent energy discontinuities that pass validation.")
         if BASIS:
             if m.initial_band != "dummy": # for backward compatibility
                 basis_parser.add_argument("Mb" , 
@@ -866,7 +871,7 @@ def clustering_cli(args: argparse.Namespace):
 def clustering0_cli(args: argparse.Namespace):
     from berry.clustering_bands0 import run_clustering
     args_dict = {}
-    args_dict["logger_level"] = logging.INFO
+    args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
     args_dict["logger_name"] = args.o
     args_dict["npr"] = args.np
     args_dict["max_band"] = args.Mb
