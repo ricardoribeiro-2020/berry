@@ -2473,6 +2473,9 @@ class MATERIAL:
             bands_report.append(report)
 
             self.logger.debug(f'\t\t\tNew Band: {bn}\tnr fails: {report[0]}')
+            if report[0] and self.logger.level <= logging.DEBUG:        # list the failing k-points (were only counted)
+                not_ks = np.where(band_result == NOT_SOLVED)[0]
+                self.logger.debug(f'\t\t\t  band {bn} NOT at {len(not_ks)} k-point(s): {not_ks.tolist()}')
 
         ###########################################################################
         # Set up the data representation
@@ -2561,7 +2564,8 @@ class MATERIAL:
                 # If the point was not marked as a correct or mistake signal, It is stored
                 error_directions.append([k, bn])
                 directions.append(scores)
-            self.logger.debug(f'K point: {k} Band: {bn}    New Signal: {signal} Directions: {scores}')
+            if signal <= OTHER:                 # log only actionable signals (NOT/MIS/DEG/OTH); skip ~11k CORRECT lines/iter
+                self.logger.debug(f'K point: {k} Band: {bn}    New Signal: {signal} Directions: {scores}')
 
         ###########################################################################
         # Create a new problem for another solver iteration
@@ -2586,6 +2590,14 @@ class MATERIAL:
         ###########################################################################
         wrong = (self.correct_signalfinal == NOT_SOLVED) | (self.correct_signalfinal == MISTAKE)
         self.bands_final[wrong] = -1
+
+        # Complete energy-isolated near-degenerate groups by a within-group bijection
+        # BEFORE the generic bijection. Inside a degenerate manifold the per-band label
+        # is gauge, so the dp graph can split a Kramers/SOC pair across components and
+        # leave a slot empty even where the dot product is clean (band-7 NOT=38). This
+        # fills those slots from the group's own bands and never touches isolated bands,
+        # so genuine crossings of well-separated bands stay dp-tracked. See the method.
+        self._resolve_degenerate_groups()
 
         # Restore the per-k bijection: resolve any band attributed to more than one
         # slot, reassigning each losing slot to a band missing from that k-point's
@@ -2838,6 +2850,79 @@ class MATERIAL:
             return float(np.mean(diffs))
         return abs(Eb - float(self.eigenvalues[k, c]))
 
+    def _resolve_degenerate_groups(self, ethr: float = None) -> int:
+        '''
+        Complete energy-isolated near-degenerate band groups by a per-k bijection.
+
+        For each k the bands are partitioned by energy gap: adjacent (energy-sorted)
+        bands closer than ``ethr`` form one group. Inside a group of >= 2 bands the
+        individual band label is gauge -- any orthonormal basis of the degenerate
+        subspace is an eigenstate -- so the group's slots (== its band indices) are
+        filled bijectively from the group's own bands. This closes the empty/duplicate
+        slots the dot-product graph leaves when a Kramers/SOC pair is split across
+        connected components (the band-7 NOT=38 / empty slot-7 symptom) WITHOUT
+        touching isolated bands, so genuine crossings of well-separated bands (which
+        the dp tracking follows correctly) are preserved.
+
+        Only broken slots are (re)assigned: a slot already holding a distinct in-group
+        band keeps its dp-chosen value; empty/duplicate/out-of-group slots are filled,
+        preferring identity (slot == band, i.e. energy order). Filled cells are marked
+        FORCED_CONTINUITY in ``correct_signalfinal`` so the band no longer counts as
+        not-solved while the fills stay visible (FOR column) for audit.
+
+        ``ethr`` defaults to ``self.degen_ethr`` (0.005 in eigenvalue units, i.e. 5 meV
+        for eV input -- the same scale degenrotation groups on, and the centre of the
+        ~3-8 meV stability plateau). Returns the number of slots filled.
+        '''
+        if ethr is None:
+            ethr = getattr(self, 'degen_ethr', 0.005)
+        bf  = self.bands_final
+        csf = self.correct_signalfinal
+        nb  = bf.shape[1]
+        filled = 0
+        grown  = 0
+        resolved = {}                                                   # slot -> [k, ...] for the verbose dump
+
+        for k in range(self.nks):
+            e = self.eigenvalues[k]
+            lo = 0
+            for b in range(1, nb + 1):
+                if b < nb and (e[b] - e[b - 1]) < ethr:
+                    continue                                            # still inside the current group
+                hi = b - 1                                              # close group of bands [lo, hi]
+                if hi > lo:                                             # degenerate group (singletons skipped)
+                    if hi - lo + 1 > 2:
+                        grown += 1
+                    band_set = set(range(lo, hi + 1))                   # slots == bands owned by this group
+                    seen, held = set(), set()
+                    for s in range(lo, hi + 1):                         # keep already-correct in-group slots
+                        v = int(bf[k, s])
+                        if v in band_set and v not in seen:
+                            seen.add(v); held.add(s)
+                    miss = [bd for bd in range(lo, hi + 1) if bd not in seen]
+                    free = [s for s in range(lo, hi + 1) if s not in held]
+                    if miss:
+                        miss_set = set(miss)
+                        for s in [s for s in free if s in miss_set]:    # identity first (slot == band)
+                            bf[k, s] = s; csf[k, s] = FORCED_CONTINUITY
+                            miss_set.discard(s); free.remove(s); filled += 1
+                            resolved.setdefault(s, []).append(k)
+                        for s, bd in zip(free, sorted(miss_set)):       # pair any leftovers in energy order
+                            bf[k, s] = bd; csf[k, s] = FORCED_CONTINUITY; filled += 1
+                            resolved.setdefault(bd, []).append(k)
+                lo = b                                                  # next group starts here
+
+        if filled:
+            self.logger.info(f'{BODY_INDENT}Degenerate-group completion: filled {filled} slot(s) '
+                             f'in {grown} grown block(s) by within-group bijection '
+                             f'(gap < {ethr * 1000:.1f} meV)')
+            if self.logger.level <= logging.DEBUG:
+                for bd in sorted(resolved):
+                    ks = resolved[bd]
+                    self.logger.debug(f'{BODY_INDENT}  slot {bd}: completed at {len(ks)} k-point(s) '
+                                      f'by degenerate-group bijection: {ks}')
+        return filled
+
     def _enforce_bijection(self) -> int:
         '''
         Make ``self.bands_final`` a per-k permutation, repairing both bijection defects:
@@ -2890,7 +2975,7 @@ class MATERIAL:
                 for _pen, c, b in pairs:
                     if c in used_c or b in used_b:
                         continue
-                    if dbg:
+                    if dbg and sig[k, c] >= POTENTIAL_CORRECT:    # only audit dups that evict a (near-)solved slot; routine churn is in the INFO summary
                         self.logger.debug(f'{BODY_INDENT}  [bijection] dup  k={k} slot={c}: '
                                           f'band {int(bf[k, c])}(duplicate)->{b}  penalty={_pen:.4f}')
                     bf[k, c] = b
