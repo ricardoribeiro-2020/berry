@@ -1,7 +1,8 @@
-from multiprocessing import Pool, Array
+from multiprocessing import Pool
 from typing import Tuple
 
 import os
+import json
 from time import time
 import ctypes
 import logging
@@ -128,10 +129,53 @@ def _fmt_hms(seconds: float) -> str:
     return f"{h:02d}:{minutes:02d}:{sec:02d}"
 
 
-def _dot_star(args: Tuple) -> None:
+def _dot_star(args: Tuple) -> int:
     """Unpack the argument tuple for use with ``Pool.imap_unordered`` (which,
-    unlike ``starmap``, passes a single argument)."""
-    dot(*args)
+    unlike ``starmap``, passes a single argument) and return the task index so
+    the parent can mark it done in the checkpoint mask."""
+    idx, dot_args = args
+    dot(*dot_args)
+    return idx
+
+
+CKPT_INTERVAL = 600  # seconds between checkpoint flushes
+PROGRESS_INTERVAL = 30  # seconds between progress/ETA log lines
+
+
+def _flush_logfile() -> None:
+    """Force buffered log records out to the .log file so the progress/ETA lines
+    show up live during the run rather than only at the end."""
+    for h in logging.getLogger().handlers:
+        try:
+            h.flush()
+        except Exception:
+            pass
+
+
+def _ckpt_paths() -> Tuple[str, str, str]:
+    """Paths of the three checkpoint files, alongside the final dpc.npy."""
+    base = m.data_dir
+    return (os.path.join(base, "dpc.ckpt.npy"),
+            os.path.join(base, "dpc.ckpt.mask.npy"),
+            os.path.join(base, "dpc.ckpt.meta.json"))
+
+
+def _save_mask(path: str, done: np.ndarray) -> None:
+    """Atomically persist the per-task done-mask (write to .tmp, then replace)."""
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as fh:
+        np.save(fh, done)
+    os.replace(tmp, path)
+
+
+def _cleanup_ckpt(*paths: str) -> None:
+    """Remove checkpoint files (and any leftover .tmp) ignoring missing ones."""
+    for p in paths:
+        for q in (p, p + ".tmp"):
+            try:
+                os.remove(q)
+            except OSError:
+                pass
 
 def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logging.INFO, compress: bool = False, flush: bool = False, band_block: int = 0):
     global dpc, logger, d_phase, BANDS, COMPS, BAND_BLOCK
@@ -171,18 +215,7 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
     logger.info(f"\tDirectory where the wfc are: {m.wfcdirectory}\n")
 
     ###########################################################################
-    # 3. CREATE ALL THE ARRAYS
-    ###########################################################################
-    logger.info(f"\tAllocating shared dpc array: shape {DPC_SHAPE} "
-                f"(~{2 * DPC_SIZE * ctypes.sizeof(ctypes.c_double) / 1e9:.2f} GB)")
-    dpc_base = Array(ctypes.c_double, 2 * DPC_SIZE, lock=False)
-    dpc = np.frombuffer(dpc_base, dtype=np.complex128).reshape(DPC_SHAPE)
-    dp = np.zeros(DPC_SHAPE, dtype=np.float64)
-    logger.info(f"\tLoading phase array from {os.path.join(m.data_dir, 'phase.npy')}")
-    d_phase = np.load(os.path.join(m.workdir, os.path.join(m.data_dir, "phase.npy")))
-
-    ###########################################################################
-    # 4. CALCULATE
+    # 3. BUILD THE TASK LIST
     ###########################################################################
     logger.info("\n\tBuilding the list of neighbouring k-point pairs to process...")
     tasks = [
@@ -192,8 +225,70 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
         if (args := get_point_neighbors(nk, j)) is not None
     ]
     n_tasks = len(tasks)
-    # Hand each worker a contiguous batch of tasks to cut per-task IPC overhead.
-    chunksize = max(1, n_tasks // (npr * 4))
+
+    ###########################################################################
+    # 4. CHECKPOINT / RESUME SETUP
+    ###########################################################################
+    # The full dpc result lives in a memmapped .npy, so every worker write is
+    # persisted to disk as it happens.  A tiny per-task done-mask records which
+    # pairs are finished, and a meta file ties the checkpoint to this exact run
+    # so a stale checkpoint from a different calculation is never reused.
+    ckpt_path, mask_path, meta_path = _ckpt_paths()
+    meta = {
+        "refname": str(m.refname),
+        "shape": list(DPC_SHAPE),
+        "noncolin": bool(m.noncolin),
+        "n_tasks": n_tasks,
+    }
+    logger.info(f"\tResult array dpc: shape {DPC_SHAPE} "
+                f"(~{2 * DPC_SIZE * ctypes.sizeof(ctypes.c_double) / 1e9:.2f} GB), "
+                f"memmapped to {ckpt_path}")
+
+    resume = all(os.path.exists(p) for p in (ckpt_path, mask_path, meta_path))
+    if resume:
+        try:
+            with open(meta_path) as fh:
+                saved_meta = json.load(fh)
+        except (OSError, ValueError):
+            saved_meta = None
+        if saved_meta != meta:
+            resume = False
+            logger.info("\tFound a checkpoint from a different run; ignoring it and starting fresh.")
+
+    if resume:
+        dpc = np.lib.format.open_memmap(ckpt_path, mode="r+")
+        done = np.load(mask_path)
+        if dpc.shape != DPC_SHAPE or done.shape[0] != n_tasks:
+            resume = False           # header/mask inconsistent: rebuild from scratch
+
+    if resume:
+        n_already = int(done.sum())
+        logger.info(f"\tResuming from checkpoint: {n_already}/{n_tasks} pairs already done, "
+                    f"{n_tasks - n_already} to compute.")
+    else:
+        dpc = np.lib.format.open_memmap(ckpt_path, mode="w+",
+                                        dtype=np.complex128, shape=DPC_SHAPE)
+        done = np.zeros(n_tasks, dtype=bool)
+        with open(meta_path, "w") as fh:
+            json.dump(meta, fh)
+        _save_mask(mask_path, done)
+        n_already = 0
+
+    logger.info(f"\tLoading phase array from {os.path.join(m.data_dir, 'phase.npy')}")
+    d_phase = np.load(os.path.join(m.workdir, os.path.join(m.data_dir, "phase.npy")))
+
+    ###########################################################################
+    # 5. CALCULATE
+    ###########################################################################
+    # Only the pairs not already in the checkpoint are dispatched; each carries
+    # its index in ``tasks`` so the worker can report it back for the done-mask.
+    indexed_tasks = [(i, t) for i, t in enumerate(tasks) if not done[i]]
+    n_remaining = len(indexed_tasks)
+    # Keep the chunks small (aim for a few hundred per run) so imap_unordered
+    # yields results steadily and the progress/ETA lines refresh throughout the
+    # run instead of only at chunk boundaries.  The per-task payload is a few
+    # ints and the per-pair work is BLAS-heavy, so the extra IPC is negligible.
+    chunksize = max(1, n_remaining // 500)
     # Share the cores between the npr processes: each gets cpu_count // npr BLAS
     # threads so process-level and BLAS-level parallelism don't oversubscribe.
     blas_threads = max(1, os.cpu_count() // npr)
@@ -202,46 +297,76 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
                     "default and may oversubscribe the cores (pip install threadpoolctl).")
     else:
         logger.info(f"\tBLAS threads per worker: {blas_threads}")
-    logger.info(f"\t{n_tasks} k-point pairs to process, "
+    logger.info(f"\t{n_remaining} k-point pairs to process this run, "
                 f"{len(BANDS)}x{len(BANDS)} band pairs each, "
                 f"chunksize {chunksize}.\n")
 
-    # Report progress roughly every 5% of the workload (at least every pair).
-    report_every = max(1, n_tasks // 20)
     width = len(str(n_tasks))
     t0 = time()
-    with Pool(npr, initializer=_init_worker, initargs=(blas_threads,)) as pool:
-        # imap_unordered yields as each pair finishes, so we can track how many
-        # are done and estimate the time remaining.
-        for done, _ in enumerate(pool.imap_unordered(_dot_star, tasks, chunksize=chunksize), 1):
-            if done % report_every == 0 or done == n_tasks:
-                elapsed = time() - t0
-                rate = done / elapsed if elapsed > 0 else 0.0
-                eta = (n_tasks - done) / rate if rate > 0 else 0.0
-                logger.info(f"\t  {done:>{width}}/{n_tasks} pairs "
-                            f"({100.0 * done / n_tasks:5.1f}%)  "
-                            f"elapsed {_fmt_hms(elapsed)}  "
-                            f"ETA {_fmt_hms(eta)}  "
-                            f"({rate:.1f} pairs/s)")
-    logger.info(f"\n\tAll {n_tasks} k-point pairs computed in {_fmt_hms(time() - t0)}.")
+    last_ckpt = t0
+    last_log = t0
+    if n_remaining:
+        with Pool(npr, initializer=_init_worker, initargs=(blas_threads,)) as pool:
+            # imap_unordered yields each task's index as it finishes, so we can
+            # mark the done-mask, checkpoint periodically and estimate the ETA.
+            processed = 0
+            for idx in pool.imap_unordered(_dot_star, indexed_tasks, chunksize=chunksize):
+                done[idx] = True
+                processed += 1
+                done_count = n_already + processed
+                now = time()
+                if now - last_ckpt >= CKPT_INTERVAL:
+                    dpc.flush()
+                    _save_mask(mask_path, done)
+                    last_ckpt = now
+                # Log a progress/ETA line at a steady interval (and on the last
+                # pair), flushing it straight to the .log file.
+                if now - last_log >= PROGRESS_INTERVAL or done_count == n_tasks:
+                    elapsed = now - t0
+                    rate = processed / elapsed if elapsed > 0 else 0.0
+                    eta = (n_remaining - processed) / rate if rate > 0 else 0.0
+                    logger.info(f"\t  {done_count:>{width}}/{n_tasks} pairs "
+                                f"({100.0 * done_count / n_tasks:5.1f}%)  "
+                                f"elapsed {_fmt_hms(elapsed)}  "
+                                f"ETA {_fmt_hms(eta)}  "
+                                f"({rate:.1f} pairs/s)")
+                    _flush_logfile()
+                    last_log = now
+        dpc.flush()
+        _save_mask(mask_path, done)
+        logger.info(f"\n\tAll {n_tasks} k-point pairs computed in {_fmt_hms(time() - t0)}.")
+        _flush_logfile()
+    else:
+        logger.info("\tAll k-point pairs were already computed in a previous run; "
+                    "reusing the checkpoint.")
 
+    ###########################################################################
+    # 6. NORMALIZE AND SAVE OUTPUT
+    ###########################################################################
+    # Normalize on a RAM copy so the on-disk checkpoint stays the raw (un-normalized)
+    # dot products: if a crash happens here, a resume reloads raw data and
+    # normalizes exactly once.
     logger.info("\tNormalizing dot products and computing modulus...")
-    dpc /= m.nr         # To normalize the dot product
-    dp = np.abs(dpc)    # Calculate the modulus of the dot product
+    dpc_final = np.array(dpc, dtype=np.complex128)
+    dpc_final /= m.nr          # To normalize the dot product
+    dp = np.abs(dpc_final)     # Calculate the modulus of the dot product
 
-    ###########################################################################
-    # 5. SAVE OUTPUT
-    ###########################################################################
     if compress:
-        np.savez_compressed(os.path.join(m.data_dir, "dpc.npz"), dpc)
+        np.savez_compressed(os.path.join(m.data_dir, "dpc.npz"), dpc_final)
         np.savez_compressed(os.path.join(m.data_dir, "dp.npz"), dp)
         logger.info(f"\n\tDot products saved to file dpc.npz")
         logger.info(f"\tDot products modulus saved to file dp.npz")
     else:
-        np.save(os.path.join(m.data_dir, "dpc.npy"), dpc)
+        np.save(os.path.join(m.data_dir, "dpc.npy"), dpc_final)
         np.save(os.path.join(m.data_dir, "dp.npy"), dp)
         logger.info(f"\n\tDot products saved to file dpc.npy")
         logger.info(f"\tDot products modulus saved to file dp.npy")
+
+    ###########################################################################
+    # 7. REMOVE CHECKPOINT
+    ###########################################################################
+    del dpc                    # close the memmap before deleting its backing file
+    _cleanup_ckpt(ckpt_path, mask_path, meta_path)
 
     ###########################################################################
     # Finished
