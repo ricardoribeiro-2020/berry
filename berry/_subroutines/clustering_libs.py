@@ -253,7 +253,9 @@ COLUMN_LEGEND = {
     'Failed': 'NOT + MIS points (energy break / low overlap)',
     'Degen':  'degenerate points (need basis rotation)',
     'Forced': 'force-filled points (not a genuine solve)',
-    'Status': 'OK / OK* (needs basis rotation) / CHECK (low score) / FORCED / FAIL',
+    'Benign': 'force-fills inside a near-degenerate doublet (gauge-level relabeling; do not affect usability)',
+    'Susp':   'force-fills across a real energy gap (suspect; downgrade the band)',
+    'Status': 'CLEAN (pristine, nothing flagged) / USABLE (no genuine errors; may carry benign force-fills or a sub-pristine score) / ROTATE (needs basis rotation) / CHECK (a suspect force-fill across a real gap -> verify) / FAIL (genuine energy break or very low score)',
 }
 
 # All report tables and their surrounding content use these two indent levels:
@@ -3060,33 +3062,73 @@ class MATERIAL:
         ###########################################################################
         # Compact per-band table: only the actionable counts + a plain status.
         ###########################################################################
-        TOL_USABLE = 0.95           # Minimum score to consider a band as usable.
+        TOL_CLEAN = 0.97            # at/above this (and nothing flagged) -> CLEAN; below -> USABLE
+        TOL_FAIL = 0.90             # below this the band is not trustworthy (score-based FAIL)
+        DEGEN_GAP = 0.010           # eV; a force-fill whose slot sits within this
+                                    # gap of an adjacent band is a degenerate-doublet
+                                    # relabeling (gauge), not a genuine mis-assignment
+        FORCED_FAIL_FRAC = 0.05     # > this fraction of suspect force-fills -> FAIL
         bands_attention = []
 
-        header_line = ' Band | Failed | Degen | Forced | Score | Status'
+        def _forced_suspect(i):
+            # Count force-filled points in slot i that sit ACROSS a real energy gap
+            # (i.e. not inside a near-degenerate doublet). Benign in-doublet
+            # force-fills are gauge-level and do not count against the band.
+            ncols = self.bands_final.shape[1]
+            if i >= ncols:
+                return 0
+            ks = np.where(self.correct_signalfinal[:, i] == FORCED_CONTINUITY)[0]
+            suspect = 0
+            for k in ks:
+                b = self.bands_final[k, i]
+                if b < 0:
+                    suspect += 1
+                    continue
+                e = self.eigenvalues[k, b]
+                gap = np.inf
+                for j in (i - 1, i + 1):
+                    if 0 <= j < ncols:
+                        bj = self.bands_final[k, j]
+                        if bj >= 0:
+                            gap = min(gap, abs(e - self.eigenvalues[k, bj]))
+                if gap >= DEGEN_GAP:
+                    suspect += 1
+            return int(suspect)
+
+        header_line = ' Band | Failed | Degen | Benign | Susp | Score | Status'
         table = f'\n{TITLE_INDENT}====== Final Report ======\n'
-        table += _format_legend(['Failed', 'Degen', 'Forced', 'Score', 'Status'])
+        table += _format_legend(['Failed', 'Degen', 'Benign', 'Susp', 'Score', 'Status'])
         table += f'\n{BODY_INDENT}{header_line}'
         table += f'\n{BODY_INDENT}' + '-' * len(header_line)
+        band_grade = []
         for i in range(self.nbnd):
             failed = int(report_a2[i, NOT_SOLVED] + report_a2[i, MISTAKE])
             degen = int(report_a2[i, DEGENERATE])
             forced = int(report_a2[i, FORCED_CONTINUITY])
             score = self.final_score[i]
-            if failed > 0:
-                status = 'FAIL'                 # has unsolved / mistaken points
-            elif forced > 0:
-                status = 'FORCED'               # force-filled, not a genuine solve
-            elif score <= TOL_USABLE:
-                status = 'CHECK'                # attributed but low confidence -> verify
+            suspect = _forced_suspect(i) if forced else 0
+            benign = forced - suspect
+            # Status is driven by what is actually flagged in the signal columns.
+            # A band fails only on a genuine energy break (NOT/MIS), many
+            # force-fills across a real gap, or a truly low score (< TOL_FAIL).
+            # A suspect force-fill (across a real gap) asks for verification.
+            # Everything else is usable: a benign force-fill is gauge-level, and a
+            # merely sub-pristine score is conveyed by USABLE vs CLEAN, not CHECK.
+            if failed > 0 or score < TOL_FAIL or suspect > FORCED_FAIL_FRAC * self.nks:
+                status = 'FAIL'
+            elif suspect > 0:
+                status = 'CHECK'                # force-fill across a real gap -> verify
             elif degen > 0:
-                status = 'OK*'                  # usable, but needs basis rotation
+                status = 'ROTATE'               # usable after basis rotation
+            elif forced == 0 and score >= TOL_CLEAN:
+                status = 'CLEAN'                # pristine, nothing flagged
             else:
-                status = 'OK'
+                status = 'USABLE'               # nothing flagged (benign fills and/or score < clean)
+            band_grade.append(status)
             table += (f'\n{BODY_INDENT} {i+self.min_band:<4d} | {failed:^6d} | {degen:^5d} | '
-                      f'{forced:^6d} | {score:>5.2f} | {status}')
-            if status in ('FAIL', 'FORCED'):
-                bands_attention.append((i, failed, degen, forced, status))
+                      f'{benign:^6d} | {suspect:^4d} | {score:>5.2f} | {status}')
+            if status in ('FAIL', 'CHECK'):
+                bands_attention.append((i, failed, degen, benign, suspect, status))
         table += '\n'
         self.final_report += table
 
@@ -3095,13 +3137,15 @@ class MATERIAL:
         ###########################################################################
         if bands_attention:
             self.final_report += f'\n{BODY_INDENT}Bands needing attention:'
-            for i, failed, degen, forced, status in bands_attention:
-                if status == 'FAIL':
-                    self.final_report += (f'\n{BODY_INDENT}  Band {i+self.min_band:>3d} : {failed} failed '
-                                          f'(energy discontinuity / low overlap) - NOT usable')
-                else:  # FORCED
-                    self.final_report += (f'\n{BODY_INDENT}  Band {i+self.min_band:>3d} : {forced} forced '
-                                          f'(no genuine continuation found) - usable with caution')
+            for i, failed, degen, benign, suspect, status in bands_attention:
+                if failed > 0:
+                    reason = f'{failed} failed (energy discontinuity / low overlap)'
+                elif suspect > 0:
+                    reason = f'{suspect} of {benign+suspect} force-fill(s) across a real energy gap'
+                else:
+                    reason = f'low score ({self.final_score[i]:.2f})'
+                verdict = 'NOT usable' if status == 'FAIL' else 'verify before use'
+                self.final_report += (f'\n{BODY_INDENT}  Band {i+self.min_band:>3d} : {reason} - {verdict}')
             self.final_report += '\n'
 
         p_report, problems = self.solved_problems_info
@@ -3163,40 +3207,52 @@ class MATERIAL:
                 for k, bn1, bn2 in self.degenerate_final[i_sort]:
                     self.final_report += f'\n\t\t  * K-point: {k} \tBands: {bn1+self.min_band}, {bn2+self.min_band}'
 
-        n_recomended = 0
+        # Bands grouped by usability. A force-fill inside a near-degenerate
+        # doublet (USABLE/ROTATE) is a gauge-level relabeling: it does NOT make a
+        # band unusable, nor does it hide the bands above it. Only a genuine
+        # energy break (FAIL) breaks the contiguous run from the bottom.
+        usable = [i for i in range(self.nbnd) if band_grade[i] in ('CLEAN', 'USABLE', 'ROTATE')]
+        check  = [i for i in range(self.nbnd) if band_grade[i] == 'CHECK']
+        fail   = [i for i in range(self.nbnd) if band_grade[i] == 'FAIL']
+
+        def _fmt_ranges(bands):
+            if not bands:
+                return '(none)'
+            bands = sorted(bands)
+            out, start, prev = [], bands[0], bands[0]
+            for b in bands[1:]:
+                if b == prev + 1:
+                    prev = b
+                    continue
+                out.append(f'{start+self.min_band}-{prev+self.min_band}' if prev > start
+                           else f'{start+self.min_band}')
+                start = prev = b
+            out.append(f'{start+self.min_band}-{prev+self.min_band}' if prev > start
+                       else f'{start+self.min_band}')
+            return ', '.join(out)
+
+        self.completed_bands = np.array(usable, dtype=int)
+
+        # Contiguous run of usable bands from the bottom; broken only by a FAIL.
         max_solved = 0
-        
-        for i, _ in enumerate(self.final_score):
-            if np.sum(report_a2[i, [NOT_SOLVED, FORCED_CONTINUITY]]) > 0:
+        for i in range(self.nbnd):
+            if band_grade[i] == 'FAIL':
                 break
             max_solved += 1
-
         self.max_solved = max_solved
 
-        n_max = max_solved
-        for i, s in enumerate(self.final_score):
-            if s <= TOL_USABLE or i > max_solved or np.sum(report_a2[i, [NOT_SOLVED, MISTAKE, FORCED_CONTINUITY]]) > 0:
-                break
-            n_recomended += 1
-
-        self.completed_bands = []
-        for i, s in enumerate(self.final_score):
-            if s <= TOL_USABLE or np.sum(report_a2[i, [NOT_SOLVED, MISTAKE, FORCED_CONTINUITY]]) > 0:
-                continue
-            self.completed_bands.append(i)
-        self.completed_bands = np.array(self.completed_bands)
-
-        n_recomended = 1 if n_recomended == 0 else n_recomended
-      
-        self.final_report += f'\n\n\n\tThe program has clustered all points for {self.max_solved} bands.'
-        self.final_report += f'\n\n\tYou can use bands from {self.min_band} up to {n_recomended + self.min_band - 1}. \n\tThese bands are completed and do not have potential mistakes.'
-    
-        if self.max_solved > n_recomended:
-            self.final_report += f'\n\tNote that there may be more bands usable but a human verification is required.'
-            n_max = n_recomended
-
-        self.final_report += f'\n\n\tThe program has clustered without errors {len(self.completed_bands)} bands. \n\tThe information is stored in the `completed_bands.npy` file.'
-        self.final_report += f'\n\t\t  Band: ' + ', '.join([str(bn+self.min_band) for bn in self.completed_bands])
+        self.final_report += f'\n\n\n\tUsable bands: {_fmt_ranges(usable)}'
+        self.final_report += (f'\n\t\t  {len(usable)} band(s) free of genuine errors '
+                              f'(saved in `completed_bands.npy`).')
+        self.final_report += (f'\n\t\t  Force-fills inside degenerate doublets are gauge-level relabelings; '
+                              f'they are\n\t\t  reported in the table but do not affect usability.')
+        if check:
+            self.final_report += f'\n\n\tNeeds verification (CHECK): {_fmt_ranges(check)}'
+            self.final_report += (f'\n\t\t  Low score or a force-fill across a real energy gap; '
+                                  f'usable only after a manual check.')
+        if fail:
+            self.final_report += f'\n\n\tNot usable (FAIL): {_fmt_ranges(fail)}'
+            self.final_report += f'\n\t\t  Genuine energy discontinuity / low overlap.'
 
         n_repaired = int(np.sum(self.repaired_mask)) if getattr(self, 'repaired_mask', None) is not None else 0
         if n_repaired > 0:
@@ -3208,17 +3264,27 @@ class MATERIAL:
         if n_forced > 0:
             self.final_report += f'\n\n\t{n_forced} point(s) were force-filled (FOR) by the completeness pass to guarantee a'
             self.final_report += f'\n\tband attribution everywhere. These are not genuine solves: they were assigned the'
-            self.final_report += f'\n\tclosest available band in energy and are excluded from the usable/completed bands.'
+            self.final_report += f'\n\tclosest available band in energy. A force-fill that lands inside a near-degenerate'
+            self.final_report += f'\n\tdoublet is a gauge-level relabeling and keeps the band usable; only force-fills'
+            self.final_report += f'\n\tacross a real energy gap (counted as "suspect") downgrade a band to CHECK/FAIL.'
 
         if len(degenerates) > 0:
-            self.final_report += f'\n\n\tTo use the program basis rotation, you must run the program for the first {n_max} bands.'
-            self.final_report += f'\n\n\t\t `$ berry basis {n_max - 1}`'
+            # contiguous run of usable bands from the bottom (the set that can be
+            # safely fed to basis rotation)
+            n_contig = 0
+            for i in range(self.nbnd):
+                if band_grade[i] not in ('CLEAN', 'USABLE', 'ROTATE'):
+                    break
+                n_contig += 1
+            n_contig = max(n_contig, 1)
+            self.final_report += f'\n\n\tTo use the program basis rotation, you must run the program for the first {n_contig} bands.'
+            self.final_report += f'\n\n\t\t `$ berry basis {n_contig - 1}`'
 
         self.final_report += '\n\n*************************************************************************************************\n'
 
         return self.final_report
 
-    def solve(self, step: float=0.1, alpha : float=0.5, min_alpha: float=0, alpha_patience: int=3) -> None:
+    def solve(self, step: float=0.5, alpha : float=1.0, min_alpha: float=0, alpha_patience: int=3) -> None:
         '''
         This method is the main algorithm which iterates between solutions
         trying to find the best result for the material.
@@ -3226,7 +3292,7 @@ class MATERIAL:
         Parameters
             step : float
                 It is the iteration value which is used to relax the alpha value.
-                (default 0.1)
+                (default 0.5, i.e. the alpha sweep is 1.0 -> 0.5 -> 0.0)
             min_alpha : float
                 The minimum alpha.
                 (default 0)
@@ -3241,7 +3307,7 @@ class MATERIAL:
         if step <= 0:
             raise ValueError(f"solve() requires step > 0 to converge (the alpha sweep would never advance); got step={step}.")
         self.step = step
-        self.alpha = alpha # The initial alpha is 0.5. 0.5*<i|j> + 0.5*f(E)
+        self.alpha = alpha # The initial alpha is 1.0: alpha*<i|j> + (1-alpha)*f(E)
         self.init_alpha = alpha
         COUNT = 0     # Counter iteration
         bands_final_flag = True

@@ -15,7 +15,7 @@ except:
     pass
 
 
-def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : float = 0.5, step : float = 0.1, npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False):
+def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : float = 1.0, step : float = 0.5, npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False):
     logger = log(logger_name, "CLUSTER", level=logger_level, flush=flush)
 
     logger.header()

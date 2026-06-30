@@ -360,14 +360,14 @@ berry [package options] script parameter [script options]
                                          help="Tolerance used for graph construction (default: 0.80).")
             cluster0_parser.add_argument("-step",
                                          type=float,
-                                         default=0.1,
-                                         metavar="[0.0-1.0]",
-                                         help="Step size for alpha adjustment (default: 0.1).")
-            cluster0_parser.add_argument("-alpha",
-                                         type=float,
                                          default=0.5,
                                          metavar="[0.0-1.0]",
-                                         help="Initial alpha value (default: 0.5).")
+                                         help="Step size for alpha adjustment (default: 0.5, i.e. the alpha sweep is 1.0 -> 0.5 -> 0.0).")
+            cluster0_parser.add_argument("-alpha",
+                                         type=float,
+                                         default=1.0,
+                                         metavar="[0.0-1.0]",
+                                         help="Initial alpha value (default: 1.0).")
             cluster0_parser.add_argument("-flush",
                                          action="store_true",
                                          help="Flushes output into stdout.")
