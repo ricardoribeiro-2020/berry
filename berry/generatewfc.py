@@ -119,7 +119,21 @@ class WfcGenerator:
             self.logger.info("\n\tWill run for all k-points and bands")
             self.logger.info(f"\tThere are {m.nks} k-points and {m.number_of_bands} bands.\n")
 
-            for nk in self.nk_points:
+            # Restart support: k-points whose output files are already on disk are
+            # skipped, so an interrupted run can be resumed without losing work.
+            # The highest already-present k-point is re-validated (and redone on
+            # failure) because it is the only one that could have been interrupted
+            # mid-write, leaving a truncated .wfc file.
+            kpts = list(self.nk_points)
+            done = [nk for nk in kpts if self._kpoint_done(nk)]
+            last_done = done[-1] if done else None
+            if done:
+                self.logger.info(f"\tRestart: {len(done)} of {len(kpts)} k-points already generated, will skip them.\n")
+
+            for nk in kpts:
+                if self._kpoint_done(nk, validate=(nk == last_done)):
+                    self.logger.info(f"\tSkipping k-point {nk} (already generated)")
+                    continue
                 self.logger.info(f"\tCalculating wfc for k-point {nk}")
                 self._wfck2r(nk, m.initial_band, m.final_band, m.number_of_bands)
         else:                       # Just for debugging
@@ -236,6 +250,35 @@ class WfcGenerator:
             cut = None
         return cut
 
+
+    def _expected_files(self, nk_point: int):
+        # The .wfc files a finished k-point must have on disk, matching the naming
+        # used when writing in _wfck2r (noncolin -> two spinor parts per band).
+        bands = range(m.number_of_bands)
+        if m.noncolin:
+            return [os.path.join(m.wfcdirectory, f"k0{nk_point}b0{b + m.initial_band}-{s}.wfc")
+                    for b in bands for s in (0, 1)]
+        return [os.path.join(m.wfcdirectory, f"k0{nk_point}b0{b + m.initial_band}.wfc")
+                for b in bands]
+
+    def _kpoint_done(self, nk_point: int, validate: bool = False):
+        # A k-point counts as done only if every expected file exists and is
+        # non-empty. With validate=True the files are also loaded to catch a
+        # truncated write from an interrupted run.
+        files = self._expected_files(nk_point)
+        if not all(os.path.exists(f) and os.path.getsize(f) > 0 for f in files):
+            return False
+        if validate:
+            for f in files:
+                try:
+                    if self.compress:
+                        with np.load(f) as data:
+                            data[data.files[0]]
+                    else:
+                        np.load(f, mmap_mode="r")
+                except Exception:
+                    return False
+        return True
 
     def _wfck2r(self, nk_point: int, initial_band: int, final_band: int, number_of_bands: int):
         # Set the command to run
