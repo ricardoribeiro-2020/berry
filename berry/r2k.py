@@ -22,6 +22,17 @@ def read_wfc_files(banda: int, npr: int) -> None:
     global read_wfc_kp
 
     def read_wfc_kp(kp):
+        # NOT_SOLVED sentinel: cluster0 left this (k-point, band) slot unattributed (-1),
+        # so there is no raw QE band to read. Zero-fill the column and skip the point
+        # (warned once per band in the parent below) instead of crashing on a missing file.
+        if bandsfinal[kp, banda] < 0:
+            if m.noncolin:
+                wfct_k0[:, kp] = 0
+                wfct_k1[:, kp] = 0
+            else:
+                wfct_k[:, kp] = 0
+            return
+
         b = bandsfinal[kp, banda] + initial_band
 
         if m.noncolin:
@@ -47,7 +58,15 @@ def read_wfc_files(banda: int, npr: int) -> None:
             else:
                 wfct_k[:, kp] = tmp
 
-    with Pool(min(10, npr)) as pool: #TODO: try to abstract this operation 
+    missing = np.where(bandsfinal[:, banda] < 0)[0]
+    if missing.size:
+        b_true = banda + initial_band
+        preview = missing.tolist() if missing.size <= 50 else missing[:50].tolist() + ["..."]
+        # zero-filled here; interpolate_wfcpos() replaces these before the gradient and warns.
+        logger.debug(f"\tband {b_true}: {missing.size}/{m.nks} k-point(s) unattributed (-1) in bandsfinal; "
+                     f"zero-filling, to be interpolated before gradient: {preview}")
+
+    with Pool(min(10, npr)) as pool: #TODO: try to abstract this operation
         pool.map(read_wfc_kp, range(m.nks))
 
 
@@ -102,6 +121,41 @@ def calculate_wfcgra(npr: int) -> np.ndarray:
         pool.map(calculate_wfcgra_kp, range(m.nr))
 
 
+def interpolate_wfcpos(banda: int) -> None:
+    """Replace wfcpos at unattributed (-1) k-points with the average of their valid in-BZ
+    neighbours, BEFORE the k-space gradient is taken.
+
+    cluster0 leaves bandsfinal == -1 where it could not attribute a band, and read_wfc_files
+    zero-fills those k-points (there is no raw .wfc to read). Interpolating here -- upstream of
+    calculate_wfcgra -- keeps the zero-fill discontinuity out of the gradient stencil, so
+    neither the bad k-point nor its neighbours get a corrupted wfcgra. Warns once per band; a
+    bad k-point with no attributed neighbour is left zero (reported in the warning)."""
+    bad_kps = np.where(bandsfinal[:, banda] < 0)[0]
+    if bad_kps.size == 0:
+        return
+
+    bad_set = {int(k) for k in bad_kps}
+    targets = (wfcpos0, wfcpos1) if m.noncolin else (wfcpos,)  # last m.dimensions axes = k-mesh
+    n_interp = n_orphan = 0
+    for kp in bad_kps:
+        ij = tuple(int(x) for x in d.nktoijl[kp][:m.dimensions])
+        neigh = [tuple(int(x) for x in d.nktoijl[nb][:m.dimensions])
+                 for nb in d.neighbors[kp] if nb >= 0 and int(nb) not in bad_set]
+        if not neigh:
+            n_orphan += 1
+            continue
+        for arr in targets:
+            arr[(Ellipsis,) + ij] = np.mean([arr[(Ellipsis,) + nij] for nij in neigh], axis=0)
+        n_interp += 1
+
+    b_true = banda + initial_band
+    msg = (f"\tband {b_true}: {bad_kps.size} unattributed (-1) k-point(s); "
+           f"interpolated wfcpos from BZ neighbours before gradient")
+    if n_orphan:
+        msg += f" ({n_orphan} left zero -- no attributed neighbour)"
+    logger.warning(msg)
+
+
 def r_to_k(banda: int, npr: int, compress: bool) -> None:
     b = banda + initial_band # true band
 
@@ -114,6 +168,7 @@ def r_to_k(banda: int, npr: int, compress: bool) -> None:
         start = time()
         calculate_wfcpos(npr)
         logger.info(f"\twfcpos{b} calculated in {time() - start:.2f} seconds")
+        interpolate_wfcpos(banda)  # fix -1 k-points before the gradient is taken
     if b not in bands_gra:
         start = time()
         calculate_wfcgra(npr)

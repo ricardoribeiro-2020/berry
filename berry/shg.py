@@ -31,14 +31,59 @@ def load_berry_connections(conduction_band: int, berry_conn_size: int, berry_con
     return berry_connections
 
 
-def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
+def _interpolate_bad_eigenvalues(eigen_array: np.ndarray, bandsfinal: np.ndarray, logger) -> None:
+    """Fill eigenvalues at unattributed (-1) k-points (left NaN above) with the average of
+    their valid in-BZ neighbours in the same band, and warn. Without this a raw -1 would
+    silently index the last band's energy (numpy negative indexing) and corrupt the SHG
+    denominators.
+
+    Iterative: each pass fills slots that now have at least one non-NaN same-band neighbour,
+    so the fix propagates inward through a clustered bad region. A slot still unreachable when
+    propagation stalls (an entire band island with no attributed anchor) is set to 0."""
+    bad = bandsfinal[:, :number_of_bands] < 0
+    if not bad.any():
+        return
+    n_bad = int(bad.sum())
+    bad_kp, bad_band = np.where(bad)
+    todo = list(zip(bad_kp.tolist(), bad_band.tolist()))
+    n_interp = 0
+    progress = True
+    while todo and progress:
+        progress = False
+        still = []
+        for kp, banda in todo:
+            vals = [eigen_array[tuple(int(x) for x in d.nktoijl[nb][:m.dimensions]) + (banda,)]
+                    for nb in d.neighbors[kp] if nb >= 0]
+            vals = [v for v in vals if not np.isnan(v)]
+            if vals:
+                eigen_array[tuple(int(x) for x in d.nktoijl[kp][:m.dimensions]) + (banda,)] = np.mean(vals)
+                n_interp += 1
+                progress = True
+            else:
+                still.append((kp, banda))
+        todo = still
+    for kp, banda in todo:                       # unreachable slots: no anchor anywhere
+        eigen_array[tuple(int(x) for x in d.nktoijl[kp][:m.dimensions]) + (banda,)] = 0.0
+    msg = (f"\t{n_bad} unattributed (-1) eigenvalue slot(s) over "
+           f"{len(set(bad_kp.tolist()))} k-point(s); interpolated {n_interp} from BZ neighbours")
+    if todo:
+        msg += f", set {len(todo)} to 0 (no resolvable neighbour)"
+    logger.warning(msg)
+
+
+def correct_eigenvalues(bandsfinal: np.ndarray, logger) -> np.ndarray:
     kp = 0
     eigenvalues = d.eigenvalues[:, m.initial_band:] # initial band correction
+    # bandsfinal == -1 marks k-points cluster0 could not attribute; index with NaN here (a raw
+    # -1 would silently read the last band) and interpolate from neighbours afterwards.
+    def energy(kp, banda):
+        bf = bandsfinal[kp, banda]
+        return np.nan if bf < 0 else eigenvalues[kp, bf]
     if m.dimensions == 1:
         eigen_array = np.zeros((m.nkx, number_of_bands))
         for i in range(m.nkx):
             for banda in range(number_of_bands):
-                eigen_array[i, banda] = eigenvalues[kp, bandsfinal[kp, banda]]
+                eigen_array[i, banda] = energy(kp, banda)
             kp += 1
 
     elif m.dimensions == 2:
@@ -46,7 +91,7 @@ def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
         for j in range(m.nky):
             for i in range(m.nkx):
                 for banda in range(number_of_bands):
-                    eigen_array[i, j, banda] = eigenvalues[kp, bandsfinal[kp, banda]]
+                    eigen_array[i, j, banda] = energy(kp, banda)
                 kp += 1
     else:
         eigen_array = np.zeros((m.nkx, m.nky, m.nkz, number_of_bands))
@@ -54,10 +99,10 @@ def correct_eigenvalues(bandsfinal: np.ndarray) -> np.ndarray:
             for j in range(m.nky):
                 for i in range(m.nkx):
                     for banda in range(number_of_bands):
-                        eigen_array[i, j, l, banda] = eigenvalues[kp, bandsfinal[kp, banda]]
+                        eigen_array[i, j, l, banda] = energy(kp, banda)
                     kp += 1
 
-
+    _interpolate_bad_eigenvalues(eigen_array, bandsfinal, logger)
     return eigen_array
 
 
@@ -321,7 +366,7 @@ def run_shg(conduction_band: int, min_band: int = 0, npr: int = 1, energy_max: f
         grad = Gradient(h=[m.step, m.step, m.step], acc=2)           # Defines gradient function in 3D
 
     bandsfinal                  = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
-    eigen_array                 = correct_eigenvalues(bandsfinal)
+    eigen_array                 = correct_eigenvalues(bandsfinal, logger)
     berry_connections           = load_berry_connections(conduction_band, berry_conn_size, berry_conn_shape, initial_band)
     fermi, delta_ea, grad_dea   = get_fermi_delta_ea_grad_ea(grad, eigen_array, conduction_band - initial_band)
 
