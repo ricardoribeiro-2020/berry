@@ -115,8 +115,8 @@ berry [package options] script parameter [script options]
                                                         help="Classifies the eigenstates in bands.",
                                                         description="Classifies the eigenstates in bands.")
             cluster0_parser = main_sub_parser.add_parser("cluster0",
-                                                         help="Classifies the eigenstates in bands (alternative algorithm).",
-                                                         description="Classifies the eigenstates in bands (alternative algorithm).")
+                                                         help="Classifies the eigenstates in bands (alias of 'cluster').",
+                                                         description="Classifies the eigenstates in bands. Alias of 'cluster'; kept for backwards compatibility.")
         if BASIS:
             basis_parser = main_sub_parser.add_parser("basis",
                                                       help="Rotates degenerate wavefunctions flagged by the clustering into a smooth basis.",
@@ -288,98 +288,54 @@ berry [package options] script parameter [script options]
                                     action="store_true", 
                                     help="Increases output verbosity.")
         if CLUSTER:
-            cluster_parser.add_argument("Mb" , 
-                                        type=int, nargs='?',   
-                                        default=-1,   
-                                        metavar=f"Mb (0-{m.nbnd-1})",    
-                                        choices=range(m.nbnd) ,             
+            # 'cluster' and 'cluster0' are the same program (the standalone new
+            # algorithm was removed); both parsers take identical arguments and
+            # dispatch to clustering0_cli. Only the default log-file name differs.
+            for _cl_parser, _cl_name in ((cluster_parser, "cluster"), (cluster0_parser, "cluster0")):
+                _cl_parser.add_argument("Mb",
+                                        type=int, nargs='?',
+                                        default=-1,
+                                        metavar=f"Mb (0-{m.nbnd-1})",
+                                        choices=range(m.nbnd),
                                         help="Maximum band to consider.")
-            cluster_parser.add_argument("-mb", 
-                                        type=int,              
-                                        default=0,    
-                                        metavar=f"[0-{m.nbnd-1}]"      , 
-                                        choices=range(m.nbnd)             , 
-                                        help="Minimum band to consider (default: 0).")
-            cluster_parser.add_argument("-np", 
-                                        type=int,              
-                                        default=1,    
-                                        metavar=f"[1-{os.cpu_count()}]", 
-                                        choices=range(1, os.cpu_count()+1), 
-                                        help="Number of processes to use (default: 1).")
-            cluster_parser.add_argument("-t",  
-                                        type=restricted_float, 
-                                        default=0.99, metavar="[0.0-1.0]",  
-                                        help="Tolerance used for graph construction (default: 0.95).")
-            cluster_parser.add_argument("-iterations",
+                _cl_parser.add_argument("-mb",
                                         type=int,
-                                        default=5,
-                                        metavar="[1-100]",
-                                        choices=range(1, 101),
-                                        help="Maximum number of iterations for the clustering algorithm (default: 5).")
-            cluster_parser.add_argument("-step",
+                                        default=0,
+                                        metavar=f"[0-{m.nbnd-1}]",
+                                        choices=range(m.nbnd),
+                                        help="Minimum band to consider (default: 0).")
+                _cl_parser.add_argument("-np",
+                                        type=int,
+                                        default=1,
+                                        metavar=f"[1-{os.cpu_count()}]",
+                                        choices=range(1, os.cpu_count()+1),
+                                        help="Number of processes to use (default: 1).")
+                _cl_parser.add_argument("-t",
+                                        type=restricted_float,
+                                        default=0.80, metavar="[0.0-1.0]",
+                                        help="Tolerance used for graph construction (default: 0.80).")
+                _cl_parser.add_argument("-step",
                                         type=float,
-                                        default=0.01,
+                                        default=0.5,
                                         metavar="[0.0-1.0]",
-                                        help="Step size for alpha adjustment in the clustering algorithm (default: 0.01). Score is calculated as: score = alpha * dot_product_score  + (1 - alpha) * energy_score, with alpha decreasing by step size in each iteration.")
-            cluster_parser.add_argument("-alpha",
+                                        help="Step size for alpha adjustment (default: 0.5, i.e. the alpha sweep is 1.0 -> 0.5 -> 0.0).")
+                _cl_parser.add_argument("-alpha",
                                         type=float,
                                         default=1.0,
                                         metavar="[0.0-1.0]",
-                                        help="Initial alpha value for the clustering algorithm (default: 1.0). Score is calculated as: score = alpha * dot_product_score  + (1 - alpha) * energy_score.")
-            cluster_parser.add_argument("-flush", 
-                                        action="store_true", 
-                                        help="Flushes output into stdout.")
-            cluster_parser.add_argument("-o", 
-                                        default="cluster", 
-                                        type=str, metavar="file_path", 
-                                        help="Name of output log file. Extension will be .log regardless of user input.")
-            cluster_parser.add_argument("-v",
+                                        help="Initial alpha value (default: 1.0).")
+                _cl_parser.add_argument("-flush",
                                         action="store_true",
-                                        help="Increases output verbosity.")
-            cluster0_parser.add_argument("Mb",
-                                         type=int, nargs='?',
-                                         default=-1,
-                                         metavar=f"Mb (0-{m.nbnd-1})",
-                                         choices=range(m.nbnd),
-                                         help="Maximum band to consider.")
-            cluster0_parser.add_argument("-mb",
-                                         type=int,
-                                         default=0,
-                                         metavar=f"[0-{m.nbnd-1}]",
-                                         choices=range(m.nbnd),
-                                         help="Minimum band to consider (default: 0).")
-            cluster0_parser.add_argument("-np",
-                                         type=int,
-                                         default=1,
-                                         metavar=f"[1-{os.cpu_count()}]",
-                                         choices=range(1, os.cpu_count()+1),
-                                         help="Number of processes to use (default: 1).")
-            cluster0_parser.add_argument("-t",
-                                         type=restricted_float,
-                                         default=0.80, metavar="[0.0-1.0]",
-                                         help="Tolerance used for graph construction (default: 0.80).")
-            cluster0_parser.add_argument("-step",
-                                         type=float,
-                                         default=0.5,
-                                         metavar="[0.0-1.0]",
-                                         help="Step size for alpha adjustment (default: 0.5, i.e. the alpha sweep is 1.0 -> 0.5 -> 0.0).")
-            cluster0_parser.add_argument("-alpha",
-                                         type=float,
-                                         default=1.0,
-                                         metavar="[0.0-1.0]",
-                                         help="Initial alpha value (default: 1.0).")
-            cluster0_parser.add_argument("-flush",
-                                         action="store_true",
-                                         help="Flushes output into stdout.")
-            cluster0_parser.add_argument("-o",
-                                         default="cluster0",
-                                         type=str, metavar="file_path",
-                                         help="Name of output log file. Extension will be .log regardless of user input.")
-            cluster0_parser.add_argument("-v",
-                                         action="store_true",
-                                         help="Increases output verbosity (DEBUG): per-slot provenance "
-                                              "(in-loop vs repaired vs force-filled), every post-loop band "
-                                              "swap, and silent energy discontinuities that pass validation.")
+                                        help="Flushes output into stdout.")
+                _cl_parser.add_argument("-o",
+                                        default=_cl_name,
+                                        type=str, metavar="file_path",
+                                        help="Name of output log file. Extension will be .log regardless of user input.")
+                _cl_parser.add_argument("-v",
+                                        action="store_true",
+                                        help="Increases output verbosity (DEBUG): per-slot provenance "
+                                             "(in-loop vs repaired vs force-filled), every post-loop band "
+                                             "swap, and silent energy discontinuities that pass validation.")
         if BASIS:
             if m.initial_band != "dummy": # for backward compatibility
                 basis_parser.add_argument("Mb" , 
@@ -703,7 +659,7 @@ berry [package options] script parameter [script options]
         "wfcgen": generatewfc_cli,
         "degenrot": degenrotation_cli,
         "dot": dotproduct_cli,
-        "cluster": clustering_cli,
+        "cluster": clustering0_cli,
         "cluster0": clustering0_cli,
         "basis": basisrotation_cli,
         "r2k": r2k_cli,
@@ -847,27 +803,6 @@ def dotproduct_cli(args: argparse.Namespace):
     run_dot(**args_dict)
 
 # clustering
-def clustering_cli(args: argparse.Namespace):
-    from berry.clustering_bands import run_clustering
-    ###########################################################################
-    # 3. PROCESSING ARGS
-    ###########################################################################
-    args_dict = {}
-    args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
-    args_dict["logger_name"] = args.o
-    args_dict["npr"] = args.np
-    args_dict["max_band"] = args.Mb
-    args_dict["min_band"] = args.mb
-    args_dict["tol"] = args.t
-    args_dict["iterations"] = args.iterations
-    args_dict["step"] = args.step
-    args_dict["alpha"] = args.alpha
-    args_dict["flush"] = args.flush
-    args_dict["verbose"] = args.v
-
-    run_clustering(**args_dict)
-
-# clustering (alternative algorithm)
 def clustering0_cli(args: argparse.Namespace):
     from berry.clustering_bands0 import run_clustering
     args_dict = {}
