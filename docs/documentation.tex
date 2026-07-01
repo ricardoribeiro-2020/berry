@@ -1479,7 +1479,7 @@ The options for \texttt{dot} are shown in table \ref{tab:options_dot}
 To find which eigenvalues/eigenfunctions have continuity, one runs script \texttt{cluster}.
 
 \begin{verbatim}
-  berry cluster [script options]
+  berry cluster [Mb] [script options]
 \end{verbatim}
 
 This script uses graph theory and unsupervised machine learning to establish electronic bands
@@ -1488,10 +1488,18 @@ that are analytic in k-space.
 It uses data from files \emph{dp.npy} and \emph{eigenvalues.npy} to establish continuity
 between wavefunctions of neighboring k-points.
 
- It retrieves two files:
+The optional positional parameter \texttt{Mb} is the maximum band to consider; if omitted, all
+bands up to the highest one are used. The minimum band is set with the option \texttt{-mb}.
+
+ It produces the following files:
  \begin{description}
-   \item[\emph{bandsfinal.npy}] stores an array bandsfinal[k,b] = number of band that is continuous to band b.
-   \item[\emph{signalfinal.npy}] signalfinal[k,b] is a measure of the quality of the attribution to a band.
+   \item[\emph{bandsfinal.npy}] stores an array bandsfinal[k,b] = number of the original (DFT) band that is continuous to band b at k-point k.
+   \item[\emph{signalfinal.npy}] signalfinal[k,b] is a measure of the quality of the attribution to a band, on the dot-product scale (see table \ref{tab:signals1}).
+   \item[\emph{correct\_signalfinal.npy}] the same quality measure on the energy-continuity scale (see table \ref{tab:signals2}).
+   \item[\emph{degeneratefinal.npy}] the list of k-points that need a basis rotation.
+   \item[\emph{final\_score.npy}] the mean dot-product score of each band.
+   \item[\emph{completed\_bands.npy}] the bands that were clustered free of genuine errors (usable directly).
+   \item[\emph{final.report}] a human-readable summary, with a per-band status table.
  \end{description}
 
  A detailed explanation of the algorithm is given in the appendix \nameref{cha:cluster}.
@@ -1504,11 +1512,14 @@ between wavefunctions of neighboring k-points.
   \begin{tabular}[]{lr}
   \hline
   \texttt{-h}, \texttt{--help}  & Show a help message and exit \\
+  \texttt{Mb}                   & Maximum band to consider (positional; default: highest band) \\
   \texttt{-mb}                  & Minimum band to consider (default: 0) \\
   \texttt{-np}                  & Number of processes to use (default: 1) \\
-  \texttt{-t [0.0-1.0]}         & Tolerance used for graph construction (default: 0.95) \\
+  \texttt{-t [0.0-1.0]}         & Tolerance used for graph construction (default: 0.80) \\
+  \texttt{-step [0.0-1.0]}      & Step for the alpha sweep (default: 0.5, i.e. 1.0 $\to$ 0.5 $\to$ 0.0) \\
+  \texttt{-alpha [0.0-1.0]}     & Initial alpha value (default: 1.0) \\
   \texttt{-o file\_path}        & Name of output log file\\
-                                & Extension will be ignored \\
+                                & Extension will be .log \\
   \texttt{-flush}               & Flush the ouput to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
@@ -1887,7 +1898,7 @@ The solver's objective is to get closer to the best solution in each iteration b
 
 The bands clustering algorithm uses the wave functions, their dot products, and their corresponding band energy for these calculations.
 
-The output are five files that will be used by other programs, and will be described below.
+The output is a set of files that will be used by other programs (\textit{bandsfinal.npy}, \textit{signalfinal.npy}, \textit{correct\_signalfinal.npy}, \textit{degeneratefinal.npy}, \textit{final\_score.npy} and \textit{completed\_bands.npy}), plus a human-readable \textit{final.report}; they are described below.
 
 In the following sections we will discuss in more detail the purpose of each band clustering algorithm's part and how it works.
 
@@ -2055,7 +2066,7 @@ So, the $\mathcal{S}$ value must satisfy the following properties:
 On the other hand, we use a similarity metric between samples and clusters that only needs their representative points. A cluster has many well-connected points, but only a few are required for comparison with a candidate sample to join the cluster. Only the cluster and sample boundary points may establish relations between them. Then, these are the representative points.
 
 Identifying the representative points is an undersampling technique.
-We use the convolution of the Prewitt operator, $(G_x, G_y)$, with the cluster's k-space projection $A$ to determine their edges.
+We use the convolution of the Sobel operator, $(G_x, G_y)$, with the cluster's k-space projection $A$ to determine their edges.
 The matrix $A$ has the shape of k-space; each matrix's entry, $A_{k_x,k_y}$, is one if the cluster includes a point $\vec{p}(p)$ with that $k$-point and zero otherwise.
 
  This operator is a simple discrete gradient that identifies high-frequency variations. These variations define the cluster's edges.
@@ -2070,14 +2081,14 @@ The matrix $A$ has the shape of k-space; each matrix's entry, $A_{k_x,k_y}$, is 
     \right.
 \end{equation}
 
-The Prewitt operator $G_x$ and $G_y$ is defined as:
+The Sobel operator $G_x$ and $G_y$ is defined as:
 
 \begin{multicols}{2}
     \begin{equation}
         G_x = \left[
             \begin{array}{ccc}
                 -1 & 0 & 1 \\
-                -1 & 0 & 1 \\
+                -2 & 0 & 2 \\
                 -1 & 0 & 1
             \end{array}
             \right]
@@ -2085,9 +2096,9 @@ The Prewitt operator $G_x$ and $G_y$ is defined as:
     \begin{equation}
         G_y = G_x^T=\left[
             \begin{array}{ccc}
-                -1 & -1 & -1 \\
+                -1 & -2 & -1 \\
                 0  & 0  & 0  \\
-                1  & 1  & 1
+                1  & 2  & 1
             \end{array}
             \right]
     \end{equation}
@@ -2116,21 +2127,27 @@ Thus, the similarity score, $s_p^q$, between the cluster's $p\in P$ point and it
 \end{equation}
 
 The value of $\alpha$ is a relaxation parameter in the optimization process.
-Its initial value is $1/2$, and it diminishes on each iteration.
-The $\alpha$'s minimum value is $0$ due to normalization.
-The function $f_p(E_q)$ computes the normalized difference between the best-expected energy $E_{\text{best}}$ with the actual $q$'s energy, $E_q$.
+Its initial value is $1$ (so the first iterations rely on the dot product alone), and it is swept down to its minimum value of $0$ in steps of size \texttt{step} (default $0.5$, giving the sweep $1 \to 0.5 \to 0$).
+The sweep is convergence-paced: $\alpha$ is held at its current value while the solution keeps improving and is only lowered after it stalls for a few consecutive iterations, so lowering $\alpha$ gradually shifts trust from the dot product toward energy continuity.
+
+The function $f_p(E_q)$ scores the energy continuity between the energy $E_\text{best}$ that the cluster's trajectory predicts at $q$'s k-point and the candidate energy $E_q$. It is a smooth, scale-aware match with a gross-jump veto:
 
 \begin{equation}
-    f_p(E_q) = \frac{\text{min}\{\Delta E_\text{best}^{i}\}_i}{\Delta E_\text{best}^q},\hspace{1.5cm} \Delta E_a^b = |E_a-E_b|
-\end{equation}
-\begin{equation}
-    i \in \left\{n N + k: \forall_n\hspace{0.2cm}n\in B\right\}
+    f_p(E_q) = \left\{
+    \begin{array}{cl}
+        0, & \Delta E_\text{best}^q > E_\text{accept} \\[0.2cm]
+        \dfrac{\sigma}{\sigma + \Delta E_\text{best}^q}, & \text{otherwise}
+    \end{array}
+    \right.
+    \hspace{1.0cm} \Delta E_a^b = |E_a-E_b|
 \end{equation}
 
-We consider a smooth variation of bands in bands-energy space. Thus, the energy profile in each band's $\vec{p}$ point can be approximated by a second-order polinomial. This approximation allows us to calculate the best energy value $E_\text{best}$ by extrapolation from the neighboring points that belong to the cluster.
-If there are not enough points to fit the curve, the $p$'s energy is used,  $E_\text{best}=E_p$.
+where $\sigma$ is the local one-step energy dispersion (the $99.9$th percentile of $|E(k+1)-E(k)|$) and $E_\text{accept}\approx 3\sigma$ is a loose gross-jump guard: a candidate on the far side of an energy wall (a genuine inter-band gap) scores $0$ and is never joined.
+This replaces an earlier objective, $\text{min}\{\Delta E_\text{best}^{i}\}_i / \Delta E_\text{best}^q$, which scored how close $E_q$ was to being the \emph{globally nearest} band; that measure was non-directional and became unreliable when the gap collapses below $\sigma$ (spin--orbit / Kramers manifolds), where the nearest band is no longer the continuous one.
 
-Comparing all possible energy values $E_i$ for the corresponding $q$'s $k$-point $k$, the value that minimizes the difference with the best energy is obtained.
+We consider a smooth variation of bands in bands-energy space. Thus, the energy profile in each band's $\vec{p}$ point can be approximated by a second-order polynomial. This approximation allows us to calculate the best energy value $E_\text{best}$ by extrapolation from the neighboring points that belong to the cluster.
+If there are not enough points to fit the curve, the nearest neighbor's energy is used.
+The gross-jump guard $E_\text{accept}$ is deliberately not keyed to the band gap: gating on the gap once shattered the graph, so energy is kept out of the graph edges and used only through $f_p(E_q)$ and the a-posteriori repair described below.
 
 
 
@@ -2177,7 +2194,8 @@ A point is correctly assigned when the mean dot-product $\overline{\left|\braket
         $2$    & Degenerate        &                                            \\
         $3$    & Potential mistake & $0.2 < \overline{\left|\braket{p}{q}\right|} \leq 0.8$  \\
         $4$    & Potential correct & $0.8 < \overline{\left|\braket{p}{q}\right|} \leq 0.9 $ \\
-        $5$    & Correct           & $\overline{\left|\braket{p}{q}\right|} > 0.9$           \\\hline
+        $5$    & Correct           & $\overline{\left|\braket{p}{q}\right|} > 0.9$           \\
+        $6$    & Forced            & force-filled by the completeness pass                   \\\hline
     \end{tabular}
 \end{table}
 
@@ -2197,7 +2215,8 @@ Thus, each point receives a new signal value related to the number of directions
         $1$    & Wrong             & $D=0$        \\
         $2$    & Degenerate        &                                            \\
         $3$    & Other             & $0<D<4$  \\
-        $4$    & Correct           & $D = 4$           \\\hline
+        $4$    & Correct           & $D = 4$           \\
+        $5$    & Forced            & force-filled by the completeness pass  \\\hline
     \end{tabular}
 
 \end{table}
@@ -2219,11 +2238,22 @@ Therefore, the new initial state is ready and compatible with the first step of 
 The next iterations will try to solve the wrong attributions to obtain a better result until it reaches a stationary point or the relaxation criteria ends.
 
 
+\subsection{A-posteriori repair and final classification}
+
+When the iterative solver stops, its best result may still contain points that failed the energy-continuity test or that were left unattributed. Three passes run once, on that best result, and they never touch a point that already validated cleanly:
+
+\begin{enumerate}
+    \item \textbf{Energy-continuity repair.} Only the flagged (wrong / not-solved) points, and points holding a valid but energy-discontinuous band, are freed and jointly reassigned. Each empty slot's expected energy is extrapolated by a quadratic fit built from \emph{trusted} neighbors only, and the freed bands are redistributed to the slots they best match, never reusing a band twice at the same k-point, and only when the reassignment stays within the gross-jump guard $E_\text{accept}$. Repaired points become trusted, so the fix propagates inward, one layer per round.
+    \item \textbf{Degenerate-group completion and bijection.} Inside a near-degenerate group of bands (energies within a few meV) the individual band label is a gauge choice, so the group's slots are completed by a within-group bijection. The full attribution is then made a per-k permutation (each original band used in at most one slot): duplicated bands keep their best copy and the losers move to a missing band by best energy fit.
+    \item \textbf{Force completion.} Any slot still empty is force-filled with the closest available band in energy, using the continuity extrapolation as a reference. These points are marked \emph{Forced} (signal $6$ in table \ref{tab:signals1}, $5$ in table \ref{tab:signals2}); they are not genuine solves and are flagged as such.
+\end{enumerate}
+
+Finally each band is graded in the \textit{final.report} into one of: \texttt{CLEAN} (pristine), \texttt{USABLE} (no genuine errors; may carry a sub-pristine score or benign force-fills inside a degenerate doublet), \texttt{ROTATE} (usable after a basis rotation), \texttt{CHECK} (a force-fill across a real energy gap --- verify), or \texttt{FAIL} (a genuine energy break or a low score). The \texttt{CLEAN}/\texttt{USABLE}/\texttt{ROTATE} bands are the ones saved in \textit{completed\_bands.npy}.
 
 
 \section{Bands Clustering program (BCP)}
 
-The python program \textit{bands\_clustering.py} implements the steps needed to use the algorithm explained previously. This program reads and prepares all the dependencies to perform the bands clustering algorithm in the \textit{bands\_libs.py} program.
+The python program \textit{clustering\_bands0.py} implements the steps needed to use the algorithm explained previously. This program reads and prepares all the dependencies to perform the bands clustering algorithm, which is implemented in the \textit{clustering\_libs.py} module.
 
 The BCP uses the results of the previous berry suit algorithms. The needed results from the previously ran programs are:
 
@@ -2260,10 +2290,12 @@ Also, it is possible to change some of the default behaviour by passing some par
         \hline
         Description & Flag & Default \\
         \hline
-        The maximum band to solve  & Mb & $n_B$\\
+        The maximum band to solve  & Mb & highest band\\
         The minimum band to consider & -mb & $0$\\
         Number of processes to use & -np & $1$\\
-        Dot-product tolerance used for graph construction & -t & $0.95$\\
+        Dot-product tolerance used for graph construction & -t & $0.80$\\
+        Step for the alpha sweep & -step & $0.5$\\
+        Initial alpha value & -alpha & $1.0$\\
 
         \hline
     \end{tabular}
