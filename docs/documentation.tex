@@ -1529,43 +1529,50 @@ bands up to the highest one are used. The minimum band is set with the option \t
 
 
 \section{Basis rotation}
- It is frequent that a basis rotation has to be applied to some wavefunctions in such a way
- as to maximize continuity, where there is a degeneracy.
+ Where two or more bands are degenerate, the individual wavefunctions are only defined up to
+ an arbitrary unitary mixing within the degenerate subspace, and the DFT output picks that
+ mixing arbitrarily at each k-point. A basis rotation has to be applied to restore continuity
+ across k-space.
 
- For this, \texttt{basis} can be run.
+ For this, \texttt{basis} can be run, after \texttt{cluster}:
 
  \begin{verbatim}
-  berry basis [script options]
+  berry basis [Mb] [script options]
  \end{verbatim}
 
- It works like this:
- Consider a point in k-space and two wavefunctions $|\Psi_1\rangle$ and $|\Psi_2\rangle$
- that have been signaled as not continuous to the neighboring wavefunctions $|\Psi_A\rangle$ and $|\Psi_B\rangle$
- that belong to band $A$ and band $B$, respectively.
+ The script \texttt{basis} is the \emph{a-posteriori} twin of \texttt{degenrot}
+ (section \nameref{sec:degenrot}): it applies exactly the same subspace-rotation machinery,
+ but instead of detecting degeneracies from the eigenvalues it takes its list of degenerate
+ k-points from the clustering output \emph{degeneratefinal.npy}. This lets it fix the specific
+ points that the band classification flagged as needing a rotation, rather than every energy
+ degeneracy in the mesh.
 
- We will apply an unitary transformation
- \begin{align*}
-  |\Psi_A'\rangle &= a_1|\Psi_1\rangle + a2|\Psi_2\rangle \\
-  |\Psi_B'\rangle &= b_1|\Psi_1\rangle + b2|\Psi_2\rangle
- \end{align*}
- where we have the restrictions due to orthonormalization:
- \begin{align*}
-  a_1a_1^* + a_2a_2^* &= 1\\
-  b_1b_1^* + b_2b_2^* &= 1\\
-  a_1^*b_1 + a_2^*b_2 &= 0
- \end{align*}
+ The algorithm proceeds in the same phases described in section \nameref{sec:degenrot}, and only
+ the first (detection) phase differs:
 
- Then we want this transformation to be such that maximizes continuity to bands $A$ and $B$, so we want
- the dot products $\langle \Psi_A|\Psi_A'\rangle $ and $\langle \Psi_B|\Psi_B'\rangle $ to be close to $1$,
- which is the maximum they can be.
+ \begin{description}
+   \item[Phase 1 --- read the flagged points.] Each row of \emph{degeneratefinal.npy} is a
+     degenerate band pair $[k, b_1, b_2]$. Overlapping pairs that share a band are merged into
+     the maximal degenerate group (so a triple degeneracy stored as three pairs becomes one
+     subspace of three bands). A flagged pair whose two bands are farther apart in energy than
+     the grouping threshold \texttt{-gethr} (default $0.01$~eV) is treated as non-degenerate and
+     dropped, so a distant band is never pulled into the subspace.
+   \item[Phase 2 --- form zones.] Adjacent flagged k-points sharing the same degenerate band
+     group are joined into a connected \emph{zone}; a flagged point with no flagged neighbour is
+     an \emph{isolated} single-point zone.
+   \item[Phases 3--4 --- reference and propagation.] Within each zone the subspace is aligned to a
+     clean (non-degenerate) reference neighbour with an SVD/Procrustes rotation, and the rotation
+     is propagated across the zone by breadth-first search, with the holonomy correction and
+     iterative gauge refinement described in section \nameref{sec:degenrot}.
+   \item[Phase 5 --- output.] A per-zone report is printed and the zone map is saved to
+     \emph{basisrotation\_zones.npy}.
+ \end{description}
 
- We look for the set $a_1, a_2, b_1, b_2$ that give
- \begin{align*}
-  \max \langle \Psi_A|\Psi_A'\rangle &= \max \left( \langle \Psi_A|\Psi_1\rangle a_1 + \langle \Psi_A|\Psi_2\rangle a_2\right) \\
-  \max \langle \Psi_B|\Psi_B'\rangle &= \max \left( \langle \Psi_B|\Psi_1\rangle b_1 + \langle \Psi_B|\Psi_2\rangle b_2\right)
- \end{align*}
+ Only the flagged k-points are ever modified; clean neighbours are read as reference anchors but
+ never changed. The rotated wavefunctions \textbf{overwrite the \emph{.wfc} files in place}
+ (there is no \emph{.wfc1} file). Both colinear and non-colinear calculations are supported: for
+ the non-colinear case the same $N\times N$ unitary is applied to both spinor components.
 
- It will create new wavefunctions with extension \emph{.wfc1}, that will be used in subsequent calculations.
 The options for \texttt{basis} are shown in table \ref{tab:options_basis}
 
 \begin{table}[h]
@@ -1574,9 +1581,14 @@ The options for \texttt{basis} are shown in table \ref{tab:options_basis}
  \begin{tabular}[]{lr}
  \hline
   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
+  \texttt{Mb}                   & Maximum band to consider (positional) \\
   \texttt{-np}                  & Number of processes to use (default: 1) \\
+  \texttt{-gethr eV}            & Energy-coherence threshold for grouping\\
+                                & flagged bands into one subspace (default: 0.01;\\
+                                & negative disables the guard) \\
+  \texttt{-c}                   & Compress the output files \\
   \texttt{-o file\_path}        & Name of output log file\\
-                                & Extension will be ignored \\
+                                & Extension will be .log \\
   \texttt{-flush}               & Flush the ouput to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
