@@ -249,13 +249,13 @@ COLUMN_LEGEND = {
     'OTH':    'other (partial energy continuity)',
     'COR':    'correct (energy-continuous, dot product > 0.9)',
     'FOR':    'forced (force-filled by the completeness pass; not a genuine solve)',
-    'Score':  'mean dot product of the band (1 is best)',
+    'Score':  'mean dot product of the band over its genuine points, excluding benign force-fills (1 is best)',
     'Failed': 'NOT + MIS points (energy break / low overlap)',
     'Degen':  'degenerate points (need basis rotation)',
     'Forced': 'force-filled points (not a genuine solve)',
     'Benign': 'force-fills inside a near-degenerate doublet (gauge-level relabeling; do not affect usability)',
     'Susp':   'force-fills across a real energy gap (suspect; downgrade the band)',
-    'Status': 'CLEAN (pristine, nothing flagged) / USABLE (no genuine errors; may carry benign force-fills or a sub-pristine score) / ROTATE (needs basis rotation) / CHECK (a suspect force-fill across a real gap -> verify) / FAIL (genuine energy break or very low score)',
+    'Status': 'CLEAN (pristine, nothing flagged) / USABLE (no genuine errors; may carry benign force-fills or a sub-pristine score) / ROTATE (needs basis rotation) / CHECK (a suspect force-fill across a real gap -> verify) / FAIL (genuine energy break, or many force-fills across a real gap)',
 }
 
 # All report tables and their surrounding content use these two indent levels:
@@ -3063,22 +3063,24 @@ class MATERIAL:
         # Compact per-band table: only the actionable counts + a plain status.
         ###########################################################################
         TOL_CLEAN = 0.97            # at/above this (and nothing flagged) -> CLEAN; below -> USABLE
-        TOL_FAIL = 0.90             # below this the band is not trustworthy (score-based FAIL)
         DEGEN_GAP = 0.010           # eV; a force-fill whose slot sits within this
                                     # gap of an adjacent band is a degenerate-doublet
                                     # relabeling (gauge), not a genuine mis-assignment
         FORCED_FAIL_FRAC = 0.05     # > this fraction of suspect force-fills -> FAIL
         bands_attention = []
 
-        def _forced_suspect(i):
-            # Count force-filled points in slot i that sit ACROSS a real energy gap
-            # (i.e. not inside a near-degenerate doublet). Benign in-doublet
-            # force-fills are gauge-level and do not count against the band.
+        def _forced_split(i):
+            # Split slot i's force-filled points into those ACROSS a real energy
+            # gap ("suspect") and those inside a near-degenerate doublet
+            # ("benign", gauge-level relabelings). Returns (suspect_count,
+            # benign_ks): benign in-doublet force-fills do not count against the
+            # band and are excluded from its score.
             ncols = self.bands_final.shape[1]
             if i >= ncols:
-                return 0
+                return 0, np.empty(0, dtype=int)
             ks = np.where(self.correct_signalfinal[:, i] == FORCED_CONTINUITY)[0]
             suspect = 0
+            benign_ks = []
             for k in ks:
                 b = self.bands_final[k, i]
                 if b < 0:
@@ -3093,7 +3095,47 @@ class MATERIAL:
                             gap = min(gap, abs(e - self.eigenvalues[k, bj]))
                 if gap >= DEGEN_GAP:
                     suspect += 1
-            return int(suspect)
+                else:
+                    benign_ks.append(k)
+            return int(suspect), np.array(benign_ks, dtype=int)
+
+        def _score_excl_benign(i, benign_ks):
+            # Honest band score: the mean, over slot i's genuine points, of the
+            # dot product to its attributed neighbours -- dropping any edge
+            # incident to a benign (in-doublet) force-fill so a gauge-level
+            # relabeling cannot deflate it. Mirrors the in-loop scoring loop but
+            # averages over comparable points only (not over nks, which counted
+            # force-filled/unattributed points as zeros). Falls back to the
+            # in-loop score if the slot has no comparable points left.
+            ncols = self.bands_final.shape[1]
+            if i >= ncols:
+                return self.final_score[i]
+            benign = np.zeros(self.nks, dtype=bool)
+            benign[benign_ks] = True
+            all_neigs = np.arange(self.number_neighbors)
+            total = 0.0
+            count = 0
+            for k in range(self.nks):
+                if benign[k]:
+                    continue
+                bk = self.bands_final[k, i]
+                if bk < 0:
+                    continue
+                kneigs = self.neighbors[k]
+                flag = kneigs != -1
+                i_neigs = all_neigs[flag]
+                kn = kneigs[flag]
+                keep = (~benign[kn]) & (self.bands_final[kn, i] >= 0)
+                i_neigs = i_neigs[keep]
+                kn = kn[keep]
+                if len(kn) == 0:
+                    continue
+                bn_neighs = self.bands_final[kn, i]
+                dps = self.connections[np.repeat(k, len(kn)), i_neigs,
+                                       np.repeat(bk, len(kn)), bn_neighs]
+                total += float(np.mean(dps))
+                count += 1
+            return total / count if count else self.final_score[i]
 
         header_line = ' Band | Failed | Degen | Benign | Susp | Score | Status'
         table = f'\n{TITLE_INDENT}====== Final Report ======\n'
@@ -3105,16 +3147,30 @@ class MATERIAL:
             failed = int(report_a2[i, NOT_SOLVED] + report_a2[i, MISTAKE])
             degen = int(report_a2[i, DEGENERATE])
             forced = int(report_a2[i, FORCED_CONTINUITY])
-            score = self.final_score[i]
-            suspect = _forced_suspect(i) if forced else 0
+            if forced:
+                suspect, benign_ks = _forced_split(i)
+            else:
+                suspect, benign_ks = 0, np.empty(0, dtype=int)
             benign = forced - suspect
+            # Honest score: recompute over the band's genuine points, excluding
+            # benign (in-doublet) force-fills, so a gauge-level relabeling cannot
+            # deflate it. Overwrite the in-loop score (which divided by nks and so
+            # counted force-filled/unattributed points as zeros) so the table and
+            # final_score.npy report the same trustworthy number. Bands with no
+            # benign fills keep their in-loop score untouched.
+            if benign_ks.size:
+                score = _score_excl_benign(i, benign_ks)
+                self.final_score[i] = score
+            else:
+                score = self.final_score[i]
             # Status is driven by what is actually flagged in the signal columns.
-            # A band fails only on a genuine energy break (NOT/MIS), many
-            # force-fills across a real gap, or a truly low score (< TOL_FAIL).
-            # A suspect force-fill (across a real gap) asks for verification.
-            # Everything else is usable: a benign force-fill is gauge-level, and a
-            # merely sub-pristine score is conveyed by USABLE vs CLEAN, not CHECK.
-            if failed > 0 or score < TOL_FAIL or suspect > FORCED_FAIL_FRAC * self.nks:
+            # A band fails only on a genuine energy break (NOT/MIS) or a burst of
+            # force-fills across a real gap. A merely low score with nothing
+            # genuinely flagged is a usable (typically entangled conduction) band,
+            # reported as USABLE -- never FAIL on score alone. A suspect force-fill
+            # (across a real gap) asks for verification; a benign force-fill is
+            # gauge-level and does not affect usability.
+            if failed > 0 or suspect > FORCED_FAIL_FRAC * self.nks:
                 status = 'FAIL'
             elif suspect > 0:
                 status = 'CHECK'                # force-fill across a real gap -> verify
@@ -3143,7 +3199,7 @@ class MATERIAL:
                 elif suspect > 0:
                     reason = f'{suspect} of {benign+suspect} force-fill(s) across a real energy gap'
                 else:
-                    reason = f'low score ({self.final_score[i]:.2f})'
+                    reason = f'score {self.final_score[i]:.2f}'
                 verdict = 'NOT usable' if status == 'FAIL' else 'verify before use'
                 self.final_report += (f'\n{BODY_INDENT}  Band {i+self.min_band:>3d} : {reason} - {verdict}')
             self.final_report += '\n'
@@ -3248,7 +3304,7 @@ class MATERIAL:
                               f'they are\n\t\t  reported in the table but do not affect usability.')
         if check:
             self.final_report += f'\n\n\tNeeds verification (CHECK): {_fmt_ranges(check)}'
-            self.final_report += (f'\n\t\t  Low score or a force-fill across a real energy gap; '
+            self.final_report += (f'\n\t\t  A force-fill across a real energy gap; '
                                   f'usable only after a manual check.')
         if fail:
             self.final_report += f'\n\n\tNot usable (FAIL): {_fmt_ranges(fail)}'
