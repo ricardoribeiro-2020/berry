@@ -1323,7 +1323,7 @@ per iteration without acceleration) into effective superlinear convergence,
 typically reducing the required iteration count by a factor of 5--10.
 
 \paragraph{Jacobi parallel sweep.}
-When the \texttt{n-workers} option is greater than one and the in-memory
+When the \texttt{np} option is greater than one and the in-memory
 wavefunction cache is active, the Gauss-Seidel sweep is replaced by a
 \emph{Jacobi} parallel sweep: a snapshot of the current wavefunction state
 is taken at the start of each sweep, all k-points compute their rotation
@@ -1339,7 +1339,7 @@ speedup.
 \subsection*{Parallelism}
 
 \texttt{degenrot} supports three levels of parallelism, all controlled by the
-single \texttt{n-workers} option:
+single \texttt{np} option:
 
 \begin{enumerate}
   \item \textbf{Phase~1 (k-point detection):} the degeneracy check for each
@@ -1427,7 +1427,7 @@ The options for \texttt{degenrot} are shown in table~\ref{tab:options_degenrot}.
   \texttt{-holonomy-tol}             & Holonomy convergence tolerance (default: $10^{-4}$) \\
   \texttt{-holonomy-min-plaquettes}  & Min.\ internal plaquettes to attempt correction (default: 2) \\
   \texttt{-no-cache}                 & Disable in-memory wavefunction cache \\
-  \texttt{-n-workers}                & Number of parallel workers (default: 1) \\
+  \texttt{-np}                       & Number of processes to use (default: 1) \\
   \texttt{-o file\_path}             & Name of output log file \\
                                      & Extension will be \emph{.log} regardless of user input \\
   \texttt{-flush}                    & Flush the output to stdout \\

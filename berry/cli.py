@@ -255,12 +255,12 @@ berry [package options] script parameter [script options]
                 help="Disable in-memory wavefunction cache (enabled by default).",
             )
             degenrot_parser.add_argument(
-                "-n-workers",
+                "-np",
                 type=int,
                 default=1,
                 metavar=f"[1-{os.cpu_count()}]",
                 choices=range(1, os.cpu_count() + 1),
-                help="Number of parallel workers for Phase 1, zone-level, and Jacobi sweep parallelism (default: 1).",
+                help="Number of processes to use for Phase 1, zone-level, and Jacobi sweep parallelism (default: 1).",
             )
         if DOT:
             dot_parser.add_argument("-np", 
@@ -778,7 +778,7 @@ def degenrotation_cli(args: argparse.Namespace):
     args_dict["holonomy_tol"]               = args.holonomy_tol
     args_dict["holonomy_min_plaquettes"]    = args.holonomy_min_plaquettes
     args_dict["use_wfc_cache"]              = args.use_wfc_cache
-    args_dict["n_workers"]              = args.n_workers
+    args_dict["n_workers"]              = args.np
     run_degenrotation(**args_dict)
 
 
