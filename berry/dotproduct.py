@@ -38,20 +38,24 @@ def _stack_block(k: int, bands, comp: str) -> np.ndarray:
 
 
 def dot(nk: int, j: int, neighbor: int, jNeighbor: int) -> None:
-    """Dot products of Bloch factors between k-point ``nk`` and ``neighbor``
-    for every pair of bands.
+    """Dot products of the periodic parts u_nk between k-point ``nk`` and
+    ``neighbor`` for every pair of bands.
 
-    The whole band x band loop is one matrix product
-    ``dpc[b0, b1] = sum_k dphase[k] * wfc0[b0, k] * conj(wfc1[b1, k])`` which
-    is dispatched to BLAS.  To keep memory bounded it is tiled in band blocks
-    of ``BAND_BLOCK`` rows, so peak memory per worker is ~``2 * BAND_BLOCK *
-    nr * ncomp * 16`` bytes regardless of the total number of bands.  COMPS is
-    ``("",)`` in the colinear case and ``("-0", "-1")`` (the two spinor
-    components, summed) in the noncolinear case.
+    The .wfc files hold u_nk(r) (the periodic part; wfck2r.x output), so the
+    overlap is computed directly between them with NO Bloch-phase weighting:
+    ``dpc[b0, b1] = sum_r wfc0[b0, r] * conj(wfc1[b1, r])`` = <u_b1(k')|u_b0(k)>.
+    (The old phase-weighted version computed overlaps of pseudo-Bloch
+    functions e^{ik.r}u instead — see docs/berry_geometry_physics.md §1.1.)
+
+    The whole band x band loop is one matrix product dispatched to BLAS.  To
+    keep memory bounded it is tiled in band blocks of ``BAND_BLOCK`` rows, so
+    peak memory per worker is ~``2 * BAND_BLOCK * nr * ncomp * 16`` bytes
+    regardless of the total number of bands.  COMPS is ``("",)`` in the
+    colinear case and ``("-0", "-1")`` (the two spinor components, summed) in
+    the noncolinear case.
     """
     start = time()
 
-    dphase = d_phase[:, nk] * d_phase[:, neighbor].conj()
     nb = len(BANDS)
 
     # Outer loop: block of reference (nk) bands, loaded once and reused against
@@ -65,8 +69,8 @@ def dot(nk: int, j: int, neighbor: int, jNeighbor: int) -> None:
 
             block = None
             for ci, c in enumerate(COMPS):
-                # neighbor block pre-conjugated and phase-weighted: (bk, nr)
-                B = _stack_block(neighbor, nbr_bands, c).conj() * dphase
+                # neighbor block pre-conjugated: (bk, nr)
+                B = _stack_block(neighbor, nbr_bands, c).conj()
                 term = A[ci] @ B.T                                   # (bi, bk) BLAS gemm
                 block = term if block is None else block + term
 
@@ -178,7 +182,7 @@ def _cleanup_ckpt(*paths: str) -> None:
                 pass
 
 def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logging.INFO, compress: bool = False, flush: bool = False, band_block: int = 0):
-    global dpc, logger, d_phase, BANDS, COMPS, BAND_BLOCK
+    global dpc, logger, BANDS, COMPS, BAND_BLOCK
     logger = log(logger_name, "DOT PRODUCT", level=logger_level, flush=flush)
 
     if not 0 < npr <= os.cpu_count():
@@ -273,9 +277,6 @@ def run_dot(npr: int = 1, logger_name: str = "dot", logger_level: logging = logg
             json.dump(meta, fh)
         _save_mask(mask_path, done)
         n_already = 0
-
-    logger.info(f"\tLoading phase array from {os.path.join(m.data_dir, 'phase.npy')}")
-    d_phase = np.load(os.path.join(m.workdir, os.path.join(m.data_dir, "phase.npy")))
 
     ###########################################################################
     # 5. CALCULATE

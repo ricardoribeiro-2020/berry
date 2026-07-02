@@ -56,8 +56,8 @@ def _process_zone_worker(args: tuple) -> list:
     Reads all shared data from the module-level _zone_ctx dict, which is
     populated by run_degenrotation before the ProcessPoolExecutor is created.
     With the fork start method (Linux/macOS), child processes inherit the
-    parent's address space via copy-on-write -- large arrays (d_phase,
-    eigenvalues, neighbors) are shared without pickling.
+    parent's address space via copy-on-write -- large arrays (eigenvalues,
+    neighbors) are shared without pickling.
 
     """
     zi, sig, zone = args
@@ -141,11 +141,14 @@ def run_degenrotation(
     # ------------------------------------------------------------------
     # Load shared data
     # ------------------------------------------------------------------
-    d_phase    = np.load(os.path.join(m.data_dir, "phase.npy"))   # shape (nr, nks)
+    # u-convention: .wfc files hold the periodic parts u_nk and overlaps are
+    # taken directly between them, so phase.npy is no longer loaded (see
+    # docs/berry_geometry_physics.md §1.1).  d_phase=None is threaded through
+    # to keep the rotation_core signatures unchanged.
+    d_phase    = None
     eigenvalues = d.eigenvalues                                     # shape (nks, nbnd)
     neighbors   = d.neighbors                                       # shape (nks, 2*dimensions)
 
-    logger.info(f"\tPhases loaded, shape: {d_phase.shape}")
     logger.info(f"\tEigenvalues loaded, shape: {eigenvalues.shape}")
     logger.info()
 

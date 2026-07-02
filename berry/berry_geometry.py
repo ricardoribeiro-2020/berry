@@ -66,8 +66,8 @@ def berry_connection(n_pos: int, n_gra: int):
             for posi in range(m.nr):
                 bcc += 1j * (wfcpos0[posi] * wfcgra0[posi] + wfcpos1[posi] * wfcgra1[posi])
 
-            ##  we are assuming that normalization is \sum |\psi|^2 = 1
-            ##  if not, needs division by m.nr
+            ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
+            ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
             return bcc / m.nr
     else:
         try:
@@ -84,8 +84,8 @@ def berry_connection(n_pos: int, n_gra: int):
             for posi in range(m.nr):
                 bcc += 1j * wfcpos[posi] * wfcgra[posi]
 
-            ##  we are assuming that normalization is \sum |\psi|^2 = 1
-            ##  if not, needs division by m.nr
+            ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
+            ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
             return bcc / m.nr
 
     start = time()
@@ -96,57 +96,89 @@ def berry_connection(n_pos: int, n_gra: int):
     np.save(os.path.join(m.geometry_dir, f"berryConn{n_pos}_{n_gra}.npy"), bcc)
 
 
-def chern_number(curv) -> np.complex128:
+def chern_number(curv):
+    """Flux of the Berry curvature through the k-mesh, divided by 2*pi.
+
+    The mesh is square with spacing m.step in every direction (its actual
+    construction), so the Riemann area element is step^2 -- NOT |b|/nk, which
+    is only equal to step when the mesh happens to tile the BZ exactly.  The
+    result is the Chern number when the mesh spans the full BZ; for a partial
+    patch it is the (gauge-invariant) patch flux / 2*pi.
+
+    3D: returns the three-component Chern vector.  C_alpha is a 2D integral
+    over a slice perpendicular to axis alpha, averaged over the n_alpha
+    slices.  (The old form summed each component over the whole 3D mesh times
+    a single 1D spacing -- dimensionally inconsistent.)
+    """
     if m.dimensions == 1:
         logger.warning("\tChern number is not defined for 1D materials; returning 0.")
         return 0
-    chern = 0
     if m.dimensions == 2:
-        chern = np.sum(curv) * (np.linalg.norm(m.b1) / m.nkx) * (np.linalg.norm(m.b2) / m.nky) / (2 * np.pi)
-    else:  # 3D 
-        chern = (np.sum(curv[0]) * np.linalg.norm(m.b1) / m.nkx
-               + np.sum(curv[1]) * np.linalg.norm(m.b2) / m.nky
-               + np.sum(curv[2]) * np.linalg.norm(m.b3) / m.nkz) / (2 * np.pi)
-
-    return chern
+        return np.sum(curv) * m.step**2 / (2 * np.pi)
+    # 3D: per-slice average of the flux of each curvature component
+    return np.array([np.sum(curv[0]) * m.step**2 / m.nkx,
+                     np.sum(curv[1]) * m.step**2 / m.nky,
+                     np.sum(curv[2]) * m.step**2 / m.nkz]) / (2 * np.pi)
 
 def berry_phase(pos, x, y):
-    bp = (np.sum(pos[:, x, y].conj()     * pos[:, x+1, y]) 
+    """Gauge-invariant Berry phase of the counterclockwise plaquette at (x, y),
+    with the standard sign: bp = +Omega * dk^2 in the continuum limit.
+
+    The discrete link <u_k|u_{k+dk}> has angle -A.dk (since <u|du> = -iA with
+    A = i<u|grad u>), so the counterclockwise product of THESE links gives
+    -flux; the minus sign restores the standard orientation.  Verified against
+    the gauge-invariant perturbation formula on a C=+1 model."""
+    bp = (np.sum(pos[:, x, y].conj()     * pos[:, x+1, y])
        *  np.sum(pos[:, x+1, y].conj()   * pos[:, x+1, y+1])
        *  np.sum(pos[:, x+1, y+1].conj() * pos[:, x, y+1])
        *  np.sum(pos[:, x, y+1].conj()   * pos[:, x, y])) / (m.nr ** 4)
 
-    bp = np.angle(bp)
+    bp = -np.angle(bp)
 
     return bp
 
 def chern_number_bp(pos) -> np.complex128:
+    """Fukui-Hatsugai-Suzuki lattice Chern number: sum of plaquette Berry
+    phases / 2*pi.  Each plaquette phase is gauge invariant.  Note: the loops
+    cover the open (nkx-1)x(nky-1) rectangle of plaquettes -- the wrap-around
+    row/column is not included, so the total is exactly integer only when the
+    mesh tiles the closed BZ torus (for a partial patch it is the patch flux)."""
     chern = 0
     if m.dimensions == 2:
         for i in range(m.nkx -1):
             for j in range(m.nky -1):
-                chern += berry_phase2(pos, i, j)
+                chern += berry_phase(pos, i, j)
         chern /= (2*np.pi)
-#    else:  # 3D 
-#        chern = (np.sum(curv[0]) * np.linalg.norm(m.b1) / m.nkx
-#               + np.sum(curv[1]) * np.linalg.norm(m.b2) / m.nky
-#               + np.sum(curv[2]) * np.linalg.norm(m.b3) / m.nkz) / (2 * np.pi)
+    else:
+        logger.warning("\tchern_bp is only implemented for 2D materials; returning 0.")
 
     return chern
 
 def chern_number_bp_bz(pos) -> np.complex128:
-    chern = 1
+    """Berry phase of the counterclockwise Wilson loop around the mesh
+    boundary, / 2*pi, with the standard sign (= +flux of Omega through the
+    mesh, mod 1 -- Arg is only defined mod 2*pi, so this cannot distinguish C
+    from C+-1; use chern_bp for the integer).  Each link is normalized to unit
+    modulus before entering the product: the result stays fully gauge
+    invariant (intermediate gauge phases cancel in the product) and the float
+    underflow of a long product of |overlap|<1 factors is gone (the old code
+    needed np.complex256 for that, which no longer exists in NumPy 2)."""
+    chern = 0.0
     if m.dimensions == 2:
+        def _link(z):
+            return z / abs(z)
+        prod = 1.0 + 0.0j
         for i in range(m.nkx-1):
-            chern *= np.complex256(np.sum(pos[:, i, 0].conj() * pos[:, i+1, 0])) * np.complex256(np.sum(pos[:, i, m.nky-1] * pos[:, i+1, m.nky-1].conj()))
+            prod *= _link(np.sum(pos[:, i, 0].conj() * pos[:, i+1, 0]))
+            prod *= _link(np.sum(pos[:, i, m.nky-1] * pos[:, i+1, m.nky-1].conj()))
         for j in range(m.nky-1):
-            chern *= np.complex256(np.sum(pos[:, m.nkx-1, j].conj() * pos[:, m.nkx-1, j+1])) * np.complex256(np.sum(pos[:, 0, j] * pos[:, 0, j+1].conj()))
-        chern = np.angle(chern)
-        chern /= (2*np.pi)
-#    else:  # 3D 
-#        chern = (np.sum(curv[0]) * np.linalg.norm(m.b1) / m.nkx
-#               + np.sum(curv[1]) * np.linalg.norm(m.b2) / m.nky
-#               + np.sum(curv[2]) * np.linalg.norm(m.b3) / m.nkz) / (2 * np.pi)
+            prod *= _link(np.sum(pos[:, m.nkx-1, j].conj() * pos[:, m.nkx-1, j+1]))
+            prod *= _link(np.sum(pos[:, 0, j] * pos[:, 0, j+1].conj()))
+        # links <u_k|u_next> carry angle -A.dk (see berry_phase): negate for
+        # the standard orientation
+        chern = -np.angle(prod) / (2*np.pi)
+    else:
+        logger.warning("\tchern_bp_bz is only implemented for 2D materials; returning 0.")
 
     return chern
 
@@ -187,8 +219,8 @@ def berry_curvature(idx: int, idx_: int) -> None:
                         - 1j * wfcgra1[posi][0] * wfcgra1_[posi][1]
                     )
 
-                ##  we are assuming that normalization is \sum |\psi|^2 = 1
-                ##  if not, needs division by m.nr
+                ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
+                ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
                 return bcr / m.nr
             
         else:                                # 3D case
@@ -221,8 +253,8 @@ def berry_curvature(idx: int, idx_: int) -> None:
                         - 1j * wfcgra1[posi][0] * wfcgra1_[posi][1]
                     )
     
-                ##  we are assuming that normalization is \sum |\psi|^2 = 1
-                ##  if not, needs division by m.nr
+                ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
+                ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
                 return bcr0 / m.nr,  bcr1 / m.nr, bcr2 / m.nr
     else:
         if idx == idx_:
@@ -248,8 +280,8 @@ def berry_curvature(idx: int, idx_: int) -> None:
                         - 1j * wfcgra[posi][1] * wfcgra_[posi][0]
                     )
             
-                ##  we are assuming that normalization is \sum |\psi|^2 = 1
-                ##  if not, needs division by m.nr
+                ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
+                ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
                 return bcr / m.nr
             
         else:                                # 3D case
@@ -276,13 +308,20 @@ def berry_curvature(idx: int, idx_: int) -> None:
                         - 1j * wfcgra[posi][0] * wfcgra_[posi][1]
                     )
 
-                ##  we are assuming that normalization is \sum |\psi|^2 = 1
-                ##  if not, needs division by m.nr
+                ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
+                ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
                 return bcr0 / m.nr,  bcr1 / m.nr, bcr2 / m.nr
 
     start = time()
 
     bcr = aux_curvature() if m.dimensions == 2 else np.array(aux_curvature())
+    # Standard sign convention Omega = curl(A) with A = i<u|grad u> (bra on the
+    # FIRST band index).  The kernels above conjugate the SECOND band (idx_),
+    # which yields -Omega* of the standard matrix; converting here on the small
+    # (nk-mesh) result keeps the kernels' memory pattern (no extra nr-sized
+    # conjugated copies).  Diagonal elements come out real and equal to
+    # -2 Im<d1 u|d2 u>, matching the plaquette (chern_bp) orientation.
+    bcr = -np.conj(bcr)
     logger.info(f"\tberry_curvature{idx}_{idx_} calculated in {time() - start:.2f} seconds")
 
     np.save(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx_}.npy"), bcr)
@@ -296,36 +335,37 @@ def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
         logger.warning("\tBerry curvature (curl) is not defined for 1D materials; skipping.")
         return
 
+    # deriv(bc, s, s', alpha1, alpha2, dk) = d_{alpha2} A_{alpha1}, so the curl
+    # Omega_c = d_a A_b - d_b A_a is deriv(..., b, a, ...) - deriv(..., a, b, ...).
+    # (The old code had TWO bugs here: the second term was a dangling expression
+    # statement -- never subtracted -- and the term order gave -Omega.)
     if m.dimensions == 2:                # 2D case
-#        @numba_njit
         def aux_curvature() -> np.ndarray:
             """
             Auxiliary function to calculate the Berry curvature.
             Attention: this is valid for 2D and 3D materials.
             """
 
-            #bcr = np.zeros(wfcgra[0,0].shape, dtype=np.complex128)
-            bcr = deriv(berry_connection, idx, idx_, 0, 1, m.step) 
-            - deriv(berry_connection, idx, idx_, 1, 0, m.step)
-        
-            return bcr 
-        
+            bcr = (deriv(berry_connection, idx, idx_, 1, 0, m.step)
+                   - deriv(berry_connection, idx, idx_, 0, 1, m.step))
+
+            return bcr
+
     else:                                # 3D case
-#        @numba_njit
         def aux_curvature():
             """
             Auxiliary function to calculate the Berry curvature.
             Attention: this is valid for 2D and 3D materials.
             """
 
-            bcr0 = deriv(berry_connection, idx, idx_, 1, 2, m.step)
-            - deriv(berry_connection, idx, idx_, 2, 1, m.step)
+            bcr0 = (deriv(berry_connection, idx, idx_, 2, 1, m.step)
+                    - deriv(berry_connection, idx, idx_, 1, 2, m.step))
 
-            bcr1 = deriv(berry_connection, idx, idx_, 2, 0, m.step)
-            - deriv(berry_connection, idx, idx_, 0, 2, m.step)
+            bcr1 = (deriv(berry_connection, idx, idx_, 0, 2, m.step)
+                    - deriv(berry_connection, idx, idx_, 2, 0, m.step))
 
-            bcr2 = deriv(berry_connection, idx, idx_, 0, 1, m.step)
-            - deriv(berry_connection, idx, idx_, 1, 0, m.step)
+            bcr2 = (deriv(berry_connection, idx, idx_, 1, 0, m.step)
+                    - deriv(berry_connection, idx, idx_, 0, 1, m.step))
 
             return bcr0, bcr1, bcr2
 
@@ -361,7 +401,11 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
         GRA_SIZE  = m.nr * m.dimensions * m.nkx * m.nky * m.nkz
         GRA_SHAPE = (m.nr, m.dimensions, m.nkx, m.nky, m.nkz)
 
-    chern_num = np.zeros((max_band + 1), dtype=np.complex128)
+    # 2D: one Chern number per band; 3D: a three-component Chern vector per band
+    if m.dimensions == 3:
+        chern_num = np.zeros((max_band + 1, 3), dtype=np.complex128)
+    else:
+        chern_num = np.zeros((max_band + 1), dtype=np.complex128)
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
@@ -459,10 +503,10 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
 
         if prop == "chern_bp":
             for idx in range(min_band, max_band + 1):
-                pos = np.load(os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
-                chern_num[idx] = chern_number_bp(wfct_k)   
+                pos = loadz(os.path.join(m.data_dir, f"wfcpos{idx}.npz"), os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
+                chern_num[idx] = chern_number_bp(pos)
             np.save(os.path.join(m.geometry_dir, "chern_number_bp.npy"), chern_num)
-            logger.info(f"\tchern_number_bp2.npy saved")
+            logger.info(f"\tchern_number_bp.npy saved")
 
         if prop == "chern_bp_bz":
             for idx in range(min_band, max_band + 1):

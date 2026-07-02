@@ -274,12 +274,14 @@ def run_basis_rotation(
             raise SystemExit(1)
         return np.load(path)
 
-    d_phase     = _require(os.path.join(m.data_dir, "phase.npy"),
-                           "Run 'berry wfcgen'/'berry dot' before basis rotation.")
+    # u-convention: .wfc files hold the periodic parts u_nk and overlaps are
+    # taken directly between them, so phase.npy is no longer loaded (see
+    # docs/berry_geometry_physics.md §1.1).  d_phase=None is threaded through
+    # to keep the rotation_core signatures unchanged.
+    d_phase     = None
     eigenvalues = d.eigenvalues                                     # shape (nks, nbnd)
     neighbors   = d.neighbors                                       # shape (nks, 2*dimensions)
 
-    logger.info(f"\tPhases loaded, shape: {d_phase.shape}")
     logger.info(f"\tEigenvalues loaded, shape: {eigenvalues.shape}")
 
     bands_final     = _require(os.path.join(m.data_dir, "bandsfinal.npy"),

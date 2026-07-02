@@ -71,14 +71,23 @@ def read_wfc_files(banda: int, npr: int) -> None:
 
 
 def calculate_wfcpos(npr: int) -> np.ndarray:
+    """Arrange the periodic parts u_nk(r) on the k-mesh.
+
+    u-convention: the .wfc files hold u_nk(r) (wfck2r.x output) and the k-space
+    derivative in calculate_wfcgra acts directly on u, so wfcpos is just u
+    re-indexed onto the (kx, ky, kz) mesh -- NO Bloch-phase multiplication.
+    (The old ``d_phase *`` factor built the pseudo-Bloch e^{ik.r}u instead,
+    contaminating the Berry connection with an intracell position term -- see
+    docs/berry_geometry_physics.md §1.1.)
+    """
     global calculate_wfcpos_kp
     if m.dimensions == 1:
         def calculate_wfcpos_kp(kp):
             if m.noncolin:
-                wfcpos0[kp] = d_phase[kp, d.ijltonk[:, 0, 0]] * wfct_k0[kp, d.ijltonk[:, 0, 0]]
-                wfcpos1[kp] = d_phase[kp, d.ijltonk[:, 0, 0]] * wfct_k1[kp, d.ijltonk[:, 0, 0]]
+                wfcpos0[kp] = wfct_k0[kp, d.ijltonk[:, 0, 0]]
+                wfcpos1[kp] = wfct_k1[kp, d.ijltonk[:, 0, 0]]
             else:
-                wfcpos[kp] = d_phase[kp, d.ijltonk[:, 0, 0]] * wfct_k[kp, d.ijltonk[:, 0, 0]]
+                wfcpos[kp] = wfct_k[kp, d.ijltonk[:, 0, 0]]
 
         with Pool(npr) as pool:
             pool.map(calculate_wfcpos_kp, range(m.nr))
@@ -86,21 +95,21 @@ def calculate_wfcpos(npr: int) -> np.ndarray:
     elif m.dimensions == 2:
         def calculate_wfcpos_kp(kp):
             if m.noncolin:
-                wfcpos0[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k0[kp, d.ijltonk[:, :, 0]]
-                wfcpos1[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k1[kp, d.ijltonk[:, :, 0]]
+                wfcpos0[kp] = wfct_k0[kp, d.ijltonk[:, :, 0]]
+                wfcpos1[kp] = wfct_k1[kp, d.ijltonk[:, :, 0]]
             else:
-                wfcpos[kp] = d_phase[kp, d.ijltonk[:, :, 0]] * wfct_k[kp, d.ijltonk[:, :, 0]]
+                wfcpos[kp] = wfct_k[kp, d.ijltonk[:, :, 0]]
 
         with Pool(npr) as pool:
             pool.map(calculate_wfcpos_kp, range(m.nr))
 
-    else:    
+    else:
         def calculate_wfcpos_kp(kp):
             if m.noncolin:
-                wfcpos0[kp] = d_phase[kp, d.ijltonk[:, :, :]] * wfct_k0[kp, d.ijltonk[:, :, :]]
-                wfcpos1[kp] = d_phase[kp, d.ijltonk[:, :, :]] * wfct_k1[kp, d.ijltonk[:, :, :]]
+                wfcpos0[kp] = wfct_k0[kp, d.ijltonk[:, :, :]]
+                wfcpos1[kp] = wfct_k1[kp, d.ijltonk[:, :, :]]
             else:
-                wfcpos[kp] = d_phase[kp, d.ijltonk[:, :, :]] * wfct_k[kp, d.ijltonk[:, :, :]]
+                wfcpos[kp] = wfct_k[kp, d.ijltonk[:, :, :]]
 
         with Pool(npr) as pool:
             pool.map(calculate_wfcpos_kp, range(m.nr))
@@ -218,9 +227,9 @@ def save_r2k(bpos, bgra):
 
 def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "r2k", logger_level: int = logging.INFO, compress: bool = False, flush: bool = False):
     if m.noncolin:
-        global grad, bandsfinal, wfct_k0, wfct_k1, wfcpos0, wfcpos1, wfcgra0, wfcgra1, logger, d_phase, initial_band, save_file, bands_pos, bands_gra
+        global grad, bandsfinal, wfct_k0, wfct_k1, wfcpos0, wfcpos1, wfcgra0, wfcgra1, logger, initial_band, save_file, bands_pos, bands_gra
     else:
-        global grad, bandsfinal, wfct_k, wfcpos, wfcgra, logger, d_phase, initial_band, save_file, bands_pos, bands_gra
+        global grad, bandsfinal, wfct_k, wfcpos, wfcgra, logger, initial_band, save_file, bands_pos, bands_gra
 
     initial_band = m.initial_band if m.initial_band != "dummy" else 0 # for backward compatibility
 
@@ -292,8 +301,9 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     else:
         grad = Gradient(h=[m.step, m.step, m.step], acc=2)
 
+    # u-convention: phase.npy is intentionally NOT loaded -- wfcpos holds the
+    # periodic parts u_nk directly (see calculate_wfcpos docstring).
     bandsfinal = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))
-    d_phase = np.load(os.path.join(m.data_dir, "phase.npy"))
     logger.info(f"\tSignal and bands files loaded")
 
     if m.noncolin:

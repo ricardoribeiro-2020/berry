@@ -961,6 +961,7 @@ The script that does this job is \texttt{wfcgen}:
 It uses the package wfck2r.x of the {\sc Quantum Espresso} suite to extract and save the wavefunctions
 from the original format to a numpy file, in position space, one for each k-point and band.
 It uses the same number of processes as used before in the DFT calculations.
+Since wfck2r.x extracts $u_{\bf{k}s}$, that's what is saved.
 
 After extracting the wavefunctions,
  a point in position space is choosen (see table \ref{tab:variables_preprocessing}),
@@ -977,7 +978,7 @@ and the lowest energy band is numbered zero and so on.
 
 The options for \texttt{wfcgen} are shown in table \ref{tab:options_wfcgen}.
 The default is to generate all formated wavefunctions, but for debugging it may be useful
-to generate just for a singke k-point or a single wavefunction, for which we have the options
+to generate just for a single k-point or a single wavefunction, for which we have the options
 \texttt{-nk} and \texttt{-band} (has to be used in conjunction with \texttt{-nk}).
 
 \begin{table}[h]

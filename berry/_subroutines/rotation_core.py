@@ -82,29 +82,31 @@ def _available_memory_bytes() -> int:
 # Core linear-algebra helpers
 # ---------------------------------------------------------------------------
 
-def _overlap_matrix(ref_wfcs, cur_wfcs, dphase: np.ndarray, nr: int, noncolin: bool) -> np.ndarray:
-    """Compute N×N Bloch-phase-corrected overlap matrix.
+def _overlap_matrix(ref_wfcs, cur_wfcs, dphase, nr: int, noncolin: bool) -> np.ndarray:
+    """Compute the N×N overlap matrix of the periodic parts u_nk.
 
-    M[i, j] = <ref_i | cur_j>
-             = Σ_r dphase[r] * conj(ref_i[r]) * cur_j[r] / nr
+    M[i, j] = <ref_i | cur_j> = Σ_r conj(ref_i[r]) * cur_j[r] / nr
 
-    dphase must equal  phase(nk) * conj(phase(ref_nk))
-    so that it accounts for the exp(i(k_nk − k_ref)·r) phase difference.
+    The .wfc files hold u_nk(r) (wfck2r.x output), so the overlap between
+    neighbouring k-points is taken directly between them — u-convention, no
+    Bloch-phase weighting (see docs/berry_geometry_physics.md §1.1).  ``dphase``
+    is accepted for call-site compatibility and must be None; passing an array
+    would reintroduce the pseudo-Bloch e^{ik.r}u convention.
 
     For non-colinear wavefunctions the inner product sums both spinor components.
     """
+    assert dphase is None, "u-convention: overlaps must not be phase-weighted"
     N = len(ref_wfcs)
     M = np.zeros((N, N), dtype=complex)
-    ph = dphase  # alias for readability
     for i, ref in enumerate(ref_wfcs):
         for j, cur in enumerate(cur_wfcs):
             if noncolin:
                 r0, r1 = ref
                 c0, c1 = cur
-                M[i, j] = (np.dot(ph * r0.conj(), c0) +
-                            np.dot(ph * r1.conj(), c1)) / nr
+                M[i, j] = (np.dot(r0.conj(), c0) +
+                            np.dot(r1.conj(), c1)) / nr
             else:
-                M[i, j] = np.dot(ph * ref.conj(), cur) / nr
+                M[i, j] = np.dot(ref.conj(), cur) / nr
     return M
 
 
@@ -228,8 +230,7 @@ def _correct_zone_holonomy(
         return U @ Vh
 
     def _R(ref_k: int, cur_k: int, ref_wfcs, cur_wfcs) -> np.ndarray:
-        dph = d_phase[:, cur_k] * d_phase[:, ref_k].conj()
-        return _procrustes_rotation(_overlap_matrix(ref_wfcs, cur_wfcs, dph, nr, noncolin))
+        return _procrustes_rotation(_overlap_matrix(ref_wfcs, cur_wfcs, None, nr, noncolin))
 
     best_defect = float("inf")
     no_improve  = 0
@@ -503,8 +504,7 @@ def _refine_zone_gauge(
                 M_total = None
                 for nb in valid_nbrs[nk]:
                     ref_w   = [snap[(nb, b)] for b in bands]
-                    dph     = d_phase[:, nk] * d_phase[:, nb].conj()
-                    M_nb    = _overlap_matrix(ref_w, cur_w, dph, nr, noncolin)
+                    M_nb    = _overlap_matrix(ref_w, cur_w, None, nr, noncolin)
                     M_total = M_nb if M_total is None else M_total + M_nb
                 if M_total is None:
                     return nk, None, None, 0.0, 0.0
@@ -535,8 +535,7 @@ def _refine_zone_gauge(
 
                 for nb in valid_nbrs[nk]:
                     ref_w   = _get(nb)
-                    dph     = d_phase[:, nk] * d_phase[:, nb].conj()
-                    M_nb    = _overlap_matrix(ref_w, cur_w, dph, nr, noncolin)
+                    M_nb    = _overlap_matrix(ref_w, cur_w, None, nr, noncolin)
                     M_total = M_nb if M_total is None else M_total + M_nb
 
                 if M_total is None:
@@ -732,8 +731,7 @@ def _run_bfs_rotation(
                 wfc_nk_cache[nk] = [_load_wfc(nk, b, noncolin, wfcdir) for b in bands]
             cur_wfcs = wfc_nk_cache[nk]
             ref_wfcs = [_load_wfc(nb, b, noncolin, wfcdir) for b in bands]
-            dphase   = d_phase[:, nk] * d_phase[:, nb].conj()
-            M        = _overlap_matrix(ref_wfcs, cur_wfcs, dphase, nr, noncolin)
+            M        = _overlap_matrix(ref_wfcs, cur_wfcs, None, nr, noncolin)
             sigma    = svd(M, compute_uv=False)
             score    = (float(sigma.min()), float(sigma.mean()))
             if score > best_score:
@@ -775,8 +773,7 @@ def _run_bfs_rotation(
         else:
             ref_wfcs = [_load_wfc(ref_nk, b, noncolin, wfcdir) for b in bands]
             cur_wfcs = [_load_wfc(nk,     b, noncolin, wfcdir) for b in bands]
-            dphase   = d_phase[:, nk] * d_phase[:, ref_nk].conj()
-            M        = _overlap_matrix(ref_wfcs, cur_wfcs, dphase, nr, noncolin)
+            M        = _overlap_matrix(ref_wfcs, cur_wfcs, None, nr, noncolin)
             _, sigma, _ = svd(M)
             sigma_log.append(sigma)
             R        = _procrustes_rotation(M)
@@ -872,8 +869,7 @@ def _process_zone_suffix(
                 else:
                     ref_wfcs_b = [_load_wfc(nb, b, noncolin, wfcdir) for b in bands]
                     cur_wfcs_b = [_load_wfc(nk, b, noncolin, wfcdir) for b in bands]
-                dphase_b   = d_phase[:, nk] * d_phase[:, nb].conj()
-                M_b        = _overlap_matrix(ref_wfcs_b, cur_wfcs_b, dphase_b, nr, noncolin)
+                M_b        = _overlap_matrix(ref_wfcs_b, cur_wfcs_b, None, nr, noncolin)
                 _, sigma_b, _ = svd(M_b)
                 boundary_edges.append((nk, nb, float(sigma_b.min())))
                 logger.debug(f"\t    boundary k={nk}->ext={nb}: min_sigma={sigma_b.min():.6f}")
@@ -1090,8 +1086,7 @@ def _process_zone(
             else:
                 ref_wfcs_b = [_load_wfc(nb, b, noncolin, wfcdir) for b in bands]
                 cur_wfcs_b = [_load_wfc(nk, b, noncolin, wfcdir) for b in bands]
-            dphase_b   = d_phase[:, nk] * d_phase[:, nb].conj()
-            M_b        = _overlap_matrix(ref_wfcs_b, cur_wfcs_b, dphase_b, nr, noncolin)
+            M_b        = _overlap_matrix(ref_wfcs_b, cur_wfcs_b, None, nr, noncolin)
             _, sigma_b, _ = svd(M_b)
             boundary_edges.append((nk, nb, float(sigma_b.min())))
 
