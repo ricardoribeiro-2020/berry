@@ -1,16 +1,15 @@
-from multiprocessing import Pool, Array
 from typing import Literal
 
 import os
 from time import time
-import ctypes
 import logging
+import threading
+from math import prod
 
 import numpy as np
+from findiff import Gradient
 
 from berry import log
-from berry.utils.jit import numba_njit
-#from berry._subroutines.comutator import deriv
 from berry.shg import load_berry_connections
 
 try:
@@ -22,16 +21,14 @@ except:
 
 def deriv(berryConnection, s, sprime, alpha1, alpha2, dk):
     """ Derivative of the Berry connection."""
-    from findiff import Gradient
     if m.dimensions == 1:
         grad = Gradient(h=[dk], acc=4)  # Defines gradient function in 1D
     elif m.dimensions == 2:
         grad = Gradient(h=[dk, dk], acc=4)  # Defines gradient function in 2D
     else:
         grad = Gradient(h=[dk, dk, dk], acc=4)  # Defines gradient function in 3D
-        
-    a = grad(berryConnection[s][sprime][alpha1])
 
+    a = grad(berryConnection[s][sprime][alpha1])
 
     return a[alpha2]
 
@@ -41,59 +38,250 @@ def loadz(pathz, path, mmap_mode=None):
         r = r['arr_0']
     else: # otherwise read .npy file
         r = np.load(path, mmap_mode=mmap_mode)
-    
+
     return r
 
-def berry_connection(n_pos: int, n_gra: int):
+
+###############################################################################
+# Streaming computation of the Berry connection and curvature
+#
+# The Berry connection A_ab = i<u_a|d_alpha u_b> and the curvature are sums
+# over the real-space grid of products of per-band arrays of shape (nr, ...k).
+# The per-pair RESULTS are only k-mesh sized, so instead of re-reading the
+# (huge) per-band files once per band pair, a single pass reads a tile of
+# nr-rows of ALL bands at once and accumulates every pair's contribution;
+# each wfcpos file is read from disk exactly once.  The k-space gradient
+# (formerly precomputed by r2k and stored as wfcgra files) is applied on the
+# fly to each tile: it acts only along the k axes, so tiling nr does not
+# change it (same findiff stencil as r2k, acc=2).  wfcgra files are no longer
+# read (r2k does not write them by default anymore).
+###############################################################################
+
+def _kshape():
+    if m.dimensions == 1:
+        return (m.nkx,)
+    if m.dimensions == 2:
+        return (m.nkx, m.nky)
+    return (m.nkx, m.nky, m.nkz)
+
+
+def _pos_file(band: int, comp: int = None):
+    """Path of a wfcpos .npy file; refuses compressed runs (an .npz cannot be
+    read in slices, which the streaming pass needs)."""
+    name = f"wfcpos{band}" if comp is None else f"wfcpos{band}-{comp}"
+    path = os.path.join(m.data_dir, name + ".npy")
+    if not os.path.exists(path):
+        if os.path.exists(os.path.join(m.data_dir, name + ".npz")):
+            raise RuntimeError(
+                f"{name}.npz is compressed (r2k was run with -c); the streaming "
+                "geometry needs plain .npy files. Decompress it first, e.g.: "
+                f"python3 -c \"import numpy as np; np.save('{name}.npy', "
+                f"np.load('{name}.npz')['arr_0'])\" in {m.data_dir}."
+            )
+        raise FileNotFoundError(f"{path} not found; run r2k for this band first.")
+    return path
+
+
+def _pread_exact(fd: int, buf, offset: int) -> None:
+    """Read len(buf) bytes at offset into buf (loops over short reads)."""
+    view = memoryview(buf).cast("B")
+    done, total = 0, len(view)
+    while done < total:
+        got = os.preadv(fd, [view[done:]], offset + done)
+        if got <= 0:
+            raise IOError(f"short read (fd {fd}, offset {offset + done})")
+        done += got
+
+
+class _PosStream:
+    """Streams nr-tiles of all bands' wfcpos files with one prefetch thread.
+
+    Yields, per tile, one (nk-flat, nbands, tile) complex array per spinor
+    component (one for colinear, two for noncolinear) -- k-major, so the
+    per-k batched matmuls and the k-axis gradient stencil act on it directly.
+    Reads are positioned (os.preadv), sequential within each file, and each
+    file is read once; the (tile, k) -> (k, tile) transpose happens in the
+    prefetch thread, overlapped with the compute of the previous tile.
     """
-    Calculates the Berry connection.
+
+    def __init__(self, bands, mem_gb: float, logger):
+        self.bands = bands
+        self.logger = logger
+        self.kshape = _kshape()
+        self.K = prod(self.kshape)
+        self.ncomp = 2 if m.noncolin else 1
+        N = len(bands)
+
+        # validate the files and record data offsets
+        pos_shape = (m.nr,) + self.kshape
+        self.handles = []  # per component: list of (fd, data_offset)
+        for comp in (range(2) if m.noncolin else (None,)):
+            comp_handles = []
+            for band in bands:
+                path = _pos_file(band, comp)
+                mm = np.lib.format.open_memmap(path, mode="r")
+                if mm.shape != pos_shape or mm.dtype != np.complex128:
+                    raise RuntimeError(f"{path}: expected {pos_shape} complex128, "
+                                       f"got {mm.shape} {mm.dtype}")
+                offset = mm.offset
+                del mm
+                comp_handles.append((os.open(path, os.O_RDONLY), offset))
+            self.handles.append(comp_handles)
+
+        # tile size from the memory budget: live tile-sized arrays are the two
+        # ping-pong k-major buffers, the conjugated copy, and the gradient
+        # (+ its conjugate for the curvature): ~(3 + 2*dim) tile-sized arrays
+        row_bytes = self.ncomp * N * self.K * 16 * (3 + 2 * m.dimensions)
+        self.tile = max(64, min(m.nr, int(mem_gb * 2**30 // max(1, row_bytes))))
+        self.n_tiles = -(-m.nr // self.tile)
+
+        # ping-pong buffers so each tile read reuses memory
+        self._bufs = [np.empty((self.ncomp, self.K, N, self.tile), np.complex128)
+                      for _ in range(2)]
+        self._staging = np.empty((self.tile, self.K), np.complex128)
+
+    def _read_tile(self, i_tile: int):
+        r0 = i_tile * self.tile
+        t = min(self.tile, m.nr - r0)
+        buf = self._bufs[i_tile % 2]
+        stag = self._staging
+        row = self.K * 16
+        for ci, comps in enumerate(self.handles):
+            for ni, (fd, off) in enumerate(comps):
+                _pread_exact(fd, stag[:t].reshape(-1), off + r0 * row)
+                buf[ci, :, ni, :t] = stag[:t].T
+        return [c[..., :t] for c in buf]
+
+    def tiles(self):
+        nxt = {"res": None, "err": None}
+
+        def prefetch(i):
+            try:
+                nxt["res"] = self._read_tile(i)
+            except BaseException as e:
+                nxt["err"] = e
+
+        th = threading.Thread(target=prefetch, args=(0,))
+        th.start()
+        for i in range(self.n_tiles):
+            th.join()
+            if nxt["err"] is not None:
+                raise nxt["err"]
+            cur = nxt["res"]
+            if i + 1 < self.n_tiles:
+                th = threading.Thread(target=prefetch, args=(i + 1,))
+                th.start()
+            yield i * self.tile, cur
+
+    def close(self):
+        for comps in self.handles:
+            for fd, _ in comps:
+                os.close(fd)
+
+
+def _tile_gradient(pos_tile: np.ndarray, kshape) -> np.ndarray:
+    """k-space gradient of one k-major tile (K-flat, N, t) -> (D, K, N, t).
+
+    Same operator r2k used to build the wfcgra files -- findiff's first
+    derivative with spacing m.step at acc=2: central stencil (f[i+1] -
+    f[i-1])/2h inside, the one-sided 3-point acc=2 stencils at the mesh
+    edges.  Applied here by direct slicing (findiff's generic machinery is
+    ~10x slower on this layout).  The gradient only couples k points, so
+    applying it to an nr-tile is exactly what r2k computed row by row.
     """
-    if m.noncolin:
-        try:
-            wfcpos0 = loadz(os.path.join(m.data_dir, f"wfcpos{n_pos}-0.npz"), os.path.join(m.data_dir, f"wfcpos{n_pos}-0.npy"), mmap_mode="r").conj()
-            wfcpos1 = loadz(os.path.join(m.data_dir, f"wfcpos{n_pos}-1.npz"), os.path.join(m.data_dir, f"wfcpos{n_pos}-1.npy"), mmap_mode="r").conj()
-        except:
-            wfcpos0 = loadz(os.path.join(m.data_dir, f"wfcpos{n_pos}-0.npz"), os.path.join(m.data_dir, f"wfcpos{n_pos}-0.npy")).conj()
-            wfcpos1 = loadz(os.path.join(m.data_dir, f"wfcpos{n_pos}-1.npz"), os.path.join(m.data_dir, f"wfcpos{n_pos}-1.npy")).conj()
-
-        @numba_njit
-        def aux_connection() -> np.ndarray:
-            """
-            Auxiliary function to calculate the Berry connection.
-            """
-            # Calculation of the Berry connection
-            bcc = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
-            for posi in range(m.nr):
-                bcc += 1j * (wfcpos0[posi] * wfcgra0[posi] + wfcpos1[posi] * wfcgra1[posi])
-
-            ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
-            ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
-            return bcc / m.nr
-    else:
-        try:
-            wfcpos = loadz(os.path.join(m.data_dir, f"wfcpos{n_pos}.npz"), os.path.join(m.data_dir, f"wfcpos{n_pos}.npy"), mmap_mode="r").conj()
-        except:
-            wfcpos = loadz(os.path.join(m.data_dir, f"wfcpos{n_pos}.npz"), os.path.join(m.data_dir, f"wfcpos{n_pos}.npy")).conj()
-        @numba_njit
-        def aux_connection() -> np.ndarray:
-            """
-            Auxiliary function to calculate the Berry connection.
-            """
-            # Calculation of the Berry connection
-            bcc = np.zeros(wfcgra[0].shape, dtype=np.complex128)
-            for posi in range(m.nr):
-                bcc += 1j * wfcpos[posi] * wfcgra[posi]
-
-            ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
-            ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
-            return bcc / m.nr
-
-    start = time()
-    bcc = aux_connection()
-    logger.info(f"\tberry_connection{n_pos}_{n_gra} calculated in {time() - start:.2f} seconds")
+    K, N, t = pos_tile.shape
+    gra = np.empty((m.dimensions, K, N, t), np.complex128)
+    inv2h = 1.0 / (2.0 * m.step)
+    src = pos_tile.reshape(*kshape, N, t)
+    for axis in range(m.dimensions):
+        f = np.moveaxis(src, axis, 0)
+        g = np.moveaxis(gra[axis].reshape(*kshape, N, t), axis, 0)
+        g[1:-1] = (f[2:] - f[:-2]) * inv2h
+        g[0] = (-3.0 * f[0] + 4.0 * f[1] - f[2]) * inv2h
+        g[-1] = (3.0 * f[-1] - 4.0 * f[-2] + f[-3]) * inv2h
+    return gra
 
 
-    np.save(os.path.join(m.geometry_dir, f"berryConn{n_pos}_{n_gra}.npy"), bcc)
+def _stream_connection_curvature(bands, do_conn: bool, do_curv: bool,
+                                 mem_gb: float, logger) -> None:
+    """One pass over the wfcpos files; writes all berryConn / berryCur pairs."""
+    N = len(bands)
+    kshape = _kshape()
+    K = prod(kshape)
+    D = m.dimensions
+
+    stream = _PosStream(bands, mem_gb, logger)
+    logger.info(f"\tStreaming {stream.n_tiles} tile(s) of {stream.tile} r-points, "
+                f"{N} bands, {stream.ncomp} spinor component(s)")
+
+    # accumulators are k-mesh sized only: a few MB for every pair at once
+    acc_conn = np.zeros((D, K, N, N), np.complex128) if do_conn else None
+    # curvature needs M[d,d'][a,b,k] = sum_r grad_d u_a * conj(grad_d' u_b);
+    # only one of each (d,d') pair is accumulated, the transpose-conjugate
+    # gives the other (exact identity M[d',d] = conj(M[d,d']).swap(a,b))
+    curv_pairs = [] if not do_curv else ([(0, 1)] if D == 2 else [(2, 1), (0, 2), (1, 0)])
+    acc_M = {dd: np.zeros((K, N, N), np.complex128) for dd in curv_pairs}
+
+    t_read = t_comp = 0.0
+    t0 = time()
+    for r0, comps in stream.tiles():
+        t_read += time() - t0
+        t0 = time()
+        for pos in comps:  # one pass per spinor component, contributions add
+            gra = _tile_gradient(pos, kshape)              # (D, K, N, t)
+            if do_conn:
+                # acc[d,k] += P_k^H (G_d)_k^T: batched (N,t)@(t,N) over k
+                Pc = pos.conj()                            # (K, N, t)
+                for dd in range(D):
+                    acc_conn[dd] += Pc @ gra[dd].transpose(0, 2, 1)
+            if curv_pairs:
+                grac = gra.conj()
+                for dd in curv_pairs:
+                    acc_M[dd] += gra[dd[0]] @ grac[dd[1]].transpose(0, 2, 1)
+        t_comp += time() - t0
+        logger.debug(f"\ttile at r={r0} done (read {t_read:.1f}s, compute {t_comp:.1f}s)")
+        t0 = time()
+    stream.close()
+    logger.info(f"\tstreaming pass finished: {t_read:.1f}s reading, {t_comp:.1f}s computing")
+
+    if do_conn:
+        ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
+        ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
+        conn = 1j * acc_conn.transpose(2, 3, 0, 1) / m.nr        # (N,N,D,K)
+        # A is Hermitian in the band indices up to FD truncation and gauge
+        # quality; the residual is a free diagnostic of both (doc §6.2)
+        res = np.abs(conn - conn.conj().transpose(1, 0, 2, 3))
+        worst = np.unravel_index(np.argmax(res), res.shape)
+        logger.info(f"\tHermiticity residual max |A_ab - A_ba*| = {res.max():.3e} "
+                    f"(pair {bands[worst[0]]},{bands[worst[1]]}; "
+                    f"large values flag bad gauge/attribution k-points)")
+        for a in range(N):
+            for b in range(N):
+                np.save(os.path.join(m.geometry_dir, f"berryConn{bands[a]}_{bands[b]}.npy"),
+                        conn[a, b].reshape((D,) + kshape))
+        logger.info(f"\tberryConn files written for bands {bands[0]}-{bands[-1]}")
+
+    if do_curv:
+        def kernel(M_ddp):  # 1j*(M[d,d'] - M[d',d]) / nr, M[d',d] from the identity
+            return 1j * (M_ddp - M_ddp.conj().transpose(0, 2, 1)) / m.nr
+        if D == 2:
+            comps_std = [kernel(acc_M[(0, 1)])]                  # Omega_z
+        else:
+            comps_std = [kernel(acc_M[dd]) for dd in curv_pairs] # Omega_x,y,z
+        # standard sign convention Omega = +curl(A) (see doc §3): the kernels
+        # above carry the old orientation; -conj converts, as before
+        for a in range(N):
+            for b in range(N):
+                if D == 2:
+                    # NOTE shape change: the scalar Omega_z(k) is saved as
+                    # (nkx, nky) -- the old code broadcast it into (2, nkx, nky)
+                    # with two identical planes, which double-counted in
+                    # prop="chern" and misled vis into quiver-plotting it
+                    bcr = -np.conj(comps_std[0][:, a, b]).reshape(kshape)
+                else:
+                    bcr = -np.conj(np.stack([c[:, a, b] for c in comps_std])).reshape((3,) + kshape)
+                np.save(os.path.join(m.geometry_dir, f"berryCur{bands[a]}_{bands[b]}.npy"), bcr)
+        logger.info(f"\tberryCur files written for bands {bands[0]}-{bands[-1]}")
 
 
 def chern_number(curv):
@@ -114,8 +302,12 @@ def chern_number(curv):
         logger.warning("\tChern number is not defined for 1D materials; returning 0.")
         return 0
     if m.dimensions == 2:
+        if curv.ndim == 3:  # legacy file: scalar duplicated into (2, nkx, nky)
+            curv = curv[0]
         return np.sum(curv) * m.step**2 / (2 * np.pi)
     # 3D: per-slice average of the flux of each curvature component
+    if curv.ndim == 5:      # legacy file: components duplicated into (3, 3, ...)
+        curv = curv[:, 0]
     return np.array([np.sum(curv[0]) * m.step**2 / m.nkx,
                      np.sum(curv[1]) * m.step**2 / m.nky,
                      np.sum(curv[2]) * m.step**2 / m.nkz]) / (2 * np.pi)
@@ -167,164 +359,20 @@ def chern_number_bp_bz(pos) -> np.complex128:
     if m.dimensions == 2:
         def _link(z):
             return z / abs(z)
-        prod = 1.0 + 0.0j
+        prod_ = 1.0 + 0.0j
         for i in range(m.nkx-1):
-            prod *= _link(np.sum(pos[:, i, 0].conj() * pos[:, i+1, 0]))
-            prod *= _link(np.sum(pos[:, i, m.nky-1] * pos[:, i+1, m.nky-1].conj()))
+            prod_ *= _link(np.sum(pos[:, i, 0].conj() * pos[:, i+1, 0]))
+            prod_ *= _link(np.sum(pos[:, i, m.nky-1] * pos[:, i+1, m.nky-1].conj()))
         for j in range(m.nky-1):
-            prod *= _link(np.sum(pos[:, m.nkx-1, j].conj() * pos[:, m.nkx-1, j+1]))
-            prod *= _link(np.sum(pos[:, 0, j] * pos[:, 0, j+1].conj()))
+            prod_ *= _link(np.sum(pos[:, m.nkx-1, j].conj() * pos[:, m.nkx-1, j+1]))
+            prod_ *= _link(np.sum(pos[:, 0, j] * pos[:, 0, j+1].conj()))
         # links <u_k|u_next> carry angle -A.dk (see berry_phase): negate for
         # the standard orientation
-        chern = -np.angle(prod) / (2*np.pi)
+        chern = -np.angle(prod_) / (2*np.pi)
     else:
         logger.warning("\tchern_bp_bz is only implemented for 2D materials; returning 0.")
 
     return chern
-
-
-
-def berry_curvature(idx: int, idx_: int) -> None:
-    """
-    Calculates the Berry curvature.
-    """
-    if m.dimensions == 1:
-        logger.warning("\tBerry curvature is not defined for 1D materials; skipping.")
-        return
-    if m.noncolin:
-        if idx == idx_:
-            wfcgra0_ = wfcgra0.conj()
-            wfcgra1_ = wfcgra1.conj()
-        else:
-            try:
-                wfcgra0_ = loadz(os.path.join(m.data_dir, f"wfcgra{idx_}-0.npz"), os.path.join(m.data_dir, f"wfcgra{idx_}-0.npy"), mmap_mode="r").conj()
-                wfcgra1_ = loadz(os.path.join(m.data_dir, f"wfcgra{idx_}-1.npz"), os.path.join(m.data_dir, f"wfcgra{idx_}-1.npy"), mmap_mode="r").conj()
-            except:
-                wfcgra0_ = loadz(os.path.join(m.data_dir, f"wfcgra{idx_}-0.npz"), os.path.join(m.data_dir, f"wfcgra{idx_}-0.npy")).conj()
-                wfcgra1_ = loadz(os.path.join(m.data_dir, f"wfcgra{idx_}-1.npz"), os.path.join(m.data_dir, f"wfcgra{idx_}-1.npy")).conj()
-
-        if m.dimensions == 2:                # 2D case
-            @numba_njit
-            def aux_curvature() -> np.ndarray:
-                """
-                Auxiliary function to calculate the Berry curvature.
-                Attention: this is valid for 2D and 3D materials.
-                """
-                bcr = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
-                for posi in range(m.nr):
-                    bcr += (
-                        1j * wfcgra0[posi][1] * wfcgra0_[posi][0]
-                        - 1j * wfcgra0[posi][0] * wfcgra0_[posi][1]
-                        + 1j * wfcgra1[posi][1] * wfcgra1_[posi][0]
-                        - 1j * wfcgra1[posi][0] * wfcgra1_[posi][1]
-                    )
-
-                ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
-                ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
-                return bcr / m.nr
-            
-        else:                                # 3D case
-            @numba_njit
-            def aux_curvature():
-                """
-                Auxiliary function to calculate the Berry curvature.
-                Attention: this is valid for 2D and 3D materials.
-                """ 
-                bcr0 = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
-                bcr1 = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
-                bcr2 = np.zeros(wfcgra0[0].shape, dtype=np.complex128)
-                for posi in range(m.nr):
-                    bcr0 += (
-                        1j * wfcgra0[posi][2] * wfcgra0_[posi][1]
-                        - 1j * wfcgra0[posi][1] * wfcgra0_[posi][2]
-                        + 1j * wfcgra1[posi][2] * wfcgra1_[posi][1]
-                        - 1j * wfcgra1[posi][1] * wfcgra1_[posi][2]
-                    )
-                    bcr1 += (
-                        1j * wfcgra0[posi][0] * wfcgra0_[posi][2]
-                        - 1j * wfcgra0[posi][2] * wfcgra0_[posi][0]
-                        + 1j * wfcgra1[posi][0] * wfcgra1_[posi][2]
-                        - 1j * wfcgra1[posi][2] * wfcgra1_[posi][0]
-                    )
-                    bcr2 += (
-                        1j * wfcgra0[posi][1] * wfcgra0_[posi][0]
-                        - 1j * wfcgra0[posi][0] * wfcgra0_[posi][1]
-                        + 1j * wfcgra1[posi][1] * wfcgra1_[posi][0]
-                        - 1j * wfcgra1[posi][0] * wfcgra1_[posi][1]
-                    )
-    
-                ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
-                ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
-                return bcr0 / m.nr,  bcr1 / m.nr, bcr2 / m.nr
-    else:
-        if idx == idx_:
-            wfcgra_ = wfcgra.conj()
-        else:
-            try:
-                wfcgra_ = loadz(os.path.join(m.data_dir, f"wfcgra{idx_}.npz"), os.path.join(m.data_dir, f"wfcgra{idx_}.npy"), mmap_mode="r").conj()
-            except:
-                wfcgra_ = loadz(os.path.join(m.data_dir, f"wfcgra{idx_}.npz"), os.path.join(m.data_dir, f"wfcgra{idx_}.npy")).conj()
-
-        if m.dimensions == 2:                # 2D case
-            @numba_njit
-            def aux_curvature() -> np.ndarray:
-                """
-                Auxiliary function to calculate the Berry curvature.
-                Attention: this is valid for 2D and 3D materials.
-                """
-
-                bcr = np.zeros(wfcgra[0].shape, dtype=np.complex128)
-                for posi in range(m.nr):
-                    bcr += (
-                        1j * wfcgra[posi][0] * wfcgra_[posi][1]
-                        - 1j * wfcgra[posi][1] * wfcgra_[posi][0]
-                    )
-            
-                ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
-                ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
-                return bcr / m.nr
-            
-        else:                                # 3D case
-            @numba_njit
-            def aux_curvature():
-                """
-                Auxiliary function to calculate the Berry curvature.
-                Attention: this is valid for 2D and 3D materials.
-                """
-                bcr0 = np.zeros(wfcgra[0].shape, dtype=np.complex128)
-                bcr1 = np.zeros(wfcgra[0].shape, dtype=np.complex128)
-                bcr2 = np.zeros(wfcgra[0].shape, dtype=np.complex128)
-                for posi in range(m.nr):
-                    bcr0 += (
-                        1j * wfcgra[posi][2] * wfcgra_[posi][1]
-                        - 1j * wfcgra[posi][1] * wfcgra_[posi][2]
-                    )
-                    bcr1 += (
-                        1j * wfcgra[posi][0] * wfcgra_[posi][2]
-                        - 1j * wfcgra[posi][2] * wfcgra_[posi][0]
-                    )
-                    bcr2 += (
-                        1j * wfcgra[posi][1] * wfcgra_[posi][0]
-                        - 1j * wfcgra[posi][0] * wfcgra_[posi][1]
-                    )
-
-                ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
-                ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
-                return bcr0 / m.nr,  bcr1 / m.nr, bcr2 / m.nr
-
-    start = time()
-
-    bcr = aux_curvature() if m.dimensions == 2 else np.array(aux_curvature())
-    # Standard sign convention Omega = curl(A) with A = i<u|grad u> (bra on the
-    # FIRST band index).  The kernels above conjugate the SECOND band (idx_),
-    # which yields -Omega* of the standard matrix; converting here on the small
-    # (nk-mesh) result keeps the kernels' memory pattern (no extra nr-sized
-    # conjugated copies).  Diagonal elements come out real and equal to
-    # -2 Im<d1 u|d2 u>, matching the plaquette (chern_bp) orientation.
-    bcr = -np.conj(bcr)
-    logger.info(f"\tberry_curvature{idx}_{idx_} calculated in {time() - start:.2f} seconds")
-
-    np.save(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx_}.npy"), bcr)
 
 
 def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
@@ -375,31 +423,18 @@ def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
     logger.info(f"\tberry_curvature{idx}_{idx_}_curl calculated in {time() - start:.2f} seconds")
 
     np.save(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx_}_curl.npy"), bcr)
-    
-    return bcr
-    
 
-def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Literal["curv", "conn", "both", "chern", "chern_curl", "chern_bp", "chern_bp_bz"] = "both", digits: int = 0, logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
-    if m.noncolin:
-        global wfcgra0, wfcgra1, chern_num, logger
-    else:
-        global wfcgra, chern_num, logger
+    return bcr
+
+
+def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Literal["curv", "conn", "both", "chern", "chern_curl", "chern_bp", "chern_bp_bz"] = "both", digits: int = 0, mem_gb: float = 32.0, logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
+    global chern_num, logger
     logger = log(logger_name, "BERRY GEOMETRY", level=logger_level, flush=flush)
 
     logger.header()
 
-    ###########################################################################
-    # 1. DEFINING THE CONSTANTS
-    ###########################################################################
-    if m.dimensions == 1:
-        GRA_SIZE  = m.nr * m.dimensions * m.nkx
-        GRA_SHAPE = (m.nr, m.dimensions , m.nkx)
-    elif m.dimensions == 2:
-        GRA_SIZE  = m.nr * m.dimensions * m.nkx * m.nky
-        GRA_SHAPE = (m.nr, m.dimensions, m.nkx, m.nky)
-    else:
-        GRA_SIZE  = m.nr * m.dimensions * m.nkx * m.nky * m.nkz
-        GRA_SHAPE = (m.nr, m.dimensions, m.nkx, m.nky, m.nkz)
+    if npr <= 0:
+        npr = os.cpu_count()
 
     # 2D: one Chern number per band; 3D: a three-component Chern vector per band
     if m.dimensions == 3:
@@ -408,73 +443,39 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
         chern_num = np.zeros((max_band + 1), dtype=np.complex128)
 
     ###########################################################################
-    # 2. STDOUT THE PARAMETERS
+    # 1. STDOUT THE PARAMETERS
     ###########################################################################
     logger.info(f"\tUnique reference of run: {m.refname}")
     logger.info(f"\tProperties to calculate: {prop}")
     logger.info(f"\tMinimum band: {min_band}")
     logger.info(f"\tMaximum band: {max_band}")
-    logger.info(f"\tNumber of processes: {npr}\n")
+    logger.info(f"\tNumber of threads: {npr}")
+    logger.info(f"\tMemory budget: {mem_gb} GB\n")
     logger.info(f"\t{m.dimensions} dimensions calculation.\n")
 
     ###########################################################################
-    # 3. CREATE ALL THE ARRAYS
+    # 2. CALCULATE BERRY GEOMETRY
     ###########################################################################
-    if m.noncolin:
-        arr_shell0 = Array(ctypes.c_double, 2 * GRA_SIZE, lock=False)
-        arr_shell1 = Array(ctypes.c_double, 2 * GRA_SIZE, lock=False)
-        wfcgra0    = np.frombuffer(arr_shell0, dtype=np.complex128).reshape(GRA_SHAPE)
-        wfcgra1    = np.frombuffer(arr_shell1, dtype=np.complex128).reshape(GRA_SHAPE)
-    else:
-        arr_shell = Array(ctypes.c_double, 2 * GRA_SIZE, lock=False)
-        wfcgra    = np.frombuffer(arr_shell, dtype=np.complex128).reshape(GRA_SHAPE)
-
-    ###########################################################################
-    # 4. CALCULATE BERRY GEOMETRY
-    ###########################################################################
-    if prop == "both" or prop == "conn":
-        if m.noncolin:
-            for idx in range(min_band, max_band + 1):
-                wfcgra0 = loadz(os.path.join(m.data_dir, f"wfcgra{idx}-0.npz"), os.path.join(m.data_dir, f"wfcgra{idx}-0.npy"))
-                wfcgra1 = loadz(os.path.join(m.data_dir, f"wfcgra{idx}-1.npz"), os.path.join(m.data_dir, f"wfcgra{idx}-1.npy"))
-
-                work_load = ((idx_pos, idx) for idx_pos in range(min_band, max_band + 1))
-
-                with Pool(npr) as pool:
-                    pool.starmap(berry_connection, work_load)
-        else:
-            for idx in range(min_band, max_band + 1):
-                wfcgra = loadz(os.path.join(m.data_dir, f"wfcgra{idx}.npz"), os.path.join(m.data_dir, f"wfcgra{idx}.npy"))
-
-                work_load = ((idx_pos, idx) for idx_pos in range(min_band, max_band + 1))
-
-                with Pool(npr) as pool:
-                    pool.starmap(berry_connection, work_load)
-    logger.info()
-    if m.dimensions == 1:
+    bands = list(range(min_band, max_band + 1))
+    do_conn = prop in ("both", "conn")
+    do_curv = prop in ("both", "curv") and m.dimensions > 1
+    if prop in ("both", "curv") and m.dimensions == 1:
         logger.info(f"\tBerry curvature is not defined for 1D materials.")
-    else:
-        if prop == "both" or prop == "curv":
-            if m.noncolin:
-                for idx in range(min_band, max_band + 1):
-                    wfcgra0 = loadz(os.path.join(m.data_dir, f"wfcgra{idx}-0.npz"), os.path.join(m.data_dir, f"wfcgra{idx}-0.npy"))
-                    wfcgra1 = loadz(os.path.join(m.data_dir, f"wfcgra{idx}-1.npz"), os.path.join(m.data_dir, f"wfcgra{idx}-1.npy"))
 
-                    work_load = ((idx, idx_) for idx_ in range(min_band, max_band + 1))
+    if do_conn or do_curv:
+        try:
+            from threadpoolctl import threadpool_limits
+        except ImportError:
+            from contextlib import nullcontext
+            threadpool_limits = lambda limits: nullcontext()
+        start = time()
+        with threadpool_limits(limits=npr):
+            _stream_connection_curvature(bands, do_conn, do_curv, mem_gb, logger)
+        logger.info(f"\tconnection/curvature pass took {time() - start:.2f} seconds")
 
-                    with Pool(npr) as pool:
-                        pool.starmap(berry_curvature, work_load)
-            else:
-                for idx in range(min_band, max_band + 1):
-                    wfcgra = loadz(os.path.join(m.data_dir, f"wfcgra{idx}.npz"), os.path.join(m.data_dir, f"wfcgra{idx}.npy"))
-
-                    work_load = ((idx, idx_) for idx_ in range(min_band, max_band + 1))
-
-                    with Pool(npr) as pool:
-                        pool.starmap(berry_curvature, work_load)
-
+    if m.dimensions > 1:
         if prop == "chern":
-            for idx in range(min_band, max_band + 1):
+            for idx in bands:
                 curv = np.load(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx}.npy"))
                 chern_num[idx] = chern_number(curv)
 
@@ -495,28 +496,25 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
                 berry_conn_size  = m.dimensions * m.nkx * m.nky * m.nkz * (number_of_bands) ** 2
                 berry_conn_shape = (number_of_bands, number_of_bands, m.dimensions, m.nkx, m.nky, m.nkz)
             berry_connections = load_berry_connections(max_band, berry_conn_size, berry_conn_shape, min_band)
-            for idx in range(min_band, max_band + 1):
+            for idx in bands:
                 curv = berry_curvature_curl(idx, idx, berry_connections)
-                chern_num[idx] = chern_number(curv)   
+                chern_num[idx] = chern_number(curv)
             np.save(os.path.join(m.geometry_dir, "chern_number_curl.npy"), chern_num)
             logger.info(f"\tchern_number_curl.npy saved")
 
         if prop == "chern_bp":
-            for idx in range(min_band, max_band + 1):
+            for idx in bands:
                 pos = loadz(os.path.join(m.data_dir, f"wfcpos{idx}.npz"), os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
                 chern_num[idx] = chern_number_bp(pos)
             np.save(os.path.join(m.geometry_dir, "chern_number_bp.npy"), chern_num)
             logger.info(f"\tchern_number_bp.npy saved")
 
         if prop == "chern_bp_bz":
-            for idx in range(min_band, max_band + 1):
+            for idx in bands:
                 pos = loadz(os.path.join(m.data_dir, f"wfcpos{idx}.npz"), os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
-                chern_num[idx] = chern_number_bp_bz(pos)   
+                chern_num[idx] = chern_number_bp_bz(pos)
             np.save(os.path.join(m.geometry_dir, "chern_number_bp_bz.npy"), chern_num)
             logger.info(f"\tchern_number_bp_bz.npy saved")
-
-
-
 
     ###########################################################################
     # Finished
@@ -525,4 +523,4 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 1, prop: Lit
     logger.footer()
 
 if __name__ == "__main__":
-    run_berry_geometry(9, log("berry_geometry", "BERRY GEOMETRY", "version", logging.DEBUG), npr=10, prop="both")
+    run_berry_geometry(9, prop="both")

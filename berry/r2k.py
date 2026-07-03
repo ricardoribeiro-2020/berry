@@ -165,54 +165,58 @@ def interpolate_wfcpos(banda: int) -> None:
     logger.warning(msg)
 
 
-def r_to_k(banda: int, npr: int, compress: bool) -> None:
+def r_to_k(banda: int, npr: int, compress: bool, save_gra: bool) -> None:
     b = banda + initial_band # true band
 
-    if b not in bands_pos or b not in bands_gra:
-        start = time()
-        read_wfc_files(banda, npr)
-        logger.debug(f"\twfc files read in {time() - start:.2f} seconds")
+    need_pos = b not in bands_pos
+    # wfcgra is only written on request (-savegra): geometry applies the same
+    # findiff gradient on the fly while streaming wfcpos, so the files are
+    # redundant (and as large as wfcpos itself)
+    need_gra = save_gra and b not in bands_gra
+    if not need_pos and not need_gra:
+        logger.debug(f"\tband {b} already saved, skipping")
+        return
 
-    if b not in bands_pos:
-        start = time()
-        calculate_wfcpos(npr)
-        logger.info(f"\twfcpos{b} calculated in {time() - start:.2f} seconds")
-        interpolate_wfcpos(banda)  # fix -1 k-points before the gradient is taken
-    if b not in bands_gra:
+    # the buffers hold nothing usable on entry (fresh process on resume, or a
+    # previous band), so wfcpos must be rebuilt whenever anything is written --
+    # the old code skipped this for b in bands_pos and then re-saved the stale
+    # buffer, zeroing already-finished files on resume
+    start = time()
+    read_wfc_files(banda, npr)
+    logger.debug(f"\twfc files read in {time() - start:.2f} seconds")
+
+    start = time()
+    calculate_wfcpos(npr)
+    logger.info(f"\twfcpos{b} calculated in {time() - start:.2f} seconds")
+    interpolate_wfcpos(banda)  # fix -1 k-points before the gradient is taken
+
+    if need_gra:
         start = time()
         calculate_wfcgra(npr)
         logger.info(f"\twfcgra{b} calculated in {time() - start:.2f} seconds")
 
     start = time()
     #IDEA: Try saving this files into a folder in different chunks
+    save = np.savez_compressed if compress else np.save
+    ext = "npz" if compress else "npy"
     if m.noncolin:
-        if compress:
-            np.savez_compressed(os.path.join(m.data_dir, f"wfcpos{b}-0.npz"), wfcpos0)
-            np.savez_compressed(os.path.join(m.data_dir, f"wfcpos{b}-1.npz"), wfcpos1)
+        if need_pos:
+            save(os.path.join(m.data_dir, f"wfcpos{b}-0.{ext}"), wfcpos0)
+            save(os.path.join(m.data_dir, f"wfcpos{b}-1.{ext}"), wfcpos1)
             bands_pos.append(b)
-            np.savez_compressed(os.path.join(m.data_dir, f"wfcgra{b}-0.npz"), wfcgra0)
-            np.savez_compressed(os.path.join(m.data_dir, f"wfcgra{b}-1.npz"), wfcgra1)
-            bands_gra.append(b)
-        else:
-            np.save(os.path.join(m.data_dir, f"wfcpos{b}-0.npy"), wfcpos0)
-            np.save(os.path.join(m.data_dir, f"wfcpos{b}-1.npy"), wfcpos1)
-            bands_pos.append(b)
-            np.save(os.path.join(m.data_dir, f"wfcgra{b}-0.npy"), wfcgra0)
-            np.save(os.path.join(m.data_dir, f"wfcgra{b}-1.npy"), wfcgra1)
+        if need_gra:
+            save(os.path.join(m.data_dir, f"wfcgra{b}-0.{ext}"), wfcgra0)
+            save(os.path.join(m.data_dir, f"wfcgra{b}-1.{ext}"), wfcgra1)
             bands_gra.append(b)
     else:
-        if compress:
-            np.savez_compressed(os.path.join(m.data_dir, f"wfcpos{b}.npz"), wfcpos)
+        if need_pos:
+            save(os.path.join(m.data_dir, f"wfcpos{b}.{ext}"), wfcpos)
             bands_pos.append(b)
-            np.savez_compressed(os.path.join(m.data_dir, f"wfcgra{b}.npz"), wfcgra)
-            bands_gra.append(b)
-        else:
-            np.save(os.path.join(m.data_dir, f"wfcpos{b}.npy"), wfcpos)
-            bands_pos.append(b)
-            np.save(os.path.join(m.data_dir, f"wfcgra{b}.npy"), wfcgra)
+        if need_gra:
+            save(os.path.join(m.data_dir, f"wfcgra{b}.{ext}"), wfcgra)
             bands_gra.append(b)
 
-    logger.debug(f"\twfcpos{b} and wfcgra{b} saved in {time() - start:.2f} seconds\n")
+    logger.debug(f"\twfcpos{b}{f' and wfcgra{b}' if need_gra else ''} saved in {time() - start:.2f} seconds\n")
 
 def save_r2k(bpos, bgra):
     # saving the bands already done
@@ -225,7 +229,7 @@ def save_r2k(bpos, bgra):
 
 
 
-def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "r2k", logger_level: int = logging.INFO, compress: bool = False, flush: bool = False):
+def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "r2k", logger_level: int = logging.INFO, compress: bool = False, flush: bool = False, save_gra: bool = False):
     if m.noncolin:
         global grad, bandsfinal, wfct_k0, wfct_k1, wfcpos0, wfcpos1, wfcgra0, wfcgra1, logger, initial_band, save_file, bands_pos, bands_gra
     else:
@@ -307,17 +311,24 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     logger.info(f"\tSignal and bands files loaded")
 
     if m.noncolin:
-        buffer = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)
-        wfct_k0 = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCT_K_SHAPE)
-        wfct_k1 = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCT_K_SHAPE)
+        # NOTE: each array needs its OWN buffer -- the old code made the -0 and
+        # -1 spinor components two views of the SAME allocation, so component 1
+        # silently overwrote component 0 in every noncolinear output
+        buffer0 = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)
+        buffer1 = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)
+        wfct_k0 = np.frombuffer(buffer0, dtype=np.complex128).reshape(WFCT_K_SHAPE)
+        wfct_k1 = np.frombuffer(buffer1, dtype=np.complex128).reshape(WFCT_K_SHAPE)
 
-        buffer = Array(ctypes.c_double, 2 * WFCPOS_SIZE, lock=False)
-        wfcpos0 = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCPOS_SHAPE)
-        wfcpos1 = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCPOS_SHAPE)
+        buffer0 = Array(ctypes.c_double, 2 * WFCPOS_SIZE, lock=False)
+        buffer1 = Array(ctypes.c_double, 2 * WFCPOS_SIZE, lock=False)
+        wfcpos0 = np.frombuffer(buffer0, dtype=np.complex128).reshape(WFCPOS_SHAPE)
+        wfcpos1 = np.frombuffer(buffer1, dtype=np.complex128).reshape(WFCPOS_SHAPE)
 
-        buffer = Array(ctypes.c_double, 2 * WFCGRA_SIZE, lock=False)
-        wfcgra0 = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCGRA_SHAPE)
-        wfcgra1 = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCGRA_SHAPE)
+        if save_gra:
+            buffer0 = Array(ctypes.c_double, 2 * WFCGRA_SIZE, lock=False)
+            buffer1 = Array(ctypes.c_double, 2 * WFCGRA_SIZE, lock=False)
+            wfcgra0 = np.frombuffer(buffer0, dtype=np.complex128).reshape(WFCGRA_SHAPE)
+            wfcgra1 = np.frombuffer(buffer1, dtype=np.complex128).reshape(WFCGRA_SHAPE)
 
     else:
         buffer = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)
@@ -326,8 +337,9 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
         buffer = Array(ctypes.c_double, 2 * WFCPOS_SIZE, lock=False)
         wfcpos = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCPOS_SHAPE)
 
-        buffer = Array(ctypes.c_double, 2 * WFCGRA_SIZE, lock=False)
-        wfcgra = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCGRA_SHAPE)
+        if save_gra:
+            buffer = Array(ctypes.c_double, 2 * WFCGRA_SIZE, lock=False)
+            wfcgra = np.frombuffer(buffer, dtype=np.complex128).reshape(WFCGRA_SHAPE)
 
 
     ###########################################################################
@@ -335,7 +347,7 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     ###########################################################################
     try:
         for banda in range(min_band - initial_band, max_band - initial_band + 1):
-            r_to_k(banda, npr, compress)
+            r_to_k(banda, npr, compress, save_gra)
             save_r2k(bands_pos, bands_gra) # saving the current state of the execution
     except Exception as err:
         save_r2k(bands_pos, bands_gra)

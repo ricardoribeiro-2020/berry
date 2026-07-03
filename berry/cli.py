@@ -393,41 +393,47 @@ berry [package options] script parameter [script options]
                                           metavar=f"[{m.initial_band}-{m.nbnd-1}]"      , 
                                           choices=range(m.initial_band, m.nbnd)             , 
                                           help="Minimum band to consider (default: 0).")
-                r2k_parser.add_argument("-c", 
-                                        action="store_true", 
+                r2k_parser.add_argument("-c",
+                                        action="store_true",
                                         help="Compress the output files.")
-                r2k_parser.add_argument("-flush", 
-                                        action="store_true", 
+                r2k_parser.add_argument("-savegra",
+                                        action="store_true",
+                                        help="Also write the wfcgra files (default: not written; geometry computes the k-gradient on the fly from wfcpos).")
+                r2k_parser.add_argument("-flush",
+                                        action="store_true",
                                         help="Flushes output into stdout.")
-                r2k_parser.add_argument("-o", 
-                                        default="r2k", 
-                                        type=str, 
-                                        metavar="file_path", 
+                r2k_parser.add_argument("-o",
+                                        default="r2k",
+                                        type=str,
+                                        metavar="file_path",
                                         help="Name of output log file. Extension will be .log regardless of user input.")
-                r2k_parser.add_argument("-v"        , 
-                                        action="store_true", 
+                r2k_parser.add_argument("-v"        ,
+                                        action="store_true",
                                         help="Increases output verbosity.")
             else:
-                r2k_parser.add_argument("Mb" , 
-                                        type=int           , 
-                                        metavar=f"Mb (0-{m.nbnd-1})"   , 
-                                        choices=range(m.nbnd)             , 
+                r2k_parser.add_argument("Mb" ,
+                                        type=int           ,
+                                        metavar=f"Mb (0-{m.nbnd-1})"   ,
+                                        choices=range(m.nbnd)             ,
                                         help="Maximum band to consider.")
-                r2k_parser.add_argument("-np", 
-                                        type=int, 
-                                        default=1, 
-                                        metavar=f"[1-{os.cpu_count()}]", 
-                                        choices=range(1, os.cpu_count()+1), 
+                r2k_parser.add_argument("-np",
+                                        type=int,
+                                        default=1,
+                                        metavar=f"[1-{os.cpu_count()}]",
+                                        choices=range(1, os.cpu_count()+1),
                                         help="Number of processes to use (default: 1).")
-                r2k_parser.add_argument("-mb", 
-                                        type=int, 
-                                        default=0, 
-                                        metavar=f"[0-{m.nbnd-1}]"      , 
-                                        choices=range(m.nbnd)             , 
+                r2k_parser.add_argument("-mb",
+                                        type=int,
+                                        default=0,
+                                        metavar=f"[0-{m.nbnd-1}]"      ,
+                                        choices=range(m.nbnd)             ,
                                         help="Minimum band to consider (default: 0).")
-                r2k_parser.add_argument("-c", 
-                                        action="store_true", 
+                r2k_parser.add_argument("-c",
+                                        action="store_true",
                                         help="Compress the output files.")
+                r2k_parser.add_argument("-savegra",
+                                        action="store_true",
+                                        help="Also write the wfcgra files (default: not written; geometry computes the k-gradient on the fly from wfcpos).")
                 r2k_parser.add_argument("-flush", 
                                         action="store_true", 
                                         help="Flushes output into stdout.")
@@ -441,38 +447,43 @@ berry [package options] script parameter [script options]
                                         help="Increases output verbosity.")
         if GEOMETRY:
             if m.initial_band != "dummy": # for backward compatibility
-                geometry_parser.add_argument("Mb"   , 
-                                             type=int                , 
-                                             metavar=f"Mb ({m.initial_band}-{m.nbnd-1})"   , 
-                                             choices=range(m.initial_band, m.nbnd)                      , 
+                geometry_parser.add_argument("Mb"   ,
+                                             type=int                ,
+                                             metavar=f"Mb ({m.initial_band}-{m.nbnd-1})"   ,
+                                             choices=range(m.initial_band, m.nbnd)                      ,
                                              help="Maximum band to consider.")
-                geometry_parser.add_argument("-np"  , 
-                                             type=int, default=1     , 
-                                             metavar=f"[1-{os.cpu_count()}]", 
-                                             choices=range(1, os.cpu_count()+1)         , 
-                                             help="Number of processes to use (default: 1).")
-                geometry_parser.add_argument("-mb"  , 
-                                             type=int, 
-                                             default=m.initial_band     , 
-                                             metavar=f"[{m.initial_band}-{m.nbnd-1}]"      , 
+                geometry_parser.add_argument("-np"  ,
+                                             type=int, default=0     ,
+                                             metavar=f"[1-{os.cpu_count()}]",
+                                             choices=range(0, os.cpu_count()+1)         ,
+                                             help="Number of threads to use (default: all cores).")
+                geometry_parser.add_argument("-mb"  ,
+                                             type=int,
+                                             default=m.initial_band     ,
+                                             metavar=f"[{m.initial_band}-{m.nbnd-1}]"      ,
                                              choices=range(m.initial_band, m.nbnd)                      , help=f"Minimum band to consider (default: {m.initial_band}).")
             else:
-                geometry_parser.add_argument("Mb"   , 
-                                             type=int                , 
-                                             metavar=f"Mb (0-{m.nbnd-1})"   , 
-                                             choices=range(m.nbnd)                      , 
+                geometry_parser.add_argument("Mb"   ,
+                                             type=int                ,
+                                             metavar=f"Mb (0-{m.nbnd-1})"   ,
+                                             choices=range(m.nbnd)                      ,
                                              help="Maximum band to consider.")
-                geometry_parser.add_argument("-np"  , 
-                                             type=int, default=1     , 
-                                             metavar=f"[1-{os.cpu_count()}]", 
-                                             choices=range(1, os.cpu_count()+1)         , 
-                                             help="Number of processes to use (default: 1).")
-                geometry_parser.add_argument("-mb"  , 
-                                             type=int, 
-                                             default=0     , 
-                                             metavar=f"[0-{m.nbnd-1}]"      , 
-                                             choices=range(m.nbnd)                      , 
+                geometry_parser.add_argument("-np"  ,
+                                             type=int, default=0     ,
+                                             metavar=f"[1-{os.cpu_count()}]",
+                                             choices=range(0, os.cpu_count()+1)         ,
+                                             help="Number of threads to use (default: all cores).")
+                geometry_parser.add_argument("-mb"  ,
+                                             type=int,
+                                             default=0     ,
+                                             metavar=f"[0-{m.nbnd-1}]"      ,
+                                             choices=range(m.nbnd)                      ,
                                              help="Minimum band to consider (default: 0).")
+            geometry_parser.add_argument("-mem",
+                                         type=float,
+                                         default=32.0,
+                                         metavar="GB",
+                                         help="Memory budget in GB for the streaming buffers (default: 32).")
             geometry_parser.add_argument("-prop", 
                                          type=str, 
                                          default="both", 
@@ -852,6 +863,7 @@ def r2k_cli(args: argparse.Namespace):
     args_dict["min_band"] = args.mb
     args_dict["max_band"] = args.Mb
     args_dict["compress"] = args.c
+    args_dict["save_gra"] = args.savegra
     args_dict["flush"] = args.flush
 
     run_r2k(**args_dict)
@@ -869,11 +881,12 @@ def berry_props_cli(args: argparse.Namespace):
     args_dict = {}
     args_dict["logger_level"] = logging.DEBUG if args.v else logging.INFO
     args_dict["logger_name"] = args.o
-    args_dict["npr"] = 1 #NOTE: UNTIL NOW, ONLY ONE PROCESS IS SUPPORTED
+    args_dict["npr"] = args.np
     args_dict["min_band"] = args.mb
     args_dict["max_band"] = args.Mb
     args_dict["prop"] = args.prop
     args_dict["digits"] = args.d
+    args_dict["mem_gb"] = args.mem
     args_dict["flush"] = args.flush
 
     run_berry_geometry(**args_dict)
