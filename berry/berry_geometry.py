@@ -473,6 +473,11 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Lit
             _stream_connection_curvature(bands, do_conn, do_curv, mem_gb, logger)
         logger.info(f"\tconnection/curvature pass took {time() - start:.2f} seconds")
 
+    def _log_chern_numbers(values):
+        logger.info(f"\n{'Band:' : >13} Chern Number")
+        for idx in bands:
+            logger.info(f"{f'{idx}:' : >13} {values[idx]}")
+
     if m.dimensions > 1:
         if prop == "chern":
             for idx in bands:
@@ -483,9 +488,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Lit
             chern_num = np.round(np.real(chern_num), decimals=digits)
             np.save(os.path.join(m.geometry_dir, "chern_number.npy"), chern_num)
             logger.info(f"\tchern_number.npy saved")
-            logger.info(f"\n{'Band:' : >13} Chern Number")
-            for ind, val in enumerate(chern_num):
-                logger.info(f"{f'{ind}:' : >13} {val}")
+            _log_chern_numbers(chern_num)
 
         if prop == "chern_curl":
             number_of_bands = max_band + 1 - min_band
@@ -501,6 +504,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Lit
                 chern_num[idx] = chern_number(curv)
             np.save(os.path.join(m.geometry_dir, "chern_number_curl.npy"), chern_num)
             logger.info(f"\tchern_number_curl.npy saved")
+            _log_chern_numbers(np.real(chern_num))
 
         if prop == "chern_bp":
             for idx in bands:
@@ -508,6 +512,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Lit
                 chern_num[idx] = chern_number_bp(pos)
             np.save(os.path.join(m.geometry_dir, "chern_number_bp.npy"), chern_num)
             logger.info(f"\tchern_number_bp.npy saved")
+            _log_chern_numbers(np.real(chern_num))
 
         if prop == "chern_bp_bz":
             for idx in bands:
@@ -515,6 +520,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Lit
                 chern_num[idx] = chern_number_bp_bz(pos)
             np.save(os.path.join(m.geometry_dir, "chern_number_bp_bz.npy"), chern_num)
             logger.info(f"\tchern_number_bp_bz.npy saved")
+            _log_chern_numbers(np.real(chern_num))
 
     ###########################################################################
     # Finished
