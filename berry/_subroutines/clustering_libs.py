@@ -61,6 +61,13 @@ NOT_SOLVED = 0
 
 FORCED_CONTINUITY = 5   # correct_signalfinal / evaluate_point (energy-continuity) scale
 
+# A direction "supports" a slot's attribution when the dot product between the
+# cell's assigned band and the band assigned to the SAME slot at that neighbour
+# is at least this. The dp distribution is strongly bimodal (~0 vs ~0.9+), so the
+# exact value is not critical; 0.5 sits in the empty middle. Used by the post-loop
+# dp-evidence passes (_dp_support_counts / _repair_dp_swaps / _flag_dp_unsupported).
+DP_SUP_TOL = 0.5
+
 ###########################################################################
 # Parallelization helpers (Pool workers)
 ###########################################################################
@@ -2524,11 +2531,26 @@ class MATERIAL:
         self.correct_signalfinal = np.copy(self.signal_final)                           # New array to store the corrected signal
         self.correct_signalfinal[self.signal_final == CORRECT] = CORRECT-1              # Change the CORRECT signal to CORRECT - 1
 
-        ks_pC, bnds_pC = np.where(self.signal_final == POTENTIAL_CORRECT)               # Select the points marked as POTENTIAL_CORRECT
-        ks_pM, bnds_pM = np.where(self.signal_final == POTENTIAL_MISTAKE)               # Select the points marked as POTENTIAL_MISTAKE
+        if last:
+            # Final pass: validate EVERY attributed slot, not only the POTENTIAL_* ones.
+            # In-loop, CORRECT slots skip re-evaluation (cheap, and it keeps the solver
+            # dynamics stable), but that exempts whichever side of a label swap was
+            # assigned FIRST from ever being energy-checked: of a swapped pair only the
+            # slot filled last gets flagged and its partner ships as clean (MoS2 bands
+            # 12/13: slot 13 held the swapped band at the same 5 k-points with zero dp
+            # support and still reported CORRECT). DEGENERATE cells keep their marker
+            # (ROTATE grading) and FORCED cells keep their audit trail (solve() stamps
+            # them FORCED_CONTINUITY right after this returns).
+            sel = ((self.bands_final >= 0) &
+                   (self.signal_final != DEGENERATE) &
+                   (self.signal_final != FORCED))
+            ks, bnds = np.where(sel)
+        else:
+            ks_pC, bnds_pC = np.where(self.signal_final == POTENTIAL_CORRECT)           # Select the points marked as POTENTIAL_CORRECT
+            ks_pM, bnds_pM = np.where(self.signal_final == POTENTIAL_MISTAKE)           # Select the points marked as POTENTIAL_MISTAKE
 
-        ks = np.concatenate((ks_pC, ks_pM))                                             # Join all k-points
-        bnds = np.concatenate((bnds_pC, bnds_pM))                                       # Join the k-points' bands
+            ks = np.concatenate((ks_pC, ks_pM))                                         # Join all k-points
+            bnds = np.concatenate((bnds_pC, bnds_pM))                                   # Join the k-points' bands
 
         error_directions = []                                                           # This array stores the k-point where the energy ccontinuity fails.     ! It is not used !
         directions = []                                                                 # This array stores the direction where the energy continuity fails.    ! It is not used !
@@ -2568,6 +2590,16 @@ class MATERIAL:
                 directions.append(scores)
             if signal <= OTHER:                 # log only actionable signals (NOT/MIS/DEG/OTH); skip ~11k CORRECT lines/iter
                 self.logger.debug(f'K point: {k} Band: {bn}    New Signal: {signal} Directions: {scores}')
+
+        if last:
+            # Observability for the widened final-pass scope: how many slots the
+            # in-loop validation had promoted to CORRECT actually fail energy
+            # continuity once checked (they are invalidated and refilled below).
+            demoted = int(np.sum((self.signal_final == CORRECT) &
+                                 (self.correct_signalfinal == MISTAKE)))
+            if demoted:
+                self.logger.info(f'{BODY_INDENT}Final revalidation: {demoted} in-loop CORRECT '
+                                 f'slot(s) fail energy continuity and were flagged')
 
         ###########################################################################
         # Create a new problem for another solver iteration
@@ -3008,6 +3040,196 @@ class MATERIAL:
             self.logger.info(f'{BODY_INDENT}Bijection enforcement: reassigned {reassigned} '
                              f'duplicate slot(s) and filled {filled} empty slot(s) with missing bands')
         return reassigned + filled
+
+    def _dp_support_counts(self, tol: float = None) -> Tuple[np.ndarray, np.ndarray]:
+        '''
+        Per-cell dot-product support of the current attribution: for every (k, slot)
+        count the directions whose edge connects the cell's assigned band to the band
+        assigned to the SAME slot at the neighbouring k-point with dp >= ``tol``
+        (default ``DP_SUP_TOL``).
+
+        Returns ``(sup, tot)``, both (nks, nbands) int arrays: ``sup`` = number of
+        dp-supported directions, ``tot`` = number of comparable directions (the
+        neighbour exists and both cells are attributed). ``sup == 0`` with
+        ``tot > 0`` means the slot's content is orthogonal to the same slot at every
+        neighbour: the wavefunction evidence contradicts the attribution no matter
+        how quiet the energy is. This is the signature of a label swap between
+        near-parallel bands (MoS2 12/13: a ~5 mHa energy error passes every energy
+        gate, but the cross dot-product is exactly 0).
+        '''
+        if tol is None:
+            tol = DP_SUP_TOL
+        bf = self.bands_final
+        nk, nb = bf.shape
+        sup = np.zeros((nk, nb), int)
+        tot = np.zeros((nk, nb), int)
+        neigh = np.asarray(self.neighbors)
+        idx = np.arange(nk)
+        for d in range(neigh.shape[1]):
+            kn = neigh[:, d]
+            ok = kn >= 0
+            kn_safe = np.where(ok, kn, 0)
+            b1 = bf                                                     # band in this cell
+            b2 = bf[kn_safe]                                            # band in the same slot at the d-neighbour
+            comparable = ok[:, None] & (b1 >= 0) & (b2 >= 0)
+            vals = self.connections[idx[:, None], d,
+                                    np.where(comparable, b1, 0),
+                                    np.where(comparable, b2, 0)]
+            tot += comparable
+            sup += comparable & (vals >= tol)
+        return sup, tot
+
+    def _repair_dp_swaps(self, max_rounds: int = 32) -> int:
+        '''
+        Post-loop repair of the label swaps the energy machinery cannot see.
+
+        A swapped pair of near-parallel bands (e.g. an SOC pair split by a few mHa)
+        costs almost nothing in energy -- every energy gate passes -- but the
+        wavefunction evidence is decisive: the swapped cell has dot product ~0 to its
+        own slot at every correctly-attributed neighbour while the exchanged
+        assignment scores ~1. This pass takes every attributed cell with ZERO
+        dp-supported directions and exchanges its content with the row's best-fitting
+        slot, accepting a swap only when it STRICTLY increases the two cells'
+        combined number of dp-supported directions. Genuine crossings are safe: there
+        the current (band-following) attribution is the dp-supported one, so any swap
+        strictly decreases support and is rejected. Swap filaments unwind end-first
+        over the rounds (fixing an end removes its neighbour's only supporter, which
+        exposes that neighbour as the next round's candidate).
+
+        Runs after the final correct_signal, so the canvas is complete; only values
+        inside a row are exchanged, so the per-k bijection is preserved. At the end
+        the energy-continuity signal of the still-failed cells is re-evaluated on the
+        final canvas, so cells fixed here, cells whose neighbourhood was fixed here,
+        and the bijection gap fills (flagged before they were filled) are graded on
+        what is actually shipped rather than on the state they were flagged in.
+
+        Returns the number of swaps applied.
+        '''
+        OTHER = 3
+        bf = self.bands_final
+        neigh = np.asarray(self.neighbors)
+        n_dir = neigh.shape[1]
+
+        def n_supported(k: int, s: int, b: int) -> int:
+            # dp-supported directions of band b sitting in slot s at k, on the
+            # current (possibly mid-round) canvas.
+            good = 0
+            for d in range(n_dir):
+                kn = int(neigh[k, d])
+                if kn < 0:
+                    continue
+                b2 = int(bf[kn, s])
+                if b2 < 0:
+                    continue
+                if self.connections[k, d, b, b2] >= DP_SUP_TOL:
+                    good += 1
+            return good
+
+        swaps = 0
+        swapped_cells = []
+        for _ in range(max_rounds):
+            sup, tot = self._dp_support_counts()
+            cand = np.argwhere((bf >= 0) & (sup == 0) & (tot > 0))
+            round_swaps = 0
+            for k, s in cand:
+                k, s = int(k), int(s)
+                b_s = int(bf[k, s])
+                if b_s < 0 or n_supported(k, s, b_s) > 0:
+                    continue                            # already touched earlier this round
+                best_gain, best_t = 0, -1
+                for t in range(bf.shape[1]):
+                    if t == s:
+                        continue
+                    b_t = int(bf[k, t])
+                    if b_t < 0:
+                        continue
+                    cur = n_supported(k, t, b_t)        # slot s contributes 0 (candidate)
+                    new = n_supported(k, s, b_t) + n_supported(k, t, b_s)
+                    if new - cur > best_gain:
+                        best_gain, best_t = new - cur, t
+                if best_t >= 0:
+                    bf[k, s], bf[k, best_t] = int(bf[k, best_t]), b_s
+                    swapped_cells.append((k, s, best_t))
+                    round_swaps += 1
+            swaps += round_swaps
+            if round_swaps == 0:
+                break
+        if swaps:
+            n_k = len(set(c[0] for c in swapped_cells))
+            self.logger.info(f'{BODY_INDENT}DP-evidence swap repair: exchanged {swaps} slot '
+                             f'pair(s) at {n_k} k-point(s)')
+            for k, s, t in swapped_cells:
+                self.logger.debug(f'{BODY_INDENT}  [dp-swap] k={k}: slot {s} <-> slot {t} '
+                                  f'(now bands {int(bf[k, s])}/{int(bf[k, t])})')
+
+        # Re-grade the failed cells (NOT/MIS/OTH) on the final canvas. DEGENERATE
+        # keeps its marker and FORCED_CONTINUITY cells are not in the refresh set.
+        refreshed = 0
+        upgraded = 0
+        failed_now = np.isin(self.correct_signalfinal, (NOT_SOLVED, MISTAKE, OTHER)) & (bf >= 0)
+        for k, s in np.argwhere(failed_now):
+            k, s = int(k), int(s)
+            if self.signal_final[k, s] == DEGENERATE:
+                continue
+            sig, _ = evaluate_point(self.dimensions, k, s, self.kpoints_index,
+                                    self.matrix, self.signal_final, bf, self.eigenvalues,
+                                    accept_E=self.accept_E, disp_scale=self.disp_scale)
+            if sig != self.correct_signalfinal[k, s]:
+                if sig > self.correct_signalfinal[k, s]:
+                    upgraded += 1
+                self.correct_signalfinal[k, s] = sig
+                refreshed += 1
+        if refreshed:
+            self.logger.info(f'{BODY_INDENT}Failed-cell re-grade on the final canvas: '
+                             f'{refreshed} signal(s) changed ({upgraded} upgraded)')
+        return swaps
+
+    def _flag_dp_unsupported(self) -> int:
+        '''
+        Final audit: demote to MISTAKE every attributed cell whose assignment has
+        ZERO dp-supported directions and no degeneracy excuse.
+
+        The energy validation cannot see a label swap between near-parallel bands (a
+        few-mHa error passes every gate), so a cell can be energy-CORRECT while the
+        wavefunction evidence flatly contradicts it. Cells inside a near-degenerate
+        group (adjacent gap < ``degen_ethr``) are exempt: there the individual label
+        is gauge and a low diagonal dot product is expected (basis-rotation
+        territory, not a mis-attribution). Force-filled cells keep FORCED_CONTINUITY
+        (the report already audits those as benign/suspect). The attribution itself
+        is NOT modified -- this only makes the report honest about it.
+
+        Returns the number of demoted cells.
+        '''
+        OTHER = 3
+        CORRECT_C = 4                                               # energy-continuity scale
+        bf = self.bands_final
+        sup, tot = self._dp_support_counts()
+        ethr = getattr(self, 'degen_ethr', 0.005)
+        close = np.zeros(self.eigenvalues.shape, bool)              # (k, band) near-degenerate w/ a neighbour band
+        dE = np.diff(self.eigenvalues, axis=1) < ethr
+        close[:, 1:] |= dE
+        close[:, :-1] |= dE
+        att = bf >= 0
+        in_degen = np.zeros(bf.shape, bool)
+        in_degen[att] = close[np.where(att)[0], bf[att]]
+        csf = self.correct_signalfinal
+        target = (att & (tot > 0) & (sup == 0) & ~in_degen &
+                  ((csf == OTHER) | (csf == CORRECT_C)))
+        n = int(target.sum())
+        if n:
+            per_band = {int(s): np.where(target[:, s])[0]
+                        for s in range(bf.shape[1]) if target[:, s].any()}
+            summary = ', '.join(f'band {s}: {len(ks)}' for s, ks in per_band.items())
+            self.logger.info(f'{BODY_INDENT}DP-support audit: {n} attributed point(s) have zero '
+                             f'dot-product support in their slot -- demoted to MISTAKE ({summary})')
+            for s, ks in per_band.items():
+                self.logger.debug(f'{BODY_INDENT}  [dp-audit] band {s}: k = {list(ks[:50])}'
+                                  + (' ...' if len(ks) > 50 else ''))
+            csf[target] = MISTAKE
+        else:
+            self.logger.info(f'{BODY_INDENT}DP-support audit: every attributed point has '
+                             f'dot-product support (no silent swaps)')
+        return n
 
     def _ensure_connectivity(self) -> None:
         '''
@@ -3539,6 +3761,18 @@ class MATERIAL:
 
         self.correct_signal(last=True)
         self.correct_signalfinal[self.forced_mask] = FORCED_CONTINUITY
+
+        ###########################################################################
+        # Wavefunction-evidence pass. The energy machinery above cannot see a label
+        # swap between near-parallel bands (a few-mHa error passes every energy
+        # gate), so first exchange the zero-dp-support cells where the swap is
+        # dp-favoured (and re-grade the failed cells on the final canvas), then
+        # demote whatever zero-support cells remain so the report cannot call a
+        # silently swapped band clean.
+        ###########################################################################
+        self._repair_dp_swaps()
+        self._flag_dp_unsupported()
+
         self.logger.info(self.report())
 
         # Verbose (-v) post-mortem: per-slot provenance (in-loop / repaired / forced),
