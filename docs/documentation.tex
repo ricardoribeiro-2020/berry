@@ -231,7 +231,7 @@ where the \texttt{script} is one of the following
  basis (optional)
  r2k
  geometry
- condutivity
+ conductivity
  shg
 \end{verbatim}
 and the parameter is dependent on which script is beeing run.
@@ -968,7 +968,7 @@ All log files are created in directory \verb|log|.
  \subsection{The sampling of the Brillouin Zone}
 
  In principle, one wants to calculate the bands in the full Brillouin Zone (BZ)
- for the calculation of the linear and second harmonic condutivity.
+ for the calculation of the linear and second harmonic conductivity.
  One can always sample just a part of it, of course.
 
  For computational reasons, in version 2.0 (as in version 1.0) the sample has to be
@@ -1676,8 +1676,8 @@ The options for \texttt{geometry} are shown in table \ref{tab:options_geometry}.
 
 \section{Optical conductivity and second harmonic generation}
 
-To calculate the linear condutivity, the script \texttt{condutivity} should be used
-and for the second harmonic condutivity, the script \texttt{shg}.
+To calculate the linear conductivity, the script \texttt{conductivity} should be used
+and for the second harmonic conductivity, the script \texttt{shg}.
 \begin{verbatim}
   berry conductivity highest_band [script options]
  \end{verbatim}
@@ -1849,11 +1849,11 @@ The package contains the python scripts in the main berry directory:
  \item generatewfc.py
  \item degenrotation.py
  \item dotproduct.py
- \item clustering\_bands.py
+ \item clustering\_bands0.py
  \item basisrotation.py
  \item r2k.py
  \item berry\_geometry.py
- \item condutivity.py
+ \item conductivity.py
  \item shg.py
 \end{itemize}\medskip
 
@@ -1867,9 +1867,9 @@ and the auxiliary files:
 
 Visualization scripts are in directory 'vis':
 \begin{itemize}
+ \item \_bands.py
  \item \_debug.py
  \item \_geometry.py
- \item \_wave.py
 \end{itemize}\medskip
 
 Also the subroutines (depend on the other scripts) are in directory '\_subroutines':
@@ -1882,7 +1882,7 @@ Also the subroutines (depend on the other scripts) are in directory '\_subroutin
  \item comutator.py
  \item write\_k\_points.py
  \item clustering\_libs.py
- \item clustering\_signaling.py
+ \item rotation\_core.py
 \end{itemize}
 
 Some utilities are in directory 'utils':
@@ -1890,6 +1890,7 @@ Some utilities are in directory 'utils':
   \item emailSender.py
   \item jit.py
   \item \_logger.py
+  \item wfck2rFR.f90 (Fortran source for the wfck2rFR.x utility, used in noncolinear calculations)
 \end{itemize}
 
 It is likely that some of these scripts will be merged with others
