@@ -167,9 +167,9 @@ berry [package options] script parameter [script options]
             degenrot_parser.add_argument(
                 "-ethr",
                 type=float,
-                default=0.001,
+                default=0.005,
                 metavar="",
-                help="Energy threshold for degeneracy detection in eigenvalue units (default: 0.001).",
+                help="Energy threshold for degeneracy detection in eigenvalue units (default: 0.005).",
             )
             degenrot_parser.add_argument(
                 "-c",
@@ -297,7 +297,7 @@ berry [package options] script parameter [script options]
                                         default=-1,
                                         metavar=f"Mb (0-{m.nbnd-1})",
                                         choices=range(m.nbnd),
-                                        help="Maximum band to consider.")
+                                        help="Maximum band to consider (default: -1, i.e. all bands up to final_band).")
                 _cl_parser.add_argument("-mb",
                                         type=int,
                                         default=0,
@@ -387,12 +387,12 @@ berry [package options] script parameter [script options]
                                         metavar=f"[1-{os.cpu_count()}]", 
                                         choices=range(1, os.cpu_count()+1), 
                                         help="Number of processes to use (default: 1).")
-                r2k_parser.add_argument("-mb", 
-                                        type=int, 
+                r2k_parser.add_argument("-mb",
+                                        type=int,
                                         default=m.initial_band,
-                                          metavar=f"[{m.initial_band}-{m.nbnd-1}]"      , 
-                                          choices=range(m.initial_band, m.nbnd)             , 
-                                          help="Minimum band to consider (default: 0).")
+                                          metavar=f"[{m.initial_band}-{m.nbnd-1}]"      ,
+                                          choices=range(m.initial_band, m.nbnd)             ,
+                                          help=f"Minimum band to consider (default: {m.initial_band}).")
                 r2k_parser.add_argument("-c",
                                         action="store_true",
                                         help="Compress the output files.")
@@ -488,12 +488,12 @@ berry [package options] script parameter [script options]
                                          type=str, 
                                          default="both", 
                                          metavar="",
-                                         choices=["both", "conn", "curv", "chern", "chern_curl", "chern_bp", "chern_bp_bz"], 
-                                         help="Specify which proprety to calculate. Possible choices are 'both', 'conn' and 'curv' (default: both)")
-            geometry_parser.add_argument("-d", 
-                                         type=int, 
-                                         default=1,
-                                         metavar="", 
+                                         choices=["both", "conn", "curv", "chern", "chern_curl", "chern_bp", "chern_bp_bz"],
+                                         help="Specify which property to calculate. Possible choices are 'both', 'conn', 'curv', 'chern', 'chern_curl', 'chern_bp' and 'chern_bp_bz' (default: both)")
+            geometry_parser.add_argument("-d",
+                                         type=int,
+                                         default=0,
+                                         metavar="",
                                          help="Number of decimal places to save chern number with (default: 0)")
 
             geometry_parser.add_argument("-flush", 

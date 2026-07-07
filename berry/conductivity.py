@@ -186,7 +186,7 @@ def compute_condutivity(omega:float, delta_eigen_array: np.ndarray, fermi: np.nd
 
 #TODO: ADD assertions to all functions in order to check if the inputs are correct
 #IDEA: Maybe create a type checking decorator (USE pydantic)
-def run_conductivity(conduction_band: int, npr: int = 1, min_band: int = 0, energy_max: float = 2.5, energy_step: float = 0.001, brd: float = 0.01, logger_name: str = "condutivity", logger_level: int = logging.INFO, flush: bool = False):
+def run_conductivity(conduction_band: int, npr: int = 1, min_band: int = 0, energy_max: float = 2.5, energy_step: float = 0.001, brd: float = 0.01, logger_name: str = "conductivity", logger_level: int = logging.INFO, flush: bool = False):
     global band_list, berry_connections, OMEGA_SHAPE, CONST, VK, initial_band, number_of_bands
     logger = log(logger_name, "CONDUCTIVITY", level=logger_level, flush=flush)
     # conduction_band is the number of the highest conduction band to consider.

@@ -67,7 +67,7 @@ class WfcGenerator:
     def __init__(self,
                  nk_points: Optional[int] = None ,
                  bands: Optional[int] = None,
-                 logger_name: str = "genwfc",
+                 logger_name: str = "wfc",
                  logger_level: int = logging.INFO,
                  compress: bool = False,
                  flush: bool = False
