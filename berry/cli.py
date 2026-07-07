@@ -298,12 +298,6 @@ berry [package options] script parameter [script options]
                                         metavar=f"Mb (0-{m.nbnd-1})",
                                         choices=range(m.nbnd),
                                         help="Maximum band to consider (default: -1, i.e. all bands up to final_band).")
-                _cl_parser.add_argument("-mb",
-                                        type=int,
-                                        default=0,
-                                        metavar=f"[0-{m.nbnd-1}]",
-                                        choices=range(m.nbnd),
-                                        help="Minimum band to consider (default: 0).")
                 _cl_parser.add_argument("-np",
                                         type=int,
                                         default=1,
@@ -821,7 +815,6 @@ def clustering0_cli(args: argparse.Namespace):
     args_dict["logger_name"] = args.o
     args_dict["npr"] = args.np
     args_dict["max_band"] = args.Mb
-    args_dict["min_band"] = args.mb
     args_dict["tol"] = args.t
     args_dict["step"] = args.step
     args_dict["alpha"] = args.alpha

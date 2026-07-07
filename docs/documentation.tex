@@ -1483,7 +1483,8 @@ It uses data from files \emph{dp.npy} and \emph{eigenvalues.npy} to establish co
 between wavefunctions of neighboring k-points.
 
 The optional positional parameter \texttt{Mb} is the maximum band to consider; if omitted, all
-bands up to the highest one are used. The minimum band is set with the option \texttt{-mb}.
+bands up to the highest one are used. The minimum band is fixed at preprocessing time (the first
+band above the \texttt{wfcut} cutoff), since all the band-indexed files the script reads start there.
 
  It produces the following files:
  \begin{description}
@@ -1507,7 +1508,6 @@ bands up to the highest one are used. The minimum band is set with the option \t
   \hline
   \texttt{-h}, \texttt{--help}  & Show a help message and exit \\
   \texttt{Mb}                   & Maximum band to consider (positional; default: highest band) \\
-  \texttt{-mb}                  & Minimum band to consider (default: 0) \\
   \texttt{-np}                  & Number of processes to use (default: 1) \\
   \texttt{-t [0.0-1.0]}         & Tolerance used for graph construction (default: 0.80) \\
   \texttt{-step [0.0-1.0]}      & Step for the alpha sweep (default: 0.5, i.e. 1.0 $\to$ 0.5 $\to$ 0.0) \\
@@ -1934,6 +1934,10 @@ Thus, this variable $\vec{p}$ contains the k-point coordinates and an eigenenerg
     \vec{p} \equiv \left(k_x, k_y, E_{k,n}\right)
 \end{equation}
 
+For clarity, the equations in this appendix are written for the two-dimensional case; the
+implementation handles one-, two- and three-dimensional k-grids, where each k-point has $2d$
+neighbors ($d$ the dimension), so the factors and maxima written as $4$ below are $2d$ in general.
+
 The set of all k-points identifiers ($k$ indices) is $K$, where $K \equiv \left[k = 0,\dots,  N-1\right]$, and $\vec{K}\equiv \left\{\vec{k}_0, \vec{k}_1, \dots, \vec{k}_{N-1}\right\}$ is the set of all k-points vectors.
 $N$ is the total number of k-points.
 It is possible to define an index $p$ which uniquely determines a wavefunction' Bloch factors:
@@ -1973,11 +1977,17 @@ use graph theory methods to identify these groups and, after that, use unsupervi
 
 Consequently, this information makes it possible to construct the first data structure.
 It is a graph $G(V, E)$ ($V$ is a set of vertices or nodes, and $E$ is a set of edges (connections)) where each point $p$ is a node, so that $V=P$, and if the connection (dot-product) is more significant than an adequate tolerance $\mathrm{TOL}$, there is an edge between these nodes.
-For simplicity, this graph is undirected and does not have weights on its edges.
+This graph is undirected; each edge carries the dot product (mapped to the metric $1-\frac{2}{\pi}\arccos\left|\braket{p}{q}\right|$) as its weight, which is used by the community detection described later.
 
 \begin{equation}
     E = \left\{(p,q)\;|\;p,q\in P \;\;\wedge\;\; \left|\braket{p}{q}\right| > \mathrm{TOL}\right\}
 \end{equation}
+
+A cross-band edge (one whose endpoints have different original band indices $n$) is subject to an
+anti-bridge guard: it is kept only if band $n_p$ has lost its own continuity across that link
+(its same-band dot product is below $\mathrm{TOL}$), which is what happens at a genuine band crossing.
+Otherwise the edge is a spurious bridge that would fuse two distinct bands (e.g.\ a degenerate pair)
+into a single component, and it is dropped --- the same-band edge already carries the continuity.
 
 Therefore, the initial state of the problem is prepared in a convenient data structures.
 The next step is the solver algorithm that will use that data and the graph previously constructed as the initial solution point.
@@ -2038,6 +2048,7 @@ A component is a sub-graph (i.e., a smaller graph $g$ belonging to a bigger one 
 \end{figure}
 
 These components are straightforward to identify using existing GT techniques, but as expected, they are not the final result are just portions of a band.
+In practice the partition is not always the plain set of connected components: on the first iteration, and on every iteration that follows an error-region rebuild of the graph, the graph is partitioned with the Louvain community-detection method (weighted by the edges' dot products) under an adaptive resolution search, and any component holding more nodes than the number of k-points is re-split the same way.
 For this reason, it is essential to classify these components to form completed bands.
 Hence, the SA uses UML techniques to perform the assignment.
 
@@ -2142,8 +2153,11 @@ Thus, the similarity score, $s_p^q$, between the cluster's $p\in P$ point and it
     s_p^q = \alpha\left|\braket{p}{q}\right| + \left(1-\alpha\right)f_p(E_q)
 \end{equation}
 
+In the implementation the energy weight is refined to $w_E = (1-\alpha)\,w_e$ (the dot product carrying $1-w_E$), where $w_e = \mathrm{clip}(\Delta_\text{gap}/\sigma,\, 0.1,\, 1)$ down-weights $f_p(E_q)$ when the inter-band gap $\Delta_\text{gap}$ has collapsed below the one-step dispersion $\sigma$ (spin--orbit / Kramers manifolds), where energy continuity cannot separate adjacent bands; for well-separated bands $w_e=1$ and the expression above is recovered exactly.
+Moreover, the whole score $s_p^q$ (dot-product term included) is zeroed when $f_p(E_q)=0$ (a gross energy jump, see below) or when the cross-band anti-bridge veto fires (the candidate's band still overlaps itself strongly across the link, mirroring the graph-construction guard).
+
 The value of $\alpha$ is a relaxation parameter in the optimization process.
-Its initial value is $1$ (so the first iterations rely on the dot product alone), and it is swept down to its minimum value of $0$ in steps of size \texttt{step} (default $0.5$, giving the sweep $1 \to 0.5 \to 0$).
+Its initial value is $1$ (so the first iterations rely on the dot product alone, apart from the two vetoes just described, which are always active), and it is swept down to its minimum value of $0$ in steps of size \texttt{step} (default $0.5$, giving the sweep $1 \to 0.5 \to 0$).
 The sweep is convergence-paced: $\alpha$ is held at its current value while the solution keeps improving and is only lowered after it stalls for a few consecutive iterations, so lowering $\alpha$ gradually shifts trust from the dot product toward energy continuity.
 
 The function $f_p(E_q)$ scores the energy continuity between the energy $E_\text{best}$ that the cluster's trajectory predicts at $q$'s k-point and the candidate energy $E_q$. It is a smooth, scale-aware match with a gross-jump veto:
@@ -2158,12 +2172,13 @@ The function $f_p(E_q)$ scores the energy continuity between the energy $E_\text
     \hspace{1.0cm} \Delta E_a^b = |E_a-E_b|
 \end{equation}
 
-where $\sigma$ is the local one-step energy dispersion (the $99.9$th percentile of $|E(k+1)-E(k)|$) and $E_\text{accept}\approx 3\sigma$ is a loose gross-jump guard: a candidate on the far side of an energy wall (a genuine inter-band gap) scores $0$ and is never joined.
+where $\sigma$ is the local one-step energy dispersion (the $99.9$th percentile of $|E(k+1)-E(k)|$) and $E_\text{accept} = \max(3\sigma,\, \Delta_\text{gap}/2)$ is a loose gross-jump guard ($\Delta_\text{gap}$, the median spacing between adjacent bands, enters only as a loose floor, never as a sharp width): a candidate on the far side of an energy wall (a genuine inter-band gap) scores $0$ and is never joined.
 This replaces an earlier objective, $\text{min}\{\Delta E_\text{best}^{i}\}_i / \Delta E_\text{best}^q$, which scored how close $E_q$ was to being the \emph{globally nearest} band; that measure was non-directional and became unreliable when the gap collapses below $\sigma$ (spin--orbit / Kramers manifolds), where the nearest band is no longer the continuous one.
 
 We consider a smooth variation of bands in bands-energy space. Thus, the energy profile in each band's $\vec{p}$ point can be approximated by a second-order polynomial. This approximation allows us to calculate the best energy value $E_\text{best}$ by extrapolation from the neighboring points that belong to the cluster.
-If there are not enough points to fit the curve, the nearest neighbor's energy is used.
-The gross-jump guard $E_\text{accept}$ is deliberately not keyed to the band gap: gating on the gap once shattered the graph, so energy is kept out of the graph edges and used only through $f_p(E_q)$ and the a-posteriori repair described below.
+The walk that collects the fitting points is truncated at the first cliff (an energy step larger than $E_\text{accept}$, or a change of original band index), so the polynomial is never fitted across a discontinuity, and the prediction is clipped to the local dispersion window $\pm\sigma$ around the anchor point.
+If there are not enough continuous points to fit the curve, the score falls back to comparing the candidate energy directly with the reference point's own energy (in the assignment score) or with the nearest neighbor's energy (in the validation stage).
+The gross-jump guard $E_\text{accept}$ uses the band spacing only as the loose floor above, never as a sharp penalty width: gating on the gap once shattered the graph, so energy is kept out of the graph edges and used only through $f_p(E_q)$ and the a-posteriori repair described below.
 
 
 
@@ -2177,11 +2192,11 @@ Then, the similarity $\mathcal{S}(\mathrm{C},\mathrm{S})$ between the cluster $\
 Where $\tilde{N}$ is the total number of points in the sample's edge. The factor of 4 appears because each $q$ point generally contains four neighbors.
 
 Assigning samples to clusters uses similarity values, trying to maximize it between them.
-Hence, all the samples are compared to all clusters to obtain their similarities. The classification is made iteratively. For each iteration, one sample is assigned to the best cluster. After that, the similarity scores are recalculated between the samples and the modified cluster.
+Hence, all the samples are compared to all clusters to obtain their similarities (this scoring is distributed over the available processes). The classification is made in rounds: the samples are joined to their best cluster in descending order of score, and a round stops as soon as it would join a second sample to a cluster already modified in that round. Then only the scores against the modified clusters are recomputed; unmodified clusters keep their cached scores.
 
-This UML algorithm is the SA's bottleneck in executing time. This complication comes from the fact that this part is mostly computed linearly (i.e., the result on each iteration depends on the previous result). Therefore parallelizing it is challenging.
+This UML algorithm is the SA's bottleneck in executing time. Although the scoring inside each round is parallelized, the rounds themselves are sequential (each round depends on the joins of the previous one).
 
-Ultimately, all the samples are assigned to one cluster leading to a band solution.
+Ultimately, the samples are assigned to clusters, leading to a band solution (a sample may remain unassigned if no compatible cluster remains).
 However, as mentioned before, many problematic points exist.
 In particular, high energy bands usually have many oscilations, and in this case the assumption of smooth variation is inaccurate, and the metric criteria has to be improved.
 
@@ -2208,7 +2223,7 @@ A point is correctly assigned when the mean dot-product $\overline{\left|\braket
         $0$    & Not solved        &                                            \\
         $1$    & Wrong             & $\overline{\left|\braket{p}{q}\right|} \leq 0.2$        \\
         $2$    & Degenerate        &                                            \\
-        $3$    & Potential mistake & $0.2 < \overline{\left|\braket{p}{q}\right|} \leq 0.8$  \\
+        $3$    & Potential mistake & $0.2 < \overline{\left|\braket{p}{q}\right|} < 0.8$  \\
         $4$    & Potential correct & $0.8 < \overline{\left|\braket{p}{q}\right|} \leq 0.9 $ \\
         $5$    & Correct           & $\overline{\left|\braket{p}{q}\right|} > 0.9$           \\
         $6$    & Forced            & force-filled by the completeness pass                   \\\hline
@@ -2217,6 +2232,7 @@ A point is correctly assigned when the mean dot-product $\overline{\left|\braket
 
 This stage signals some points that require more analysis, namelly the ones that are signaled as potentialy correct or mistaken.
 The second stage of evaluation analyzes these points to decide if they are effectively correct or not.
+(In-loop, only these doubtful points are analyzed; on the final pass, after the solver stops, every attributed point is re-validated --- see the a-posteriori repair section.)
 This evaluation uses the energy continuity criteria (i.e., the bands need to be analytical in bands-energy space).
 Using the energy profile approximation by a second-order polynomial, it is possible to evaluate the continuity for each point's direction.
 Thus, each point receives a new signal value related to the number of directions $D$, that preserves the energy continuity.
@@ -2245,9 +2261,8 @@ This new information makes it possible to compare the final solution with the on
 We consider the best result the one that reaches more solved bands and a larger score for each band.
 Consequently, this result will be the starting point for the next iteration.
 
-The points not attributed, the mistakes, and the doubtful points became nodes with no connections.
-The points signaled as correct form well-constructed bands' portions.
-Thus, these points are nodes with edges between them.
+The points signaled as correct form well-constructed bands' portions: they are connected by same-band energy-continuity edges and survive intact as components.
+The points not attributed, the mistakes, and the doubtful points receive no continuity edges; instead, every band's node at the k-points that carry an error originates fresh dot-product edges (an error-region-only rebuild), so the error region can re-cluster and re-attach to the good bands at its boundary, and a connectivity guard ensures no node is left isolated.
 Accordingly, the collection of these nodes and edges forms the new graph.
 Therefore, the new initial state is ready and compatible with the first step of the SA (it needs the data in a graph form).
 
@@ -2256,12 +2271,13 @@ The next iterations will try to solve the wrong attributions to obtain a better 
 
 \subsection{A-posteriori repair and final classification}
 
-When the iterative solver stops, its best result may still contain points that failed the energy-continuity test or that were left unattributed. Three passes run once, on that best result, and they never touch a point that already validated cleanly:
+When the iterative solver stops, its best result may still contain points that failed the energy-continuity test or that were left unattributed. Four passes then run, in this order, on that best result. The energy-based passes (1--3) never touch a point that already validated cleanly; the wavefunction-evidence pass (4) may, by design.
 
 \begin{enumerate}
-    \item \textbf{Energy-continuity repair.} Only the flagged (wrong / not-solved) points, and points holding a valid but energy-discontinuous band, are freed and jointly reassigned. Each empty slot's expected energy is extrapolated by a quadratic fit built from \emph{trusted} neighbors only, and the freed bands are redistributed to the slots they best match, never reusing a band twice at the same k-point, and only when the reassignment stays within the gross-jump guard $E_\text{accept}$. Repaired points become trusted, so the fix propagates inward, one layer per round.
-    \item \textbf{Degenerate-group completion and bijection.} Inside a near-degenerate group of bands (energies within a few meV) the individual band label is a gauge choice, so the group's slots are completed by a within-group bijection. The full attribution is then made a per-k permutation (each original band used in at most one slot): duplicated bands keep their best copy and the losers move to a missing band by best energy fit.
+    \item \textbf{Energy-continuity repair.} The flagged (wrong / not-solved) points, points holding a valid but energy-discontinuous band, and energy-continuity outliers (points whose energy departs from the band's trusted trajectory even though the attribution is formally valid) are freed and jointly reassigned. Each empty slot's expected energy is extrapolated by a quadratic fit built from \emph{trusted} neighbors only, and the freed bands are redistributed to the slots they best match, never reusing a band twice at the same k-point, and only when the reassignment stays within the gross-jump guard $E_\text{accept}$. Repaired points become trusted, so the fix propagates inward, one layer per round.
     \item \textbf{Force completion.} Any slot still empty is force-filled with the closest available band in energy, using the continuity extrapolation as a reference. These points are marked \emph{Forced} (signal $6$ in table \ref{tab:signals1}, $5$ in table \ref{tab:signals2}); they are not genuine solves and are flagged as such.
+    \item \textbf{Final revalidation, degenerate-group completion and bijection.} Every attributed slot is re-validated by the energy-continuity criteria (in-loop only the doubtful points are checked, which could let one side of a label swap ship as clean); an isolated failure on a band whose overall score exceeds $0.96$ is graded as a partial discontinuity rather than a mistake. Inside a near-degenerate group of bands (energies within a few meV) the individual band label is a gauge choice, so the group's slots are completed by a within-group bijection. The full attribution is then made a per-k permutation (each original band used in at most one slot): duplicated bands keep their best copy and the losers move to a missing band by best energy fit. (The degenerate-group completion and the bijection also run as part of every in-loop validation, not only here.)
+    \item \textbf{Wavefunction-evidence pass.} The energy criteria cannot see a label swap between near-parallel bands (a few-meV error passes every energy gate), so cells whose attribution has no dot-product support are exchanged when the swap is dot-product-favoured, and the zero-support cells that remain are demoted, so that a silently swapped band cannot be reported clean.
 \end{enumerate}
 
 Finally each band is graded in the \textit{final.report} into one of: \texttt{CLEAN} (pristine), \texttt{USABLE} (no genuine errors; may carry a sub-pristine score or benign force-fills inside a degenerate doublet), \texttt{ROTATE} (usable after a basis rotation), \texttt{CHECK} (a force-fill across a real energy gap --- verify), or \texttt{FAIL} (a genuine energy break or a low score). The \texttt{CLEAN}/\texttt{USABLE}/\texttt{ROTATE} bands are the ones saved in \textit{completed\_bands.npy}.
@@ -2307,11 +2323,13 @@ Also, it is possible to change some of the default behaviour by passing some par
         Description & Flag & Default \\
         \hline
         The maximum band to solve  & Mb & highest band\\
-        The minimum band to consider & -mb & $0$\\
         Number of processes to use & -np & $1$\\
         Dot-product tolerance used for graph construction & -t & $0.80$\\
         Step for the alpha sweep & -step & $0.5$\\
         Initial alpha value & -alpha & $1.0$\\
+        Name of the output log file & -o & \textit{cluster}\\
+        Flush the output to stdout & -flush & \\
+        Increase output verbosity & -v & \\
 
         \hline
     \end{tabular}

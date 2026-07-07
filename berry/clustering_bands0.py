@@ -15,7 +15,7 @@ except:
     pass
 
 
-def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : float = 1.0, step : float = 0.5, npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False):
+def run_clustering(max_band: int, tol: float = 0.80, alpha : float = 1.0, step : float = 0.5, npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False):
     logger = log(logger_name, "CLUSTER", level=logger_level, flush=flush)
 
     logger.header()
@@ -25,6 +25,9 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : 
     ###########################################################################
     OUTPUT_PATH = ''
     max_band = max_band if max_band != -1 else m.final_band
+    # The minimum band is fixed by the preprocessing cutoff: every band-indexed
+    # file downstream of preprocessing (wfc files, dp.npy) starts at
+    # m.initial_band, so the clustering cannot start at any other band.
     min_band = m.initial_band
 
     ###########################################################################
@@ -94,4 +97,4 @@ def run_clustering(max_band: int, min_band: int = 0, tol: float = 0.80, alpha : 
     logger.footer()
 
 if __name__ == "__main__":
-    run_clustering(9, log("clustering", "CLUSTERING", "version", logging.DEBUG))
+    run_clustering(9, logger_name="clustering", logger_level=logging.DEBUG)
