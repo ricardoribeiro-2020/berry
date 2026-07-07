@@ -182,10 +182,10 @@ In appendix \ref{ch:noncolinear}, we explain how to do it.
 
 \section{Requirements}
 
-This version of \textbf{berry} only supports the DFT package {\sc Quantum Espresso}, version v.6.6 or higher.
+This version of \textbf{berry} only supports the DFT package {\sc Quantum Espresso}, version v.7.5 or higher.
 So a working {\sc Quantum Espresso} instalation has to be in the system, and must be in the \$PATH.
 
-This version was tested with python 3.10, but likely works with other versions of python3.
+This version was tested with python 3.12, but likely works with other versions of python3.
 
 
 \section{Running}\label{sec:running}
@@ -228,7 +228,7 @@ where the \texttt{script} is one of the following
  degenrot
  dot
  cluster
- basis
+ basis (optional)
  r2k
  geometry
  condutivity
@@ -257,7 +257,7 @@ Chapter \nameref{ch:workflow} explains what each script does,
 what parameters are required and what options they have.
 
 
-The flowchart of the previous page explains how \textbf{berry} works.
+The flowchart in the next page explains how \textbf{berry} works.
 
 First a preprocessing script is run which runs the DFT calculations, reads data from those
 calculations, and saves it in files ready to be read by the folllowing scripts.
@@ -396,45 +396,351 @@ Berry curvatures can also be calculated using Equation \ref{eq:curvature} \cite{
  \pmb{\Omega}_{s,s'} = i\int_{uc}d^3\pmb{r}\;(\nabla_{\pmb{k}}u_{\pmb{k}s}^* \times \nabla_{\pmb{k}} u_{\pmb{k}s'})
 \end{equation}
 
-\subsection*{Band crossings}\label{ssec:bandcrossings}
-
-It is clear that the problem of classifying the eigenstates by bands where analycity applies is
- problematic at degeneracies i.e. band crossings.
-
-There, any linear combination of eigenstates is also an eigenstate.
-
-Lets consider two bands $A$ and $B$, crossing at point $k$.
-The eigenstates of $A$ are continuous at the left of $k$ and at the right, and the same is true for eigenstates of $B$.
-But not necessarily at $k$.
-Supppose that $\psi_A$ would be the wavefunction at $k$ that would have continuity in band $A$
-and $\psi_B$ for band $B$. Of course, $\psi_A$ and $\psi_B$ have the same eigenvalue.
-
-But the numerical process of solving the Schr\"odinger equation at point $k$ can give any result of the form
-\begin{align}
- \psi_1 &= a\psi_A + b\psi_B \\
- \psi_2 &= a'\psi_A + b'\psi_B
-\end{align}
-as long as $\psi_1$ and $\psi_2$ are orthogonal (the coeficcients have to be such that they assure orthogonality).
-Of course, these wavefunctions are not continuous with $A$ or $B$, in general.
-
-There are two ways to workaround this problem and restore analycity.
-One is to interpolate the wavefunction at $k$ using the closest eigenstates of band $A$ and then the ones of band $B$.
-The other is to apply an unitary transformation.
 
 
-\paragraph*{Unitary transformation}
-The most frequent way of restoring analycity is to apply an unitary transformation
+
+
+
+\section{The problem of degenerate subspaces}
+
+At a generic k-point in the Brillouin Zone (BZ), the eigenstates of the
+Kohn-Sham Hamiltonian (see equation \ref{eq:Schrodinger}) are non-degenerate
+and uniquely determined up to an overall complex phase.
+However, at high-symmetry points, or along lines of high symmetry, two or more
+bands can share the same eigenvalue $E_{\pmb{k}}$.
+In that case, any linear combination of the corresponding eigenstates is also
+an eigenstate with the same energy.
+The DFT solver (here {\sc Quantum Espresso}) returns an arbitrary orthonormal
+basis for this degenerate subspace, which in general bears no relation to the
+basis chosen at neighbouring k-points.
+
+As a consequence the Bloch factors $u_{\pmb{k}s}(\pmb{r})$, which should vary
+smoothly with $\pmb{k}$ within each band $s$, can have an arbitrary
+orientation at every degenerate k-point.
+This discontinuity manifests as anomalously small dot products
+$|\langle u_{\pmb{k}s} | u_{\pmb{k}'s}\rangle|$ between a degenerate k-point
+and its neighbours, even when the two k-points belong to the same band.
+
+The goal of \texttt{degenrot} is to rotate the wavefunction basis at every
+degenerate k-point so that it aligns as closely as possible with the basis of
+the surrounding non-degenerate region, restoring continuity before the dot
+products are computed.
+
+
+\subsection*{Algorithm}
+
+The algorithm proceeds in four phases.
+
+\paragraph{Phase 1 --- Detection of degenerate subspaces.}
+
+For every k-point $\pmb{k}$ and every pair of bands $(s, s')$ with $s < s'$,
+the script checks whether
+
 \begin{equation}
- \left[ \begin{matrix}
-  \psi_A\\\psi_B
- \end{matrix}\right] = U
- \left[ \begin{matrix}
-  \psi_1\\\psi_2
- \end{matrix}\right]
+  |E_{\pmb{k},s} - E_{\pmb{k},s'}| < \varepsilon
+  \label{eq:degen_threshold}
 \end{equation}
-where $U$ is choosen in such a way as to 'iron out' the nonanalytic behaviour at $k$.
-In practice, this is done by minimizing the difference betwenn $\psi_A$ and both $\psi_A^-$ and $\psi_A^+$,
-and the same for $\psi_B$ relative to $\psi_B^-$ and $\psi_B^+$.
+
+where $\varepsilon$ is the energy threshold (default $5\times10^{-3}$, in the same
+units as the eigenvalues).
+A union-find algorithm \cite{Cormen2009} groups all mutually-degenerate bands at
+each k-point into a degenerate subspace of dimension $N \ge 2$.
+
+
+\paragraph{Phase 2 --- Formation of degenerate zones.}
+
+For each unique band-group signature (i.e.\ each distinct frozenset of band
+indices), the set of k-points that share that degeneracy is collected and its
+connected components are found by breadth-first search (BFS) over the
+neighbour graph from \emph{neighbors.npy}.
+
+Each connected component is called a \emph{degenerate zone}: a contiguous
+region of k-space in which the same $N$ bands are degenerate.
+A single calculation may contain many independent zones, each treated
+separately.
+
+
+\paragraph{Phase 3 --- Reference selection.}
+
+To define an unambiguous target basis for a zone, \texttt{degenrot} searches
+for a \emph{boundary k-point}: a k-point that belongs to the zone and has at
+least one neighbour outside the zone where the $N$ bands are
+\emph{non}-degenerate (i.e.\ where the minimum pairwise energy gap exceeds
+$\varepsilon$).
+Among all such boundary–neighbour pairs the one with the largest minimum
+pairwise energy separation is chosen as the reference, because it provides the
+most unambiguous basis.
+
+If no non-degenerate external neighbour exists (the zone is \emph{fully
+isolated}), an arbitrary k-point in the zone is chosen as the root.
+A warning is written to the log file and the zone is given an internally
+consistent basis, but the absolute orientation of that basis is arbitrary.
+
+
+\paragraph{Phase 4 --- Propagation of the basis rotation by BFS.}
+
+Starting from the boundary reference k-point, the script propagates the
+rotation outward through the zone via BFS.
+At each k-point $\pmb{k}$ (with BFS parent $\pmb{k}_{\mathrm{ref}}$, which
+has already been rotated):
+
+\begin{enumerate}
+
+\item The $N \times N$ Bloch-phase-corrected overlap matrix is computed:
+\begin{equation}
+  M_{ij} = \langle u^{\mathrm{ref}}_i | u^{\mathrm{cur}}_j \rangle
+          = \frac{1}{N_r}\sum_{\pmb{r}}
+            e^{i(\pmb{k}-\pmb{k}_{\mathrm{ref}})\cdot\pmb{r}}\,
+            u^*_{\pmb{k}_{\mathrm{ref}},i}(\pmb{r})\,
+            u_{\pmb{k},j}(\pmb{r})
+  \label{eq:overlap_matrix}
+\end{equation}
+where $N_r$ is the number of real-space grid points, the sum runs over all
+grid points $\pmb{r}$, and $i,j = 1,\ldots,N$ index the bands in the
+degenerate subspace.
+
+For non-colinear (NC) calculations, each Bloch factor is a two-component
+spinor $u_{\pmb{k}s} = (u_{\pmb{k}s}^{\uparrow}, u_{\pmb{k}s}^{\downarrow})$
+and the inner product sums over both spin components:
+\begin{equation}
+  M_{ij} = \frac{1}{N_r}\sum_{\pmb{r}} e^{i(\pmb{k}-\pmb{k}_{\mathrm{ref}})\cdot\pmb{r}}
+            \left[
+              u^{*\uparrow}_{\pmb{k}_{\mathrm{ref}},i}(\pmb{r})\,
+              u^{\uparrow}_{\pmb{k},j}(\pmb{r})
+            + u^{*\downarrow}_{\pmb{k}_{\mathrm{ref}},i}(\pmb{r})\,
+              u^{\downarrow}_{\pmb{k},j}(\pmb{r})
+            \right]
+  \label{eq:overlap_matrix_nc}
+\end{equation}
+
+\item The Singular Value Decomposition (SVD) \cite{Golub2013} of $M$ is computed:
+\begin{equation}
+  M = U\,\Sigma\,V^{\dagger}
+  \label{eq:svd}
+\end{equation}
+where $U$ and $V$ are $N \times N$ unitary matrices and
+$\Sigma = \mathrm{diag}(\sigma_1, \sigma_2, \ldots, \sigma_N)$
+with $\sigma_i \ge 0$.
+
+\item The optimal rotation matrix is obtained from the
+orthogonal Procrustes problem \cite{Schonemann1966}: find the $N \times N$
+unitary matrix $R$ that maximises $\mathrm{Re}\,\mathrm{Tr}(M R)$.
+The exact solution is
+\begin{equation}
+  R = V\,U^{\dagger}
+  \label{eq:procrustes}
+\end{equation}
+
+\item The new Bloch factors at $\pmb{k}$ are
+\begin{equation}
+  u^{\mathrm{new}}_{\pmb{k},j}(\pmb{r}) = \sum_{i=1}^{N} R_{ij}\, u_{\pmb{k},i}(\pmb{r}),
+  \qquad j = 1, \ldots, N
+  \label{eq:rotation_application}
+\end{equation}
+and they overwrite the corresponding \emph{.wfc} files in-place.
+For NC calculations the same matrix $R$ is applied to each spin component
+independently.
+
+\end{enumerate}
+
+
+\subsection*{Singular values as a quality measure}
+
+The singular values $\sigma_i$ of the overlap matrix $M$ are the cosines of
+the \emph{principal angles} \cite{Bjorck1973} between the $N$-dimensional
+subspace spanned by the reference basis and the $N$-dimensional subspace
+spanned by the current basis:
+
+\begin{equation}
+  \sigma_i = \cos\theta_i, \qquad i = 1, \ldots, N
+\end{equation}
+
+where $0 \le \theta_1 \le \theta_2 \le \ldots \le \theta_N \le \pi/2$ are
+the principal angles.
+If both bases span exactly the same subspace (as is the case when the
+degeneracy is clean and the k-spacing is small), all singular values equal
+one: the two subspaces coincide and the Procrustes rotation is exact.
+
+A singular value significantly below one indicates that one direction in the
+current subspace is tilted away from the reference subspace, which means the
+degenerate bands are mixing with states outside the chosen $N$-dimensional
+model.
+The minimum singular value $\min_i\sigma_i$ is the most sensitive diagnostic:
+it measures the worst-case alignment across all $N$ directions.
+Typical values above $0.99$ indicate a reliable rotation; values below $0.9$
+should prompt the user to check whether additional bands ought to be included
+in the degenerate group.
+
+Note that a permutation of the basis vectors, a sign flip, or any other
+unitary rearrangement of the current basis \emph{within} the same subspace
+gives singular values all equal to one, because the overlap matrix $M$ is
+itself unitary in that case.
+A small singular value therefore strictly means the two subspaces are
+genuinely different, not merely expressed in different bases.
+
+
+\subsection*{Boundary consistency check}
+
+After the BFS rotation has been applied to all k-points in the zone, the
+script checks whether the resulting gauge is \emph{globally consistent} across
+the zone boundary.
+For every zone k-point $\pmb{k}$ that has a non-degenerate external neighbour
+$\pmb{k}'$ (i.e.\ a grid neighbour outside the zone where the $N$ bands are
+split), the minimum singular value $\sigma_{\min}(\pmb{k},\pmb{k}')$ is
+computed from the overlap matrix between the rotated basis at $\pmb{k}$ and
+the unmodified basis at $\pmb{k}'$.
+
+The \emph{boundary spread}
+\begin{equation}
+  \Delta\sigma = \max_{\text{boundary edges}}\sigma_{\min} -
+                 \min_{\text{boundary edges}}\sigma_{\min}
+\end{equation}
+measures how uniformly the rotated zone aligns with its external neighbourhood.
+A large spread indicates that the BFS tree imposed a path-dependent gauge
+choice, so that different boundary k-points align well or poorly depending on
+which BFS path was used to reach them.
+
+An important invariant: boundary singular values are \emph{gauge-invariant}.
+Iterative refinement cannot reduce the spread; the holonomy correction
+described below must act before refinement when the spread is large.
+
+
+\subsection*{Gauge repair --- holonomy correction}
+
+\textbf{Trigger:} boundary spread $> 0.1$ and the zone contains at least
+\texttt{-holonomy-min-plaquettes} internal plaquettes (default: 2).
+When the spread is very large ($> 0.5$) and the worst boundary singular value
+is below 0.6 --- indicating a topological discontinuity --- the correction is
+skipped and a warning is logged, because the holonomy cannot be reduced in
+that case (see below).
+
+\textbf{Physical meaning:} The BFS tree forced a path-dependent gauge choice.
+No topological obstruction prevents a smooth consistent gauge, but the BFS
+did not find it.
+
+\textbf{Algorithm:} The script walks all \emph{elementary plaquettes},
+i.e.\ minimal 4-cycles $\pmb{k}_0 \to \pmb{k}_1 \to \pmb{k}_2 \leftarrow
+\pmb{k}_3 \leftarrow \pmb{k}_0$ in the zone graph, and computes for each
+plaquette the \emph{holonomy}
+
+\begin{equation}
+  H = R_{01}\, R_{12}\, R_{23}^{\dagger}\, R_{30}^{\dagger}
+\end{equation}
+
+where each $R_{ij}$ is the Procrustes rotation of equation~\eqref{eq:procrustes}
+evaluated between the current Bloch factors at $\pmb{k}_i$ and $\pmb{k}_j$.
+A perfectly consistent gauge gives $H = \mathbf{1}$; the departure from
+identity is the \emph{loop defect}.
+
+The defect is distributed by applying fractional corrections
+$H^{-1/4}$, $H^{-1/2}$, $H^{-3/4}$ to the three non-anchor vertices of the
+plaquette.
+The fractional power is computed via two successive matrix square roots
+(using \texttt{scipy.linalg.sqrtm}) followed by projection onto
+$\mathrm{U}(N)$.
+The procedure iterates over all plaquettes until the maximum holonomy defect
+$\|H - \mathbf{1}\|_F$ falls below a tolerance (default~$10^{-4}$) or a
+maximum number of sweeps is reached (default~$20$).
+
+\textbf{Early exit on topological holonomy:} If the maximum defect does not
+decrease between two consecutive sweeps (relative change $< 10^{-8}$), the
+zone carries an \emph{irreducible} Berry-phase holonomy: the total holonomy
+around the zone boundary is a topological invariant that cannot be eliminated
+by local plaquette corrections.
+The correction exits immediately with a warning; iterative refinement proceeds
+but may not fully converge.
+
+\textbf{Effect:} The internal gauge consistency improves, giving the
+subsequent iterative refinement a better starting point and allowing it to
+converge more quickly.
+The boundary spread (being gauge-invariant) is not changed by this step.
+
+
+\subsection*{Iterative gauge refinement}
+
+After any gauge repair (or directly if the spread is small), all zone
+k-points are refined simultaneously by a multi-neighbour Procrustes sweep.
+
+Each sweep (a Gauss-Seidel pass, or a Jacobi pass when parallelism is
+enabled) re-rotates every zone k-point to best align with \emph{all} its
+valid neighbours simultaneously: both zone-internal neighbours (also being
+refined) and external non-degenerate neighbours (fixed anchors that prevent
+global gauge drift).
+The overlap matrices from every neighbour are summed before the Procrustes
+step so all neighbours vote on the rotation:
+
+\begin{equation}
+  M_{\text{total}}(\pmb{k}) = \sum_{\pmb{k}' \in \mathcal{N}(\pmb{k})}
+  M(\pmb{k}', \pmb{k})
+\end{equation}
+
+where $\mathcal{N}(\pmb{k})$ includes all zone-internal neighbours and all
+non-degenerate external neighbours.
+
+Convergence is declared when $\max_{\pmb{k}} \|R_{\pmb{k}} - \mathbf{1}\|_F$
+falls below the refinement tolerance (default~$10^{-4}$) or the maximum
+iteration count is reached.
+The iteration limit scales with zone size:
+$\max(N_{\mathrm{base}},\, N_{\mathrm{base}} + 3\,|\text{zone}|)$,
+capped at a hard maximum (defaults: base~50, cap~500).
+
+\textbf{Stagnation early exit.}
+If the residual is still more than ten times the tolerance but has improved by
+less than a factor of two over the last 30 iterations, the solver has reached a
+topological floor and further iterations are wasteful.
+Refinement exits early with a warning; the final rotations are still written
+and the zone is marked in the log.
+
+\paragraph{Anderson acceleration.}
+Each Gauss-Seidel sweep is followed by an Anderson mixing
+step~\cite{Walker2011} that fits a least-squares linear combination of the
+last $m$ sweep residuals (default $m = 10$) to predict the fixed point and
+extrapolates the rotation matrices in that direction.
+Each $N \times N$ block of the extrapolated flat state vector is
+projected back onto $\mathrm{U}(N)$ via SVD\@.
+The safety criterion rejects any Anderson step that would exceed five
+times the plain Gauss-Seidel step.
+This acceleration converts the slow linear convergence ($\rho \approx 0.97$
+per iteration without acceleration) into effective superlinear convergence,
+typically reducing the required iteration count by a factor of 5--10.
+
+\paragraph{Jacobi parallel sweep.}
+When the \texttt{np} option is greater than one and the in-memory
+wavefunction cache is active, the Gauss-Seidel sweep is replaced by a
+\emph{Jacobi} parallel sweep: a snapshot of the current wavefunction state
+is taken at the start of each sweep, all k-points compute their rotation
+independently (using the snapshot), and the updates are applied after all
+workers have finished.
+This parallelises the most expensive part of the refinement at the cost of
+approximately twice as many iterations to converge (Jacobi converges at
+$\rho \approx 0.97$ vs.\ $\rho^2 \approx 0.94$ for Gauss-Seidel).
+The break-even is four or more workers; beyond that Jacobi gives a net
+speedup.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 \section{Graph Theory (GT)}
@@ -695,7 +1001,7 @@ All log files are created in directory \verb|log|.
  lattice and reciprocal lattice vectors and dimensions,
  and so determine the parameters to be used.
 
- For reference, we show below two possible samplings that for a 2D hexagonal material
+ For reference, we show below two possible samplings for a 2D hexagonal material
  and a 3D FCC material.
 
  \paragraph{2D hexagonal material}
@@ -1004,7 +1310,7 @@ to generate just for a single k-point or a single wavefunction, for which we hav
 \section{Degenerate subspace basis rotation}\label{sec:degenrot}
 
 After the wavefunctions have been extracted by \texttt{wfcgen}, and before the
-dot products are computed by \texttt{dot}, it is possible to run the optional
+dot products are computed by \texttt{dot}, it is possible (and convenient) to run the optional
 script \texttt{degenrot}.
 
 \begin{verbatim}
@@ -1013,328 +1319,12 @@ script \texttt{degenrot}.
 
 This script is optional but recommended whenever the band structure contains
 degenerate points, i.e.\ k-points at which two or more bands share the same
-(or numerically indistinguishable) energy eigenvalue.
+(or numerically indistinguishable) energy eigenvalue. For noncolinear calculations,
+this is necessary, since there are whole bands degenerate.
 Without it, the arbitrary basis chosen by the DFT
-(Density Functional Theory)
 solver at those k-points propagates into the dot products and can degrade the
 quality of the subsequent band classification by \texttt{cluster}.
 
-
-\subsection*{The problem of degenerate subspaces}
-
-At a generic k-point in the Brillouin Zone (BZ), the eigenstates of the
-Kohn-Sham Hamiltonian (see equation \ref{eq:Schrodinger}) are non-degenerate
-and uniquely determined up to an overall complex phase.
-However, at high-symmetry points, or along lines of high symmetry, two or more
-bands can share the same eigenvalue $E_{\pmb{k}}$.
-In that case, any linear combination of the corresponding eigenstates is also
-an eigenstate with the same energy.
-The DFT solver (here {\sc Quantum Espresso}) returns an arbitrary orthonormal
-basis for this degenerate subspace, which in general bears no relation to the
-basis chosen at neighbouring k-points.
-
-As a consequence the Bloch factors $u_{\pmb{k}s}(\pmb{r})$, which should vary
-smoothly with $\pmb{k}$ within each band $s$, can have an arbitrary
-orientation at every degenerate k-point.
-This discontinuity manifests as anomalously small dot products
-$|\langle u_{\pmb{k}s} | u_{\pmb{k}'s}\rangle|$ between a degenerate k-point
-and its neighbours, even when the two k-points belong to the same band.
-
-The goal of \texttt{degenrot} is to rotate the wavefunction basis at every
-degenerate k-point so that it aligns as closely as possible with the basis of
-the surrounding non-degenerate region, restoring continuity before the dot
-products are computed.
-
-
-\subsection*{Algorithm}
-
-The algorithm proceeds in four phases.
-
-\paragraph{Phase 1 --- Detection of degenerate subspaces.}
-
-For every k-point $\pmb{k}$ and every pair of bands $(s, s')$ with $s < s'$,
-the script checks whether
-
-\begin{equation}
-  |E_{\pmb{k},s} - E_{\pmb{k},s'}| < \varepsilon
-  \label{eq:degen_threshold}
-\end{equation}
-
-where $\varepsilon$ is the energy threshold (default $10^{-4}$, in the same
-units as the eigenvalues).
-A union-find algorithm \cite{Cormen2009} groups all mutually-degenerate bands at
-each k-point into a degenerate subspace of dimension $N \ge 2$.
-
-
-\paragraph{Phase 2 --- Formation of degenerate zones.}
-
-For each unique band-group signature (i.e.\ each distinct frozenset of band
-indices), the set of k-points that share that degeneracy is collected and its
-connected components are found by breadth-first search (BFS) over the
-neighbour graph from \emph{neighbors.npy}.
-
-Each connected component is called a \emph{degenerate zone}: a contiguous
-region of k-space in which the same $N$ bands are degenerate.
-A single calculation may contain many independent zones, each treated
-separately.
-
-
-\paragraph{Phase 3 --- Reference selection.}
-
-To define an unambiguous target basis for a zone, \texttt{degenrot} searches
-for a \emph{boundary k-point}: a k-point that belongs to the zone and has at
-least one neighbour outside the zone where the $N$ bands are
-\emph{non}-degenerate (i.e.\ where the minimum pairwise energy gap exceeds
-$\varepsilon$).
-Among all such boundary–neighbour pairs the one with the largest minimum
-pairwise energy separation is chosen as the reference, because it provides the
-most unambiguous basis.
-
-If no non-degenerate external neighbour exists (the zone is \emph{fully
-isolated}), an arbitrary k-point in the zone is chosen as the root.
-A warning is written to the log file and the zone is given an internally
-consistent basis, but the absolute orientation of that basis is arbitrary.
-
-
-\paragraph{Phase 4 --- Propagation of the basis rotation by BFS.}
-
-Starting from the boundary reference k-point, the script propagates the
-rotation outward through the zone via BFS.
-At each k-point $\pmb{k}$ (with BFS parent $\pmb{k}_{\mathrm{ref}}$, which
-has already been rotated):
-
-\begin{enumerate}
-
-\item The $N \times N$ Bloch-phase-corrected overlap matrix is computed:
-\begin{equation}
-  M_{ij} = \langle u^{\mathrm{ref}}_i | u^{\mathrm{cur}}_j \rangle
-          = \frac{1}{N_r}\sum_{\pmb{r}}
-            e^{i(\pmb{k}-\pmb{k}_{\mathrm{ref}})\cdot\pmb{r}}\,
-            u^*_{\pmb{k}_{\mathrm{ref}},i}(\pmb{r})\,
-            u_{\pmb{k},j}(\pmb{r})
-  \label{eq:overlap_matrix}
-\end{equation}
-where $N_r$ is the number of real-space grid points, the sum runs over all
-grid points $\pmb{r}$, and $i,j = 1,\ldots,N$ index the bands in the
-degenerate subspace.
-
-For non-colinear (NC) calculations, each Bloch factor is a two-component
-spinor $u_{\pmb{k}s} = (u_{\pmb{k}s}^{\uparrow}, u_{\pmb{k}s}^{\downarrow})$
-and the inner product sums over both spin components:
-\begin{equation}
-  M_{ij} = \frac{1}{N_r}\sum_{\pmb{r}} e^{i(\pmb{k}-\pmb{k}_{\mathrm{ref}})\cdot\pmb{r}}
-            \left[
-              u^{*\uparrow}_{\pmb{k}_{\mathrm{ref}},i}(\pmb{r})\,
-              u^{\uparrow}_{\pmb{k},j}(\pmb{r})
-            + u^{*\downarrow}_{\pmb{k}_{\mathrm{ref}},i}(\pmb{r})\,
-              u^{\downarrow}_{\pmb{k},j}(\pmb{r})
-            \right]
-  \label{eq:overlap_matrix_nc}
-\end{equation}
-
-\item The Singular Value Decomposition (SVD) \cite{Golub2013} of $M$ is computed:
-\begin{equation}
-  M = U\,\Sigma\,V^{\dagger}
-  \label{eq:svd}
-\end{equation}
-where $U$ and $V$ are $N \times N$ unitary matrices and
-$\Sigma = \mathrm{diag}(\sigma_1, \sigma_2, \ldots, \sigma_N)$
-with $\sigma_i \ge 0$.
-
-\item The optimal rotation matrix is obtained from the
-orthogonal Procrustes problem \cite{Schonemann1966}: find the $N \times N$
-unitary matrix $R$ that maximises $\mathrm{Re}\,\mathrm{Tr}(M R)$.
-The exact solution is
-\begin{equation}
-  R = V\,U^{\dagger}
-  \label{eq:procrustes}
-\end{equation}
-
-\item The new Bloch factors at $\pmb{k}$ are
-\begin{equation}
-  u^{\mathrm{new}}_{\pmb{k},j}(\pmb{r}) = \sum_{i=1}^{N} R_{ij}\, u_{\pmb{k},i}(\pmb{r}),
-  \qquad j = 1, \ldots, N
-  \label{eq:rotation_application}
-\end{equation}
-and they overwrite the corresponding \emph{.wfc} files in-place.
-For NC calculations the same matrix $R$ is applied to each spin component
-independently.
-
-\end{enumerate}
-
-
-\subsection*{Singular values as a quality measure}
-
-The singular values $\sigma_i$ of the overlap matrix $M$ are the cosines of
-the \emph{principal angles} \cite{Bjorck1973} between the $N$-dimensional
-subspace spanned by the reference basis and the $N$-dimensional subspace
-spanned by the current basis:
-
-\begin{equation}
-  \sigma_i = \cos\theta_i, \qquad i = 1, \ldots, N
-\end{equation}
-
-where $0 \le \theta_1 \le \theta_2 \le \ldots \le \theta_N \le \pi/2$ are
-the principal angles.
-If both bases span exactly the same subspace (as is the case when the
-degeneracy is clean and the k-spacing is small), all singular values equal
-one: the two subspaces coincide and the Procrustes rotation is exact.
-
-A singular value significantly below one indicates that one direction in the
-current subspace is tilted away from the reference subspace, which means the
-degenerate bands are mixing with states outside the chosen $N$-dimensional
-model.
-The minimum singular value $\min_i\sigma_i$ is the most sensitive diagnostic:
-it measures the worst-case alignment across all $N$ directions.
-Typical values above $0.99$ indicate a reliable rotation; values below $0.9$
-should prompt the user to check whether additional bands ought to be included
-in the degenerate group.
-
-Note that a permutation of the basis vectors, a sign flip, or any other
-unitary rearrangement of the current basis \emph{within} the same subspace
-gives singular values all equal to one, because the overlap matrix $M$ is
-itself unitary in that case.
-A small singular value therefore strictly means the two subspaces are
-genuinely different, not merely expressed in different bases.
-
-
-\subsection*{Boundary consistency check}
-
-After the BFS rotation has been applied to all k-points in the zone, the
-script checks whether the resulting gauge is \emph{globally consistent} across
-the zone boundary.
-For every zone k-point $\pmb{k}$ that has a non-degenerate external neighbour
-$\pmb{k}'$ (i.e.\ a grid neighbour outside the zone where the $N$ bands are
-split), the minimum singular value $\sigma_{\min}(\pmb{k},\pmb{k}')$ is
-computed from the overlap matrix between the rotated basis at $\pmb{k}$ and
-the unmodified basis at $\pmb{k}'$.
-
-The \emph{boundary spread}
-\begin{equation}
-  \Delta\sigma = \max_{\text{boundary edges}}\sigma_{\min} -
-                 \min_{\text{boundary edges}}\sigma_{\min}
-\end{equation}
-measures how uniformly the rotated zone aligns with its external neighbourhood.
-A large spread indicates that the BFS tree imposed a path-dependent gauge
-choice, so that different boundary k-points align well or poorly depending on
-which BFS path was used to reach them.
-
-An important invariant: boundary singular values are \emph{gauge-invariant}.
-Iterative refinement cannot reduce the spread; the holonomy correction
-described below must act before refinement when the spread is large.
-
-
-\subsection*{Gauge repair --- holonomy correction}
-
-\textbf{Trigger:} boundary spread $> 0.1$ and the zone contains at least
-\texttt{-holonomy-min-plaquettes} internal plaquettes (default: 2).
-When the spread is very large ($> 0.5$) and the worst boundary singular value
-is below 0.6 --- indicating a topological discontinuity --- the correction is
-skipped and a warning is logged, because the holonomy cannot be reduced in
-that case (see below).
-
-\textbf{Physical meaning:} The BFS tree forced a path-dependent gauge choice.
-No topological obstruction prevents a smooth consistent gauge, but the BFS
-did not find it.
-
-\textbf{Algorithm:} The script walks all \emph{elementary plaquettes},
-i.e.\ minimal 4-cycles $\pmb{k}_0 \to \pmb{k}_1 \to \pmb{k}_2 \leftarrow
-\pmb{k}_3 \leftarrow \pmb{k}_0$ in the zone graph, and computes for each
-plaquette the \emph{holonomy}
-
-\begin{equation}
-  H = R_{01}\, R_{12}\, R_{23}^{\dagger}\, R_{30}^{\dagger}
-\end{equation}
-
-where each $R_{ij}$ is the Procrustes rotation of equation~\eqref{eq:procrustes}
-evaluated between the current Bloch factors at $\pmb{k}_i$ and $\pmb{k}_j$.
-A perfectly consistent gauge gives $H = \mathbf{1}$; the departure from
-identity is the \emph{loop defect}.
-
-The defect is distributed by applying fractional corrections
-$H^{-1/4}$, $H^{-1/2}$, $H^{-3/4}$ to the three non-anchor vertices of the
-plaquette.
-The fractional power is computed via two successive matrix square roots
-(using \texttt{scipy.linalg.sqrtm}) followed by projection onto
-$\mathrm{U}(N)$.
-The procedure iterates over all plaquettes until the maximum holonomy defect
-$\|H - \mathbf{1}\|_F$ falls below a tolerance (default~$10^{-4}$) or a
-maximum number of sweeps is reached (default~$20$).
-
-\textbf{Early exit on topological holonomy:} If the maximum defect does not
-decrease between two consecutive sweeps (relative change $< 10^{-8}$), the
-zone carries an \emph{irreducible} Berry-phase holonomy: the total holonomy
-around the zone boundary is a topological invariant that cannot be eliminated
-by local plaquette corrections.
-The correction exits immediately with a warning; iterative refinement proceeds
-but may not fully converge.
-
-\textbf{Effect:} The internal gauge consistency improves, giving the
-subsequent iterative refinement a better starting point and allowing it to
-converge more quickly.
-The boundary spread (being gauge-invariant) is not changed by this step.
-
-
-\subsection*{Iterative gauge refinement}
-
-After any gauge repair (or directly if the spread is small), all zone
-k-points are refined simultaneously by a multi-neighbour Procrustes sweep.
-
-Each sweep (a Gauss-Seidel pass, or a Jacobi pass when parallelism is
-enabled) re-rotates every zone k-point to best align with \emph{all} its
-valid neighbours simultaneously: both zone-internal neighbours (also being
-refined) and external non-degenerate neighbours (fixed anchors that prevent
-global gauge drift).
-The overlap matrices from every neighbour are summed before the Procrustes
-step so all neighbours vote on the rotation:
-
-\begin{equation}
-  M_{\text{total}}(\pmb{k}) = \sum_{\pmb{k}' \in \mathcal{N}(\pmb{k})}
-  M(\pmb{k}', \pmb{k})
-\end{equation}
-
-where $\mathcal{N}(\pmb{k})$ includes all zone-internal neighbours and all
-non-degenerate external neighbours.
-
-Convergence is declared when $\max_{\pmb{k}} \|R_{\pmb{k}} - \mathbf{1}\|_F$
-falls below the refinement tolerance (default~$10^{-4}$) or the maximum
-iteration count is reached.
-The iteration limit scales with zone size:
-$\max(N_{\mathrm{base}},\, N_{\mathrm{base}} + 3\,|\text{zone}|)$,
-capped at a hard maximum (defaults: base~50, cap~500).
-
-\textbf{Stagnation early exit.}
-If the residual is still more than ten times the tolerance but has improved by
-less than a factor of two over the last 30 iterations, the solver has reached a
-topological floor and further iterations are wasteful.
-Refinement exits early with a warning; the final rotations are still written
-and the zone is marked in the log.
-
-\paragraph{Anderson acceleration.}
-Each Gauss-Seidel sweep is followed by an Anderson mixing
-step~\cite{Walker2011} that fits a least-squares linear combination of the
-last $m$ sweep residuals (default $m = 10$) to predict the fixed point and
-extrapolates the rotation matrices in that direction.
-Each $N \times N$ block of the extrapolated flat state vector is
-projected back onto $\mathrm{U}(N)$ via SVD\@.
-The safety criterion rejects any Anderson step that would exceed five
-times the plain Gauss-Seidel step.
-This acceleration converts the slow linear convergence ($\rho \approx 0.97$
-per iteration without acceleration) into effective superlinear convergence,
-typically reducing the required iteration count by a factor of 5--10.
-
-\paragraph{Jacobi parallel sweep.}
-When the \texttt{np} option is greater than one and the in-memory
-wavefunction cache is active, the Gauss-Seidel sweep is replaced by a
-\emph{Jacobi} parallel sweep: a snapshot of the current wavefunction state
-is taken at the start of each sweep, all k-points compute their rotation
-independently (using the snapshot), and the updates are applied after all
-workers have finished.
-This parallelises the most expensive part of the refinement at the cost of
-approximately twice as many iterations to converge (Jacobi converges at
-$\rho \approx 0.97$ vs.\ $\rho^2 \approx 0.94$ for Gauss-Seidel).
-The break-even is four or more workers; beyond that Jacobi gives a net
-speedup.
 
 
 \subsection*{Parallelism}
@@ -1361,27 +1351,27 @@ single \texttt{np} option:
 These three levels are mutually compatible and engage automatically based on
 the available zone structure and cache state.
 
-
-\subsection*{In-memory wavefunction cache}
-
-By default, \texttt{degenrot} pre-loads all wavefunction files for a zone
-(zone k-points plus their grid neighbours) into a RAM dictionary before
-starting the boundary check and iterative refinement.
-All subsequent reads come from RAM instead of disk, which can reduce I/O
-by a factor of 100 or more for large zones.
-
-When the cache is active, \emph{all writes during holonomy correction and
-iterative refinement are deferred to RAM only}.
-A single disk flush at the end of each zone replaces the thousands of
-per-iteration file writes that would otherwise occur.
-For a zone of 1600 k-points and two non-collinear bands this reduces disk
-traffic per zone from tens of gigabytes (one full write per iteration) to a
-single pass of roughly 35~GB written once.
-
-Available RAM is queried via \texttt{psutil} (a required dependency).
-The cache is skipped automatically when its estimated footprint would exceed
-80\% of available RAM; a conservative 4~GB hard limit applies only if
-\texttt{psutil} fails at runtime.
+%
+% \subsection*{In-memory wavefunction cache}
+%
+% By default, \texttt{degenrot} pre-loads all wavefunction files for a zone
+% (zone k-points plus their grid neighbours) into a RAM dictionary before
+% starting the boundary check and iterative refinement.
+% All subsequent reads come from RAM instead of disk, which can reduce I/O
+% by a factor of 100 or more for large zones.
+%
+% When the cache is active, \emph{all writes during holonomy correction and
+% iterative refinement are deferred to RAM only}.
+% A single disk flush at the end of each zone replaces the thousands of
+% per-iteration file writes that would otherwise occur.
+% For a zone of 1600 k-points and two non-collinear bands this reduces disk
+% traffic per zone from tens of gigabytes (one full write per iteration) to a
+% single pass of roughly 35~GB written once.
+%
+% Available RAM is queried via \texttt{psutil} (a required dependency).
+% The cache is skipped automatically when its estimated footprint would exceed
+% 80\% of available RAM; a conservative 4~GB hard limit applies only if
+% \texttt{psutil} fails at runtime.
 
 
 \subsection*{Output}
@@ -1417,7 +1407,7 @@ The options for \texttt{degenrot} are shown in table~\ref{tab:options_degenrot}.
 \hline
   \texttt{-h}, \texttt{--help}       & Show a help message and exit \\
   \texttt{-ethr}                     & Energy threshold for degeneracy detection \\
-                                     & in eigenvalue units (default: $10^{-4}$) \\
+                                     & in eigenvalue units (default: $5\times10^{-3}$) \\
   \texttt{-c}                        & Compress the output \emph{.wfc} files \\
   \texttt{-max-ref-iter}             & Minimum refinement iterations per zone (default: 50) \\
   \texttt{-ref-iter-cap}             & Hard cap on refinement iterations (default: 500) \\
@@ -1466,6 +1456,9 @@ The options for \texttt{dot} are shown in table \ref{tab:options_dot}
 \hline
   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
   \texttt{-np}                  & Number of processes to use (default: 1) \\
+  \texttt{-bs}                  & Band-block size for the tiled dot product\\
+                                & (default: 0 = auto-size from free RAM) \\
+  \texttt{-c}                   & Compress the output files \\
   \texttt{-o file\_path}        & Name of output log file.\\
                                 & Extension will be ignored. \\
   \texttt{-flush}               & Flush the ouput to stdout \\
@@ -1570,8 +1563,8 @@ bands up to the highest one are used. The minimum band is set with the option \t
  \end{description}
 
  Only the flagged k-points are ever modified; clean neighbours are read as reference anchors but
- never changed. The rotated wavefunctions \textbf{overwrite the \emph{.wfc} files in place}
- (there is no \emph{.wfc1} file). Both colinear and non-colinear calculations are supported: for
+ never changed. The rotated wavefunctions overwrite the \emph{.wfc} files in place
+ (there is no \emph{.wfc1} file, as in version 1). Both colinear and non-colinear calculations are supported: for
  the non-colinear case the same $N\times N$ unitary is applied to both spinor components.
 
 The options for \texttt{basis} are shown in table \ref{tab:options_basis}
@@ -1619,8 +1612,12 @@ of the same band as a function of k-points, which is suitable to diferentiate.
  \Psi_{\pmb{k}}(\pmb{r}) \rightarrow \Psi_{\pmb{r}}(\pmb{k})
 \end{equation*}
 
-Will save the wavefunctions of each band in a compressed file \emph{wfcpos\#.npy} where \# = number of band
-and the gradients of each band in a compressed file \emph{wfcgra\#.npy} where \# = number of band.
+Will save the wavefunctions of each band in a file \emph{wfcpos\#.npy} where \# = number of band.
+By default the gradient files \emph{wfcgra\#.npy} are no longer written: the \texttt{geometry}
+script computes the k-space gradient on the fly from \emph{wfcpos\#.npy}.
+The option \texttt{-savegra} restores writing them.
+Note that \texttt{geometry} requires uncompressed \emph{wfcpos} files, so \texttt{-c} should
+not be used if \texttt{geometry} will be run afterwards.
 The options for \texttt{r2k} are shown in table \ref{tab:options_r2k}.
 
 \begin{table}[h]
@@ -1631,6 +1628,8 @@ The options for \texttt{r2k} are shown in table \ref{tab:options_r2k}.
   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
   \texttt{-np}                  & Number of processes to use (default: 1) \\
   \texttt{-mb}                  & Minimum band to consider (default: 0) \\
+  \texttt{-c}                   & Compress the output files \\
+  \texttt{-savegra}             & Also write the \emph{wfcgra\#.npy} files (default: not written) \\
   \texttt{-o file\_path}        & Name of output log file\\
                                 & Extension will be ignored\\
   \texttt{-flush}               & Flush the ouput to stdout \\
@@ -1659,9 +1658,12 @@ The options for \texttt{geometry} are shown in table \ref{tab:options_geometry}.
 \begin{tabular}[]{lr}
   \hline
   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
-  \texttt{-np}                  & Number of processes to use (default: 1) \\
+  \texttt{-np}                  & Number of threads to use (default: all cores) \\
   \texttt{-mb}                  & Minimum band to consider (default: 0) \\
-  \texttt{-prop} [both,connection,curvature] &  Specify property to calculate. (default: both)\\
+  \texttt{-mem GB}              & Memory budget in GB for the streaming buffers (default: 32) \\
+  \texttt{-prop}                & Property to calculate: both, conn, curv, chern,\\
+                                & chern\_curl, chern\_bp, chern\_bp\_bz (default: both)\\
+  \texttt{-d}                   & Decimal places to save the Chern number with (default: 0) \\
   \texttt{-o file\_path}        & Name of output log file\\
                                 & Extension will be ignored\\
   \texttt{-flush}               & Flush the ouput to stdout \\
