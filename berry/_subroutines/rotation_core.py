@@ -89,7 +89,7 @@ def _overlap_matrix(ref_wfcs, cur_wfcs, dphase, nr: int, noncolin: bool) -> np.n
 
     The .wfc files hold u_nk(r) (wfck2r.x output), so the overlap between
     neighbouring k-points is taken directly between them — u-convention, no
-    Bloch-phase weighting (see docs/berry_geometry_physics.md §1.1).  ``dphase``
+    Bloch-phase weighting.  ``dphase``
     is accepted for call-site compatibility and must be None; passing an array
     would reintroduce the pseudo-Bloch e^{ik.r}u convention.
 

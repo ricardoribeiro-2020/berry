@@ -275,9 +275,9 @@ def run_basis_rotation(
         return np.load(path)
 
     # u-convention: .wfc files hold the periodic parts u_nk and overlaps are
-    # taken directly between them, so phase.npy is no longer loaded (see
-    # docs/berry_geometry_physics.md §1.1).  d_phase=None is threaded through
-    # to keep the rotation_core signatures unchanged.
+    # taken directly between them, so phase.npy is no longer loaded.
+    # d_phase=None is threaded through to keep the rotation_core signatures
+    # unchanged.
     d_phase     = None
     eigenvalues = d.eigenvalues                                     # shape (nks, nbnd)
     neighbors   = d.neighbors                                       # shape (nks, 2*dimensions)

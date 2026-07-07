@@ -45,7 +45,7 @@ def dot(nk: int, j: int, neighbor: int, jNeighbor: int) -> None:
     overlap is computed directly between them with NO Bloch-phase weighting:
     ``dpc[b0, b1] = sum_r wfc0[b0, r] * conj(wfc1[b1, r])`` = <u_b1(k')|u_b0(k)>.
     (The old phase-weighted version computed overlaps of pseudo-Bloch
-    functions e^{ik.r}u instead — see docs/berry_geometry_physics.md §1.1.)
+    functions e^{ik.r}u instead.)
 
     The whole band x band loop is one matrix product dispatched to BLAS.  To
     keep memory bounded it is tiled in band blocks of ``BAND_BLOCK`` rows, so

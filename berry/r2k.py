@@ -77,8 +77,7 @@ def calculate_wfcpos(npr: int) -> np.ndarray:
     derivative in calculate_wfcgra acts directly on u, so wfcpos is just u
     re-indexed onto the (kx, ky, kz) mesh -- NO Bloch-phase multiplication.
     (The old ``d_phase *`` factor built the pseudo-Bloch e^{ik.r}u instead,
-    contaminating the Berry connection with an intracell position term -- see
-    docs/berry_geometry_physics.md §1.1.)
+    contaminating the Berry connection with an intracell position term.)
     """
     global calculate_wfcpos_kp
     if m.dimensions == 1:

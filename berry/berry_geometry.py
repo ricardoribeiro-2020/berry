@@ -246,10 +246,10 @@ def _stream_connection_curvature(bands, do_conn: bool, do_curv: bool,
 
     if do_conn:
         ##  normalization convention: (1/nr) * sum_r |u|^2 = 1
-        ##  (the .wfc files hold the periodic parts u_nk; see docs/berry_geometry_physics.md)
+        ##  (the .wfc files hold the periodic parts u_nk)
         conn = 1j * acc_conn.transpose(2, 3, 0, 1) / m.nr        # (N,N,D,K)
         # A is Hermitian in the band indices up to FD truncation and gauge
-        # quality; the residual is a free diagnostic of both (doc §6.2)
+        # quality; the residual is a free diagnostic of both
         res = np.abs(conn - conn.conj().transpose(1, 0, 2, 3))
         worst = np.unravel_index(np.argmax(res), res.shape)
         logger.info(f"\tHermiticity residual max |A_ab - A_ba*| = {res.max():.3e} "
@@ -268,7 +268,7 @@ def _stream_connection_curvature(bands, do_conn: bool, do_curv: bool,
             comps_std = [kernel(acc_M[(0, 1)])]                  # Omega_z
         else:
             comps_std = [kernel(acc_M[dd]) for dd in curv_pairs] # Omega_x,y,z
-        # standard sign convention Omega = +curl(A) (see doc §3): the kernels
+        # standard sign convention Omega = +curl(A): the kernels
         # above carry the old orientation; -conj converts, as before
         for a in range(N):
             for b in range(N):
