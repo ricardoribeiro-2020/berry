@@ -1710,8 +1710,19 @@ table \ref{tab:options_conductivity}.
 \end{tabular}
 \end{table}
 
-These scrips calculate the conductivity between 0 and the maximum energy (in Ry),
-with a step (energy step) and a broadning.
+These scripts calculate the conductivity between 0 and the maximum energy (in Ry),
+with a step (energy step) and a broadening.
+
+The results are written to the files \texttt{sigmar.dat} and \texttt{sigmai.dat}
+(real and imaginary parts of the linear conductivity;
+\texttt{sigma2r.dat} and \texttt{sigma2i.dat} for the SHG):
+the first column is the photon energy in eV and the remaining columns are the
+tensor components in Rydberg atomic units ($e^2=2$, $\hslash=1$, lengths in bohr).
+Since the k-point mesh is generated in {\sc Quantum Espresso} \texttt{tpiba} units
+($2\pi/a$), the leftover powers of $k$ in each response
+($d-2$ for the linear conductivity, $d-3$ for the SHG, in $d$ dimensions)
+are converted internally to $\text{bohr}^{-1}$ using the lattice parameter,
+so the output does not depend on the \texttt{tpiba} convention.
 
 The details of these calculations can be found in
 \begin{verbatim}

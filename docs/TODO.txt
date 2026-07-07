@@ -6,4 +6,6 @@ No special order.
 3. Add calculation of other nonlinear optical properties from Berry connection
 4. Add excitonic calculations
 5. Create a GUI for the software
+6. Improve the parallelization
+7. Compact some scripts into one
 

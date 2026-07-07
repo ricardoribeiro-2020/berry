@@ -500,17 +500,17 @@ class Preprocess:
         alat = float(output.find("atomic_structure").attrib["alat"])
         self.logger.info(f"\talat = {alat} bohr")
 
-        self.logger.info(f"\n\tLattice vectors in units of alat")
+        self.logger.info(f"\n\tLattice vectors in bohr")
         self.a1, self.a2, self.a3 = [np.array(list(map(float, it.text.split()))) for it in output.find("atomic_structure").find("cell")]
-        self.logger.info("\t\ta1:", self.a1)
-        self.logger.info("\t\ta2:", self.a2)
-        self.logger.info("\t\ta3:", self.a3)
+        self.logger.info(f"\t\ta1: {self.a1}")
+        self.logger.info(f"\t\ta2: {self.a2}")
+        self.logger.info(f"\t\ta3: {self.a3}")
 
         self.logger.info(f"\n\tReciprocal lattice vectors in units of 2pi/alat")
         self.b1, self.b2, self.b3 = [np.array(list(map(float, it.text.split()))) for it in output.find("basis_set").find("reciprocal_lattice")]
-        self.logger.info("\t\tb1:", self.b1)
-        self.logger.info("\t\tb2:", self.b2)
-        self.logger.info("\t\tb3:", self.b3)
+        self.logger.info(f"\t\tb1: {self.b1}")
+        self.logger.info(f"\t\tb2: {self.b2}")
+        self.logger.info(f"\t\tb3: {self.b3}")
 
         self.logger.info("\n\tNumber of points in real space in each direction")
         self.nr1 = int(output.find("basis_set").find("fft_smooth").attrib["nr1"])
