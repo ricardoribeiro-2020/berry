@@ -1407,7 +1407,8 @@ The options for \texttt{degenrot} are shown in table~\ref{tab:options_degenrot}.
 \hline
   \texttt{-h}, \texttt{--help}       & Show a help message and exit \\
   \texttt{-ethr}                     & Energy threshold for degeneracy detection \\
-                                     & in eigenvalue units (default: $5\times10^{-3}$) \\
+                                     & in Ry, the units of \emph{eigenvalues.npy} \\
+                                     & (default: $5\times10^{-3}$~Ry $\approx 68$~meV) \\
   \texttt{-c}                        & Compress the output \emph{.wfc} files \\
   \texttt{-max-ref-iter}             & Minimum refinement iterations per zone (default: 50) \\
   \texttt{-ref-iter-cap}             & Hard cap on refinement iterations (default: 500) \\
@@ -1549,7 +1550,7 @@ band above the \texttt{wfcut} cutoff), since all the band-indexed files the scri
      degenerate band pair $[k, b_1, b_2]$. Overlapping pairs that share a band are merged into
      the maximal degenerate group (so a triple degeneracy stored as three pairs becomes one
      subspace of three bands). A flagged pair whose two bands are farther apart in energy than
-     the grouping threshold \texttt{-gethr} (default $0.01$~eV) is treated as non-degenerate and
+     the grouping threshold \texttt{-gethr} (default $0.01$~Ry $\approx 0.14$~eV) is treated as non-degenerate and
      dropped, so a distant band is never pulled into the subspace.
    \item[Phase 2 --- form zones.] Adjacent flagged k-points sharing the same degenerate band
      group are joined into a connected \emph{zone}; a flagged point with no flagged neighbour is
@@ -1577,8 +1578,8 @@ The options for \texttt{basis} are shown in table \ref{tab:options_basis}
   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
   \texttt{Mb}                   & Maximum band to consider (positional) \\
   \texttt{-np}                  & Number of processes to use (default: 1) \\
-  \texttt{-gethr eV}            & Energy-coherence threshold for grouping\\
-                                & flagged bands into one subspace (default: 0.01;\\
+  \texttt{-gethr Ry}            & Energy-coherence threshold for grouping\\
+                                & flagged bands into one subspace (default: 0.01~Ry;\\
                                 & negative disables the guard) \\
   \texttt{-c}                   & Compress the output files \\
   \texttt{-o file\_path}        & Name of output log file\\
@@ -2287,8 +2288,8 @@ When the iterative solver stops, its best result may still contain points that f
 \begin{enumerate}
     \item \textbf{Energy-continuity repair.} The flagged (wrong / not-solved) points, points holding a valid but energy-discontinuous band, and energy-continuity outliers (points whose energy departs from the band's trusted trajectory even though the attribution is formally valid) are freed and jointly reassigned. Each empty slot's expected energy is extrapolated by a quadratic fit built from \emph{trusted} neighbors only, and the freed bands are redistributed to the slots they best match, never reusing a band twice at the same k-point, and only when the reassignment stays within the gross-jump guard $E_\text{accept}$. Repaired points become trusted, so the fix propagates inward, one layer per round.
     \item \textbf{Force completion.} Any slot still empty is force-filled with the closest available band in energy, using the continuity extrapolation as a reference. These points are marked \emph{Forced} (signal $6$ in table \ref{tab:signals1}, $5$ in table \ref{tab:signals2}); they are not genuine solves and are flagged as such.
-    \item \textbf{Final revalidation, degenerate-group completion and bijection.} Every attributed slot is re-validated by the energy-continuity criteria (in-loop only the doubtful points are checked, which could let one side of a label swap ship as clean); an isolated failure on a band whose overall score exceeds $0.96$ is graded as a partial discontinuity rather than a mistake. Inside a near-degenerate group of bands (energies within a few meV) the individual band label is a gauge choice, so the group's slots are completed by a within-group bijection. The full attribution is then made a per-k permutation (each original band used in at most one slot): duplicated bands keep their best copy and the losers move to a missing band by best energy fit. (The degenerate-group completion and the bijection also run as part of every in-loop validation, not only here.)
-    \item \textbf{Wavefunction-evidence pass.} The energy criteria cannot see a label swap between near-parallel bands (a few-meV error passes every energy gate), so cells whose attribution has no dot-product support are exchanged when the swap is dot-product-favoured, and the zero-support cells that remain are demoted, so that a silently swapped band cannot be reported clean.
+    \item \textbf{Final revalidation, degenerate-group completion and bijection.} Every attributed slot is re-validated by the energy-continuity criteria (in-loop only the doubtful points are checked, which could let one side of a label swap ship as clean); an isolated failure on a band whose overall score exceeds $0.96$ is graded as a partial discontinuity rather than a mistake. Inside a near-degenerate group of bands (energies within a few mRy) the individual band label is a gauge choice, so the group's slots are completed by a within-group bijection. The full attribution is then made a per-k permutation (each original band used in at most one slot): duplicated bands keep their best copy and the losers move to a missing band by best energy fit. (The degenerate-group completion and the bijection also run as part of every in-loop validation, not only here.)
+    \item \textbf{Wavefunction-evidence pass.} The energy criteria cannot see a label swap between near-parallel bands (a few-mRy error passes every energy gate), so cells whose attribution has no dot-product support are exchanged when the swap is dot-product-favoured, and the zero-support cells that remain are demoted, so that a silently swapped band cannot be reported clean.
 \end{enumerate}
 
 Finally each band is graded in the \textit{final.report} into one of: \texttt{CLEAN} (pristine), \texttt{USABLE} (no genuine errors; may carry a sub-pristine score or benign force-fills inside a degenerate doublet), \texttt{ROTATE} (usable after a basis rotation), \texttt{CHECK} (a force-fill across a real energy gap --- verify), or \texttt{FAIL} (a genuine energy break or a low score). The \texttt{CLEAN}/\texttt{USABLE}/\texttt{ROTATE} bands are the ones saved in \textit{completed\_bands.npy}.

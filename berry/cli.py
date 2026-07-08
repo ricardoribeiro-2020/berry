@@ -169,7 +169,7 @@ berry [package options] script parameter [script options]
                 type=float,
                 default=0.005,
                 metavar="",
-                help="Energy threshold for degeneracy detection in eigenvalue units (default: 0.005).",
+                help="Energy threshold for degeneracy detection in Ry, the units of eigenvalues.npy (default: 0.005 Ry ~ 68 meV).",
             )
             degenrot_parser.add_argument(
                 "-c",
@@ -352,8 +352,8 @@ berry [package options] script parameter [script options]
             basis_parser.add_argument("-gethr",
                                       type=float,
                                       default=0.01,
-                                      metavar="eV",
-                                      help="Energy-coherence threshold (eV) for grouping cluster-flagged bands into one rotatable subspace (default: 0.01). Flagged pairs whose bands are farther apart than this are treated as non-degenerate and not rotated. A negative value disables the guard (trust all cluster flags).")
+                                      metavar="Ry",
+                                      help="Energy-coherence threshold in Ry, the units of eigenvalues.npy, for grouping cluster-flagged bands into one rotatable subspace (default: 0.01 Ry ~ 0.14 eV). Flagged pairs whose bands are farther apart than this are treated as non-degenerate and not rotated. A negative value disables the guard (trust all cluster flags).")
             basis_parser.add_argument("-c",
                                     action="store_true",
                                     help="Compress the output files.")

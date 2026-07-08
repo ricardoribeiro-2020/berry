@@ -43,13 +43,13 @@ except Exception:
     pass
 
 
-ENERGY_THRESHOLD = 0.0001  # eigenvalue units (eV for standard QE XML output)
+ENERGY_THRESHOLD = 0.0001  # Ry (eigenvalues.npy is stored in Ry; 0.0001 Ry ~ 1.4 meV)
 
 # Energy-coherence threshold for grouping cluster-flagged bands into one
 # rotatable subspace.  Looser than ENERGY_THRESHOLD on purpose: it only splits
-# flagged pairs whose bands are *clearly* non-degenerate (default ~10 meV),
+# flagged pairs whose bands are *clearly* non-degenerate (default 0.01 Ry ~ 0.14 eV),
 # otherwise the cluster's flag is trusted.  Set to None to disable the guard.
-GROUP_ENERGY_THRESHOLD = 0.01  # eigenvalue units (eV)
+GROUP_ENERGY_THRESHOLD = 0.01  # Ry
 
 
 # Module-level shared context populated by run_basis_rotation before forking.
@@ -166,7 +166,7 @@ def _degen_at_k_from_cluster(degeneratefinal, eigenvalues, nbnd, initial_band,
     logger.info(
         f"\tRead {n_used} degenerate pair(s) from cluster across "
         f"{len(degen_at_k)} k-point(s)"
-        + (f"; dropped {n_filtered} pair(s) with energy gap >= {group_ethr} (non-degenerate)"
+        + (f"; dropped {n_filtered} pair(s) with energy gap >= {group_ethr} Ry (non-degenerate)"
            if n_filtered else "")
         + (f"; skipped {n_skipped} unusable row(s)" if n_skipped else "")
     )
@@ -250,7 +250,8 @@ def run_basis_rotation(
     logger.info(f"\tDimensions: {m.dimensions}")
     logger.info(f"\tNoncolinear: {m.noncolin}")
     logger.info(f"\tEnergy threshold (reference selection): {ethr}")
-    logger.info(f"\tEnergy-coherence grouping threshold: {group_ethr}"
+    logger.info(f"\tEnergy-coherence grouping threshold: "
+                + (f"{group_ethr}" if group_ethr is None else f"{group_ethr} Ry")
                 + ("  (disabled — trusting all cluster flags)" if group_ethr is None else ""))
     logger.info(
         f"\tHolonomy correction: {holonomy_correction}  "

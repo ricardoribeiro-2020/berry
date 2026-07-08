@@ -887,10 +887,10 @@ class MATERIAL:
         else:
             d_med = d_p95 = d_max = 0.0
         gap_disp_ratio = (self.gap_scale / self.disp_scale) if self.disp_scale else float('inf')
-        self.logger.info(f'{BODY_INDENT}f(E) scales: gap_scale={self.gap_scale:.4g}  '
+        self.logger.info(f'{BODY_INDENT}f(E) scales (Ry): gap_scale={self.gap_scale:.4g}  '
                          f'disp_scale(p99.9)={self.disp_scale:.4g}  accept_E={self.accept_E:.4g}  '
                          f'sigma_min={self.sigma_min:.4g}')
-        self.logger.info(f'{BODY_INDENT}f(E) single-step dispersion |E(k+1)-E(k)|: '
+        self.logger.info(f'{BODY_INDENT}f(E) single-step dispersion |E(k+1)-E(k)| (Ry): '
                          f'median={d_med:.4g}  p95={d_p95:.4g}  max={d_max:.4g}  '
                          f'(gap/disp={gap_disp_ratio:.3g})')
         # fe_eweight: down-weight the f(E) score term when the gap has collapsed
@@ -1019,8 +1019,8 @@ class MATERIAL:
                 # gross-jump scale accept_E, OR -- with same_band -- a change of raw band
                 # index. (A step can break continuity either by jumping in energy or by
                 # swapping bands; both must be caught.) Fitting through a cliff throws the
-                # one-step prediction by ~100 mHa (median) in the entangled manifold;
-                # truncating to the continuous segment nearest k_ref brings it to ~1 mHa.
+                # one-step prediction by ~100 mRy (median) in the entangled manifold;
+                # truncating to the continuous segment nearest k_ref brings it to ~1 mRy.
                 if abs(E_b - Es[-1]) > self.accept_E or (same_band and b != b_anchor):
                     break
             else:
@@ -1424,7 +1424,7 @@ class MATERIAL:
             return 'IN-LOOP(flag)'
 
         self.logger.debug('\n\t\t==================== SOLUTION PROVENANCE & HEALTH (verbose) ===================='
-                          f'\n\t\tgross-jump threshold accept_E = {gross:.4f} Ha')
+                          f'\n\t\tgross-jump threshold accept_E = {gross:.4f} Ry')
         self.logger.debug('\t\tslot | in-loop  repaired  forced | csf<3(fail) | SILENT-DISC(csf>=3 & jump>accept_E)')
         for s in range(nb):
             kept_flag = ((inloop_csf[:, s] < CSF_SOLVED) & ~repaired[:, s] & ~forced[:, s]).sum()
@@ -1442,7 +1442,7 @@ class MATERIAL:
         sk, ss = np.where(inloop_bands != self.bands_final)
         self.logger.debug(f'\n\t\t==================== POST-LOOP SLOT SWAPS: {len(sk)} ====================')
         if len(sk):
-            self.logger.debug('\t\t    k  slot  band(in->out)   E(in->out) [Ha]      nn-jump  provenance     final-csf')
+            self.logger.debug('\t\t    k  slot  band(in->out)   E(in->out) [Ry]      nn-jump  provenance     final-csf')
             for k, s in sorted(zip(sk.tolist(), ss.tolist())):
                 ob, nbd = int(inloop_bands[k, s]), int(self.bands_final[k, s])
                 oE = float(self.eigenvalues[k, ob]) if ob >= 0 else float('nan')
@@ -1457,7 +1457,7 @@ class MATERIAL:
         self.logger.debug(f'\n\t\t==================== SILENT DISCONTINUITIES (pass validation, '
                           f'jump>accept_E): {len(hk)} ====================')
         if len(hk):
-            self.logger.debug('\t\t    k  slot  band     E [Ha]    nn-jump  provenance     in-loop-band  final-csf')
+            self.logger.debug('\t\t    k  slot  band     E [Ry]    nn-jump  provenance     in-loop-band  final-csf')
             order = np.argsort(-jumps[hk, hs])
             for i in order:
                 k, s = int(hk[i]), int(hs[i])
@@ -2904,9 +2904,9 @@ class MATERIAL:
         FORCED_CONTINUITY in ``correct_signalfinal`` so the band no longer counts as
         not-solved while the fills stay visible (FOR column) for audit.
 
-        ``ethr`` defaults to ``self.degen_ethr`` (0.005 in eigenvalue units, i.e. 5 meV
-        for eV input -- the same scale degenrotation groups on, and the centre of the
-        ~3-8 meV stability plateau). Returns the number of slots filled.
+        ``ethr`` defaults to ``self.degen_ethr`` (0.005 Ry ~ 68 meV; eigenvalues.npy
+        is stored in Ry -- the same scale degenrotation groups on, and the centre of
+        the ~3-8 mRy stability plateau). Returns the number of slots filled.
         '''
         if ethr is None:
             ethr = getattr(self, 'degen_ethr', 0.005)
@@ -2949,7 +2949,7 @@ class MATERIAL:
         if filled:
             self.logger.info(f'{BODY_INDENT}Degenerate-group completion: filled {filled} slot(s) '
                              f'in {grown} grown block(s) by within-group bijection '
-                             f'(gap < {ethr * 1000:.1f} meV)')
+                             f'(gap < {ethr * 1000:.1f} mRy)')
             if self.logger.level <= logging.DEBUG:
                 for bd in sorted(resolved):
                     ks = resolved[bd]
@@ -3054,7 +3054,7 @@ class MATERIAL:
         ``tot > 0`` means the slot's content is orthogonal to the same slot at every
         neighbour: the wavefunction evidence contradicts the attribution no matter
         how quiet the energy is. This is the signature of a label swap between
-        near-parallel bands (MoS2 12/13: a ~5 mHa energy error passes every energy
+        near-parallel bands (MoS2 12/13: a ~5 mRy energy error passes every energy
         gate, but the cross dot-product is exactly 0).
         '''
         if tol is None:
@@ -3083,7 +3083,7 @@ class MATERIAL:
         '''
         Post-loop repair of the label swaps the energy machinery cannot see.
 
-        A swapped pair of near-parallel bands (e.g. an SOC pair split by a few mHa)
+        A swapped pair of near-parallel bands (e.g. an SOC pair split by a few mRy)
         costs almost nothing in energy -- every energy gate passes -- but the
         wavefunction evidence is decisive: the swapped cell has dot product ~0 to its
         own slot at every correctly-attributed neighbour while the exchanged
@@ -3285,7 +3285,7 @@ class MATERIAL:
         # Compact per-band table: only the actionable counts + a plain status.
         ###########################################################################
         TOL_CLEAN = 0.97            # at/above this (and nothing flagged) -> CLEAN; below -> USABLE
-        DEGEN_GAP = 0.010           # eV; a force-fill whose slot sits within this
+        DEGEN_GAP = 0.010           # Ry (~0.14 eV); a force-fill whose slot sits within this
                                     # gap of an adjacent band is a degenerate-doublet
                                     # relabeling (gauge), not a genuine mis-assignment
         FORCED_FAIL_FRAC = 0.05     # > this fraction of suspect force-fills -> FAIL

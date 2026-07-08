@@ -33,7 +33,7 @@ except Exception:
     pass
 
 
-ENERGY_THRESHOLD = 0.005  # eigenvalue units (eV for standard QE XML output); CLI -ethr overrides
+ENERGY_THRESHOLD = 0.005  # Ry (eigenvalues.npy is stored in Ry; 0.005 Ry ~ 68 meV); CLI -ethr overrides
 
 
 from berry._subroutines.rotation_core import (
@@ -124,7 +124,7 @@ def run_degenrotation(
     logger.info(f"\tDimensions: {m.dimensions}")
     logger.info(f"\tNoncolinear: {m.noncolin}")
     logger.info(f"\tLSDA: {m.lsda}")
-    logger.info(f"\tEnergy degeneracy threshold: {ethr}")
+    logger.info(f"\tEnergy degeneracy threshold: {ethr} Ry")
     logger.info(
         f"\tHolonomy correction: {holonomy_correction}  "
         f"(max_iter={holonomy_max_iter}, tol={holonomy_tol:.1e}, "
