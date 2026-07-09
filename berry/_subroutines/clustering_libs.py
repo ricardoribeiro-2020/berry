@@ -28,7 +28,7 @@ from typing import Tuple, Union, Callable
 import logging
 
 from scipy.ndimage import sobel, correlate
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, linear_sum_assignment
 
 import numpy as np
 import networkx as nx
@@ -208,6 +208,43 @@ def _energy_continuity_score(Enew: float, Ecand: float,
     return float(sigma / (sigma + resid))            # continuity-residual, scale-aware
 
 
+def _local_scales(accept_E: float, disp_scale: float,
+                  local_gap: float, band_disp: float) -> Tuple[float, float]:
+    '''
+    Sharpen the global energy scales to the LOCAL band neighbourhood, never
+    loosening them. The global ``accept_E`` (3x the p99.9 dispersion of the
+    whole spectrum) is wider than the inter-band gap of a crowded manifold, so
+    a one-band jump passes the gross-jump gate and still scores "smooth"
+    against the global ``disp_scale`` -- the energy machinery goes blind
+    exactly where the dot product is ambiguous too (phosphorene bands 14-24:
+    gaps 0.02-0.035 Ry vs accept_E 0.075 Ry).
+
+    Where the local adjacent-band gap RESOLVES the band's own dispersion
+    (``local_gap > 2*band_disp``), gate at half the local gap -- floored at
+    one per-band p95 step so a legitimate prediction residual is never cut --
+    and decay the score on the band's own dispersion. Where the gap does NOT
+    resolve the dispersion (near-degenerate / unresolved crowding), return the
+    global scales unchanged: energy cannot referee there and a sharp gate
+    would only manufacture mistakes (the e90a33a lesson); dot-product evidence
+    has to decide.
+    '''
+    if (accept_E is None or local_gap is None or band_disp is None
+            or not np.isfinite(local_gap) or band_disp <= 0
+            or local_gap <= 2.0 * band_disp):
+        return accept_E, disp_scale
+    gate = min(accept_E, max(0.5 * local_gap, band_disp))
+    disp = min(disp_scale, band_disp) if (disp_scale and disp_scale > 0) else band_disp
+    return gate, disp
+
+
+# Evidence weights of the dp-aware repair / completeness assignment: same blend
+# as obtain_output's conflict solver (0.6*dot-product + 0.4*energy). The energy
+# term ranks candidates inside the local gate; the dp term (mean overlap with
+# the slot's trusted neighbours) picks among energy-admissible candidates,
+# which energy alone cannot tell apart in a crowded manifold.
+REPAIR_W_DP, REPAIR_W_E = 0.6, 0.4
+
+
 EVALUATE_RESULT_HELP = '''
     ---------------------- Report considering dot-product information ----------------------------
             C -> Mean dot-product |<i|j>| of each k-point
@@ -326,7 +363,8 @@ def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
 
 def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_matrix: np.ndarray,
                    signal: np.ndarray, bands: np.ndarray, energies: np.ndarray,
-                   accept_E: float = None, disp_scale: float = None) -> Tuple[int, list[int]]:
+                   accept_E: float = None, disp_scale: float = None,
+                   local_gap: np.ndarray = None, band_disp: np.ndarray = None) -> Tuple[int, list[int]]:
     '''
     Assign a signal value depending on energy continuity.
 
@@ -396,6 +434,14 @@ def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_ma
         ik, jk, kk = k_index[k]     # k point indices on k-space
 
     Ek = energies[k, mach_bn]       # k point's Energy value
+
+    # Sharpen the gate/decay scales to the assigned band's local neighbourhood
+    # (half the local adjacent gap where it resolves the band's dispersion,
+    # unchanged global scales elsewhere -- see _local_scales).
+    if local_gap is not None and band_disp is not None and mach_bn >= 0:
+        accept_E, disp_scale = _local_scales(accept_E, disp_scale,
+                                             float(local_gap[k, mach_bn]),
+                                             float(band_disp[mach_bn]))
 
     def difference_energy(Ek: float, Enew: float) -> float:
         '''
@@ -858,7 +904,7 @@ class MATERIAL:
         nondeg = gaps[gaps > self.gap_scale] if gaps.size else gaps
         self.interband_scale = float(np.median(nondeg)) if nondeg.size else self.gap_scale
 
-        disp_values = []
+        disp_values = []                                                # per-direction |dE| arrays, band axis kept
         neigh = np.asarray(self.neighbors)
         for j in range(neigh.shape[1]):
             nb = neigh[:, j]
@@ -866,12 +912,42 @@ class MATERIAL:
             if np.any(valid):
                 d = np.abs(self.eigenvalues[nb[valid]] - self.eigenvalues[valid])
                 if d.size:
-                    disp_values.append(d.ravel())
-        disp_all = np.concatenate(disp_values) if disp_values else np.array([])
+                    disp_values.append(d)
+        disp_all = np.concatenate(disp_values, axis=0).ravel() if disp_values else np.array([])
         disp_scale = float(np.percentile(disp_all, 99.9)) if disp_all.size else 0.0
         self.disp_scale = disp_scale if disp_scale > 0 else self.gap_scale
         self.sigma_min = 0.25 * self.gap_scale                          # min local-spread scale for _extrapolate_energy
         self.accept_E = max(3.0 * self.disp_scale, 0.5 * self.gap_scale)  # gross-jump guard for repair/forced fills
+
+        ###########################################################################
+        # LOCAL energy scales (see _local_scales): the global accept_E/disp_scale
+        # above are calibrated by the steepest bands / widest gaps of the whole
+        # spectrum and are wider than the inter-band gaps of a crowded manifold,
+        # where a one-band jump then passes every energy check. Per-band p95
+        # single-step dispersion + per-(k, band) adjacent-band gap let the gates
+        # sharpen exactly where the local gap resolves the local dispersion;
+        # near-degenerate regions keep the loose global scales (dp referees).
+        ###########################################################################
+        if disp_values:
+            band_steps = np.concatenate(disp_values, axis=0)            # (n_pairs, nbnd)
+            self.band_disp = np.maximum(np.percentile(band_steps, 95, axis=0), 1e-12)
+        else:
+            self.band_disp = np.full(self.eigenvalues.shape[1], self.disp_scale)
+        dE_adj = np.abs(np.diff(self.eigenvalues, axis=1))
+        self.local_gap = np.full(self.eigenvalues.shape, np.inf)
+        self.local_gap[:, :-1] = dE_adj
+        self.local_gap[:, 1:] = np.minimum(self.local_gap[:, 1:], dE_adj)
+        _gate = np.minimum(self.accept_E,
+                           np.maximum(0.5 * self.local_gap, self.band_disp[None, :]))
+        _resolved = self.local_gap > 2.0 * self.band_disp[None, :]
+        n_sharp = int(np.sum(_resolved & (_gate < self.accept_E)))
+        self.logger.info(f'{BODY_INDENT}Local energy gates: {n_sharp}/{self.local_gap.size} '
+                         f'(k, band) cells sharpen below the global accept_E '
+                         f'(median sharpened gate '
+                         f'{np.median(_gate[_resolved & (_gate < self.accept_E)]):.4g} Ry)'
+                         if n_sharp else
+                         f'{BODY_INDENT}Local energy gates: no cell resolves its local gap '
+                         f'-- global scales everywhere')
 
         ###########################################################################
         # f(E) diagnostics, Tier 3: report the energy scales f(E) depends on, once.
@@ -1070,6 +1146,39 @@ class MATERIAL:
             return float(np.median(preds))
         return float(self.eigenvalues[k, slot])
 
+    def _local_accept(self, k: int, band: int) -> float:
+        '''
+        Local gross-jump gate for candidate raw band ``band`` at k-point ``k``:
+        half the local adjacent-band gap where it resolves the band's own
+        dispersion, the loose global ``accept_E`` elsewhere (see _local_scales).
+        '''
+        if band < 0 or not hasattr(self, 'local_gap'):
+            return self.accept_E
+        gate, _ = _local_scales(self.accept_E, self.disp_scale,
+                                float(self.local_gap[k, band]),
+                                float(self.band_disp[band]))
+        return gate
+
+    def _dp_affinity(self, k: int, slot: int, band: int,
+                     trusted: np.ndarray = None) -> Union[float, None]:
+        '''
+        Mean dot product of raw band ``band`` at ``k`` to whatever band the SAME
+        slot holds at the attributed (optionally trusted-only) neighbours -- the
+        wavefunction evidence that ``band`` is this slot's continuation. Returns
+        None when no neighbour provides evidence (caller treats dp as neutral).
+        '''
+        vals = []
+        for i_neig, k_nb in enumerate(self.neighbors[k]):
+            if k_nb == -1:
+                continue
+            if trusted is not None and not trusted[k_nb, slot]:
+                continue
+            b2 = self.bands_final[k_nb, slot]
+            if b2 == -1:
+                continue
+            vals.append(float(self.connections[k, i_neig, band, b2]))
+        return float(np.mean(vals)) if vals else None
+
     def _energy_outlier_mask(self, bad0: np.ndarray, min_support: int = 2,
                              sigma_mult: float = 3.0) -> np.ndarray:
         '''
@@ -1112,7 +1221,13 @@ class MATERIAL:
                 if len(preds) < min_support:
                     continue                              # too few anchors to judge robustly
                 pred = float(np.median(preds))
-                tol = max(self.accept_E, sigma_mult * float(np.median(sigmas)))
+                # Local gate instead of the flat accept_E floor: with the global
+                # floor a one-band jump inside a crowded manifold (gap < accept_E)
+                # could never be flagged as an outlier, no matter how clean the
+                # trusted trajectory. Unresolved (near-degenerate) regions keep
+                # the global gate, so nothing tightens where energy cannot judge.
+                gate = self._local_accept(k, int(self.bands_final[k, s]))
+                tol = max(gate, sigma_mult * float(np.median(sigmas)))
                 E_cur = float(self.eigenvalues[k, self.bands_final[k, s]])
                 if abs(E_cur - pred) > tol:
                     outlier[k, s] = True
@@ -1131,10 +1246,13 @@ class MATERIAL:
         For each bad k-point, all its bad slots are freed and jointly reassigned:
         each slot's expected energy is predicted by quadratic extrapolation of that
         slot's own trajectory (slot-correct namespace: ``E[k', bands_final[k', s]]``)
-        built from TRUSTED neighbours only, and the freed bands are redistributed to
-        the slots nearest in energy to their predictions, respecting the per-k-point
+        built from TRUSTED neighbours only, and the freed bands are redistributed by
+        a joint (Hungarian) assignment blending the energy residual with the dot
+        product to the slot's trusted neighbours, respecting the per-k-point
         permutation constraint (no band used twice). A reassignment is only accepted
-        if it lands within ``self.accept_E`` of the prediction (gross-jump guard).
+        if it lands within the LOCAL gross-jump gate of the candidate band (half the
+        local adjacent gap where it resolves the band's dispersion, ``self.accept_E``
+        elsewhere -- see ``_local_scales``).
 
         Repaired points become trusted, so the repair propagates from the boundary
         of a bad island inward, one layer per round, until nothing changes. Slots
@@ -1228,21 +1346,43 @@ class MATERIAL:
                 self.bands_final[k, bad_slots] = -1
 
                 ###########################################################################
-                # Assign predicted slots in energy order, each taking the nearest
-                # still-available band (greedy nearest with removal == 1-D optimum),
-                # accepted only within the gross-jump guard.
+                # Jointly reassign the freed slots to the available bands (Hungarian),
+                # scoring each (slot, band) pair by BOTH kinds of evidence:
+                #     cost = REPAIR_W_E * (residual / local gate)
+                #          + REPAIR_W_DP * (1 - mean dp to the slot's trusted neighbours)
+                # A pair is admissible only when its residual is inside the LOCAL
+                # gross-jump gate of the candidate band (half the local adjacent gap
+                # in a resolved manifold, the loose global accept_E elsewhere). In a
+                # crowded manifold the global gate admits 2-4 adjacent bands, and the
+                # old energy-nearest choice was character-blind -- the phosphorene
+                # failures all held a dp~0.5 band while a dp~0.99 continuation was
+                # available. The dot product to the trusted same-slot neighbours now
+                # picks among the energy-admissible candidates.
                 ###########################################################################
                 pred_idx = [i for i, r in enumerate(refs) if r is not None]
-                pred_idx.sort(key=lambda i: refs[i])
-                for i in pred_idx:
-                    if not available:
-                        break
-                    j = int(np.argmin([abs(e - refs[i]) for e in avail_E]))
-                    if abs(avail_E[j] - refs[i]) > self.accept_E:
-                        continue                            # nothing continuous available: leave for later
-                    s = int(bad_slots[i])
-                    self.bands_final[k, s] = available.pop(j)
-                    avail_E.pop(j)
+                if pred_idx and available:
+                    BIG = 1e6
+                    cost = np.full((len(pred_idx), len(available)), BIG)
+                    for row, i in enumerate(pred_idx):
+                        s = int(bad_slots[i])
+                        for col, b in enumerate(available):
+                            gate = self._local_accept(k, int(b))
+                            resid = abs(avail_E[col] - refs[i])
+                            if resid > gate:
+                                continue                    # across a local energy wall
+                            dp_aff = self._dp_affinity(k, s, int(b), trusted)
+                            dp_term = (1.0 - dp_aff) if dp_aff is not None else 0.5
+                            cost[row, col] = REPAIR_W_E * (resid / gate) + REPAIR_W_DP * dp_term
+                    rows_, cols_ = linear_sum_assignment(cost)
+                    taken = []
+                    for r_, c_ in zip(rows_, cols_):
+                        if cost[r_, c_] >= BIG:
+                            continue                        # only inadmissible pairings left
+                        self.bands_final[k, int(bad_slots[pred_idx[r_]])] = available[c_]
+                        taken.append(c_)
+                    for c_ in sorted(taken, reverse=True):
+                        available.pop(c_)
+                        avail_E.pop(c_)
 
                 for i, s in enumerate(bad_slots):
                     s = int(s)
@@ -1326,25 +1466,40 @@ class MATERIAL:
             avail_E = [float(self.eigenvalues[k, b]) for b in available]
             # Continuity reference for each empty slot.
             refs = [self._slot_reference_energy(k, s) for s in empty_slots]
-            # Fill low-reference-energy slots first, each taking the nearest
-            # still-available band (greedy nearest with removal == 1-D optimum).
-            for idx in np.argsort(refs, kind='stable'):
-                s = int(empty_slots[idx])
-                if not available:
+            # Joint (Hungarian) fill blending the energy residual with the dot
+            # product to the slot's trusted neighbours -- the same evidence blend
+            # as the repair pass, but with NO hard gate (every slot must be
+            # filled). The residual is normalised by the candidate band's local
+            # gate and capped, so energy still ranks candidates but can no longer
+            # silently place a band across a resolved local wall when a
+            # dp-supported alternative exists.
+            if available:
+                cost = np.empty((len(empty_slots), len(available)))
+                for row, s in enumerate(empty_slots):
+                    for col, b in enumerate(available):
+                        gate = self._local_accept(k, int(b))
+                        resid = abs(avail_E[col] - refs[row])
+                        dp_aff = self._dp_affinity(k, int(s), int(b))
+                        dp_term = (1.0 - dp_aff) if dp_aff is not None else 0.5
+                        cost[row, col] = (REPAIR_W_E * min(resid / gate, 10.0)
+                                          + REPAIR_W_DP * dp_term)
+                rows_, cols_ = linear_sum_assignment(cost)
+                for r_, c_ in zip(rows_, cols_):
+                    s = int(empty_slots[r_])
+                    chosen = int(available[c_])
+                    self.bands_final[k, s] = chosen
+                    if self.logger.level <= logging.DEBUG:
+                        dE = abs(avail_E[c_] - refs[r_])
+                        self.logger.debug(f'{BODY_INDENT}  [forced] k={k} slot={s}: '
+                                          f'-1->band {chosen}  E={float(self.eigenvalues[k, chosen]):.4f}  '
+                                          f'refE={float(refs[r_]):.4f}  |dE|={dE:.4f}')
+            for s in empty_slots:
+                s = int(s)
+                if self.bands_final[k, s] == -1:
                     self.bands_final[k, s] = s          # last resort (permutation defect)
                     if self.logger.level <= logging.DEBUG:
                         self.logger.debug(f'{BODY_INDENT}  [forced] k={k} slot={s}: '
                                           f'no band available -> last-resort band {s}')
-                    continue
-                j = int(np.argmin([abs(e - refs[idx]) for e in avail_E]))
-                chosen = int(available[j])
-                dE = abs(avail_E[j] - refs[idx])
-                self.bands_final[k, s] = available.pop(j)
-                avail_E.pop(j)
-                if self.logger.level <= logging.DEBUG:
-                    self.logger.debug(f'{BODY_INDENT}  [forced] k={k} slot={s}: '
-                                      f'-1->band {chosen}  E={float(self.eigenvalues[k, chosen]):.4f}  '
-                                      f'refE={float(refs[idx]):.4f}  |dE|={dE:.4f}')
         return forced_mask
 
     def _nn_energy_jump_map(self) -> np.ndarray:
@@ -2025,7 +2180,9 @@ class MATERIAL:
                                                            accept_E=self.accept_E,
                                                            disp_scale=self.disp_scale,
                                                            fe_eweight=self.fe_eweight,
-                                                           tol=self.tol)  # Calculate the score (new f(E))
+                                                           tol=self.tol,
+                                                           local_gap=self.local_gap,
+                                                           band_disp=self.band_disp)  # Calculate the score (new f(E))
                 result.append([i_s, [np.max(scores), np.argmax(scores)], sample.scores])
 
             if _FE_DEBUG:
@@ -2568,7 +2725,8 @@ class MATERIAL:
                 signal, scores = evaluate_point(self.dimensions, k, bn, self.kpoints_index,
                                                 self.matrix, self.signal_final,
                                                 self.bands_final, self.eigenvalues,
-                                                accept_E=self.accept_E, disp_scale=self.disp_scale)  # Obtain the new signal
+                                                accept_E=self.accept_E, disp_scale=self.disp_scale,
+                                                local_gap=self.local_gap, band_disp=self.band_disp)  # Obtain the new signal
                 chunk_result.append([k, bn, signal, scores])
             return chunk_result
 
@@ -3173,7 +3331,8 @@ class MATERIAL:
                 continue
             sig, _ = evaluate_point(self.dimensions, k, s, self.kpoints_index,
                                     self.matrix, self.signal_final, bf, self.eigenvalues,
-                                    accept_E=self.accept_E, disp_scale=self.disp_scale)
+                                    accept_E=self.accept_E, disp_scale=self.disp_scale,
+                                    local_gap=self.local_gap, band_disp=self.band_disp)
             if sig != self.correct_signalfinal[k, s]:
                 if sig > self.correct_signalfinal[k, s]:
                     upgraded += 1
@@ -3723,11 +3882,17 @@ class MATERIAL:
 
             if self.alpha_stall >= alpha_patience:
                 self.alpha -= step
-                self.tol = max(self.tol * 0.90, 0.10)
                 self.alpha_best_ns = np.inf
                 self.alpha_stall = 0
-                self.logger.info(f'\n\t\tAlpha converged -- descending to '
-                                 f'{self.alpha:.4f} (tol={self.tol:.4f})')
+                if self.alpha < min_alpha:
+                    # The sweep has exhausted its range; the loop condition ends it.
+                    # Don't log a bogus "descending to -0.5000".
+                    self.logger.info(f'\n\t\tAlpha converged at the final value -- '
+                                     f'alpha sweep finished')
+                else:
+                    self.tol = max(self.tol * 0.90, 0.10)
+                    self.logger.info(f'\n\t\tAlpha converged -- descending to '
+                                     f'{self.alpha:.4f} (tol={self.tol:.4f})')
 
         # The best result is maintained
         self.bands_final = np.copy(self.best_bands_final)
@@ -3990,7 +4155,8 @@ class COMPONENT:
     def get_cluster_score(self, cluster : COMPONENT, min_band : int, max_band : int,
                           neighbors : np.ndarray, energies : np.ndarray, connections : np.ndarray, alpha : float = 0.5,
                           accept_E : float = None, disp_scale : float = None, fe_eweight : float = 1.0,
-                          tol : float = None) -> float:
+                          tol : float = None, local_gap : np.ndarray = None,
+                          band_disp : np.ndarray = None) -> float:
         '''
         This function returns the similarity between components taking
         into account the dot product of all essential points and their
@@ -4066,9 +4232,24 @@ class COMPONENT:
             # Directional continuity-residual with a gross-jump gate, replacing the
             # old min(|Ei - E_all_bands|)/delta_energy ratio: score the candidate
             # band against the prediction along the join line ONLY, and veto any
-            # jump beyond accept_E (a real inter-group wall can never be crossed).
+            # jump beyond the gate (a real inter-group wall can never be crossed).
+            # The gate/decay scales sharpen to the candidate band's local
+            # neighbourhood where the adjacent gap resolves the band's dispersion
+            # (see _local_scales); unresolved (near-degenerate) regions keep the
+            # loose global scales, so no in-loop edge is ever cut where energy
+            # cannot judge.
+            _aE, _dS = accept_E, disp_scale
+            if local_gap is not None and band_disp is not None and accept_E is not None:
+                if self.dimensions == 1:
+                    k2 = int(self.matrix[ik_n])
+                elif self.dimensions == 2:
+                    k2 = int(self.matrix[ik_n, jk_n])
+                else:
+                    k2 = int(self.matrix[ik_n, jk_n, kk_n])
+                _aE, _dS = _local_scales(accept_E, disp_scale,
+                                         float(local_gap[k2, bn2]), float(band_disp[bn2]))
             return _energy_continuity_score(float(Ei), float(Ecand),
-                                            accept_E=accept_E, disp_scale=disp_scale)
+                                            accept_E=_aE, disp_scale=_dS)
         
         def fit_energy(bn1 : int, bn2 : int, iK1 : list[int], iK2: list[int]) -> float:
             '''
