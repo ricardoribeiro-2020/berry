@@ -20,6 +20,7 @@ from multiprocessing import get_context
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from collections import deque
+from heapq import heappush, heappop
 import random
 import string
 import textwrap
@@ -67,6 +68,14 @@ FORCED_CONTINUITY = 5   # correct_signalfinal / evaluate_point (energy-continuit
 # exact value is not critical; 0.5 sits in the empty middle. Used by the post-loop
 # dp-evidence passes (_dp_support_counts / _repair_dp_swaps / _flag_dp_unsupported).
 DP_SUP_TOL = 0.5
+
+# Seeded region-growing of oversized (multi-band fused) graph components,
+# replacing the inner Louvain split (which optimises edge density with no
+# notion of energy, dot-product quality or the one-state-per-k constraint,
+# so its cuts through ambiguous crossing regions are arbitrary):
+RG_SEED_DP = 0.9        # min same-band dp for a sovereign (seed) node
+RG_DEFER_MARGIN = 0.05  # cost margin within which two labels' claims are contested
+RG_BAND_PRESENCE = 0.5  # fraction of nks a raw band must hold to be a growth target
 
 ###########################################################################
 # Parallelization helpers (Pool workers)
@@ -2016,6 +2025,175 @@ class MATERIAL:
             f'{BODY_INDENT}f(E) attached this iter: {len(attached)} k-point(s) | '
             f'NOT/MIS over them: {bad_frac(attached):.1f}%  vs grid {bad_frac(all_rows):.1f}%')
 
+    def _partition_fused_component(self, sub_graph: nx.Graph) -> Union[list, None]:
+        '''
+        Seeded region-growing split of an oversized (fused) graph component.
+        Returns a list of node-sets, or None when it cannot run (no growth
+        target reaches a usable seed; caller falls back to Louvain). A
+        single-target component (one band plus debris) is grown too: the band's
+        chain is extracted and the debris becomes leftover pieces.
+
+        Louvain optimises modularity -- an edge-density objective with no notion
+        of energy, dot-product quality or the one-state-per-k constraint -- so
+        when crossing filaments fuse several bands into one component its cuts
+        through the ambiguous regions are arbitrary (phosphorene: 4-9 oversized
+        components survived every iteration and all conduction bands failed).
+        Here each fused band is grown from a seed that is correct by
+        construction, claiming one node at a time on wavefunction evidence:
+
+          1. Growth targets: the raw bands holding >= RG_BAND_PRESENCE of their
+             nks points inside the component.
+          2. Seed of a band = its largest k-connected SOVEREIGN region: nodes
+             where the local gap resolves the band's dispersion
+             (local_gap > 2*band_disp, the fix-1 local scales) AND every
+             in-component same-band neighbour overlap is >= RG_SEED_DP --
+             energy and dot product agree and are unambiguous there.
+          3. Multi-source cheapest-frontier growth (Prim/watershed style):
+             frontier edges pop globally cheapest first with cost = 1 - dp.
+             A claim is admissible only when the one-step energy residual is
+             inside the candidate's LOCAL gross-jump gate (_local_accept) and
+             the label does not already own a node at that k-point -- the per-k
+             bijection is enforced DURING the partition, not patched after.
+             A node whose best offers from two labels lie within
+             RG_DEFER_MARGIN is deferred: the crossing filaments Louvain used
+             to cut arbitrarily become explicit leftovers for the dp-aware
+             repair instead of silent mis-cuts.
+
+        Cross-band graph edges are followed naturally (character-following at
+        genuine crossings). Deferred + unclaimed nodes are returned grouped as
+        their connected pieces, so they enter the normal sample machinery and
+        cannot shatter into singletons (and _ensure_connectivity still guards).
+        '''
+        nks = self.nks
+        comp_nodes = set(int(n) for n in sub_graph.nodes)
+
+        ###########################################################################
+        # 1. Growth targets: bands with a substantial presence in the component.
+        ###########################################################################
+        band_count: dict = {}
+        for n in comp_nodes:
+            band_count[n // nks] = band_count.get(n // nks, 0) + 1
+        targets = sorted(b for b, c in band_count.items() if c >= RG_BAND_PRESENCE * nks)
+        if not targets:
+            return None
+
+        ###########################################################################
+        # 2. Seeds: largest k-connected sovereign region per target band.
+        ###########################################################################
+        neigh = np.asarray(self.neighbors)
+        ks_of_band = {b: set() for b in targets}
+        for n in comp_nodes:
+            b = n // nks
+            if b in ks_of_band:
+                ks_of_band[b].add(n % nks)
+
+        seeds: dict = {}
+        for b in targets:
+            band_ks = ks_of_band[b]
+            sov = set()
+            for k in band_ks:
+                if self.local_gap[k, b] <= 2.0 * self.band_disp[b]:
+                    continue                            # energy does not resolve this band here
+                dps = [float(self.connections[k, i, b, b])
+                       for i, kn in enumerate(neigh[k])
+                       if kn != -1 and int(kn) in band_ks]
+                if dps and min(dps) >= RG_SEED_DP:
+                    sov.add(k)
+            best = None
+            while sov:                                  # largest k-connected sovereign region
+                start = sov.pop()
+                region = {start}
+                queue = deque([start])
+                while queue:
+                    kq = queue.popleft()
+                    for kn in neigh[kq]:
+                        kn = int(kn)
+                        if kn != -1 and kn in sov:
+                            sov.discard(kn)
+                            region.add(kn)
+                            queue.append(kn)
+                if best is None or len(region) > len(best):
+                    best = region
+            if best:
+                seeds[b] = best
+        if not seeds:
+            return None
+
+        ###########################################################################
+        # 3. Multi-source cheapest-frontier growth.
+        ###########################################################################
+        assigned: dict = {}                             # node -> label (a seed band id)
+        owns_k = {b: set() for b in seeds}              # label -> k-points it holds
+        offers: dict = {}                               # node -> {label: best offered cost}
+        deferred: set = set()
+        heap: list = []
+
+        def push_frontier(v: int, label: int) -> None:
+            kv, bv = v % nks, v // nks
+            Ev = float(self.eigenvalues[kv, bv])
+            for w in sub_graph[v]:
+                w = int(w)
+                if w in assigned or w in deferred:
+                    continue
+                kw, bw = w % nks, w // nks
+                if kw in owns_k[label]:
+                    continue                            # label already holds this k-point
+                if abs(float(self.eigenvalues[kw, bw]) - Ev) > self._local_accept(kw, bw):
+                    continue                            # across a local energy wall
+                cost = max(0.0, 1.0 - float(sub_graph[v][w].get('weight', 0.0)))
+                node_offers = offers.setdefault(w, {})
+                if cost < node_offers.get(label, np.inf):
+                    node_offers[label] = cost
+                    heappush(heap, (cost, label, w))
+
+        for b, region in seeds.items():
+            for k in region:
+                node = k + b * nks
+                assigned[node] = b
+                owns_k[b].add(k)
+        for node, b in list(assigned.items()):
+            push_frontier(node, b)
+
+        while heap:
+            cost, label, v = heappop(heap)
+            if v in assigned or v in deferred:
+                continue
+            kv = v % nks
+            if kv in owns_k[label]:
+                continue                                # label filled this k since the push
+            # Contested: another label still able to claim v (does not own kv)
+            # offered a cost within the margin -- defer instead of guessing.
+            rivals = offers.get(v, {})
+            if any(l2 != label and (c2 - cost) < RG_DEFER_MARGIN
+                   and kv not in owns_k[l2] for l2, c2 in rivals.items()):
+                deferred.add(v)
+                continue
+            assigned[v] = label
+            owns_k[label].add(kv)
+            push_frontier(v, label)
+
+        ###########################################################################
+        # 4. Output: one node-set per grown band + leftover connected pieces.
+        ###########################################################################
+        label_nodes = {b: set() for b in seeds}
+        for n, b in assigned.items():
+            label_nodes[b].add(n)
+        parts = [nodes for nodes in label_nodes.values() if nodes]
+        leftover = comp_nodes - set(assigned)
+        n_pieces = 0
+        if leftover:
+            for piece in nx.connected_components(sub_graph.subgraph(leftover)):
+                parts.append(set(int(x) for x in piece))
+                n_pieces += 1
+        grown = sorted(seeds)
+        self.logger.info(f'{BODY_INDENT}Region-growing: {len(comp_nodes)}-node component, '
+                         f'{len(targets)} fused band(s) {targets} -> grown '
+                         f'{[len(label_nodes[b]) for b in grown]} node(s) for bands {grown} '
+                         f'(seeds {[len(seeds[b]) for b in grown]}), '
+                         f'{len(deferred)} contested deferred, '
+                         f'{len(leftover)} leftover in {n_pieces} piece(s)')
+        return parts
+
     def get_components(self, alpha: float=0.5, compute_communities=False) -> None:
         '''
         The make_connections function constructs the graph, in which
@@ -2104,24 +2282,45 @@ class MATERIAL:
             return clusters, samples, N_g_nks
 
         while flag_resolution:
+            ###########################################################################
+            # Always start from the RAW connected components: they are the true
+            # fused structures. The old path ran Louvain over the whole graph
+            # first (when compute_communities), which pre-fragmented a fused
+            # multi-band component into mid-size mixed chunks that slipped under
+            # the oversized threshold and were never split on physics -- exactly
+            # the arbitrary cuts the region-growing is meant to remove. Now every
+            # component too big to be a single band is split by seeded
+            # region-growing (physics-anchored, per-k bijection enforced during
+            # the partition -- see _partition_fused_component); Louvain (with the
+            # resolution sweep) remains only as the per-component fallback when
+            # region-growing finds no usable seeds.
+            ###########################################################################
             if compute_communities:
                 self.logger.info(f'\n\t\tResolution: {resolution:.2f}, Iteration: {iteration + 1}')
-                communities = nx.community.louvain_communities(self.GRAPH, resolution=resolution, weight='weight')
-            else:
-                communities = nx.connected_components(self.GRAPH) 
 
+            used_fallback = False
             sub_graphs = []
-            for c in communities:
+            for c in nx.connected_components(self.GRAPH):
                 sub_graph = self.GRAPH.subgraph(c)
-                if sub_graph.number_of_nodes() <= self.nks * 1.3:
+                if sub_graph.number_of_nodes() <= self.nks:
                     sub_graphs.append(sub_graph)
                     continue
-                new_communities = nx.community.louvain_communities(sub_graph, resolution=resolution, weight='weight')
-                for new_c in new_communities:
+                parts = self._partition_fused_component(sub_graph)
+                if parts is None:
+                    self.logger.info(f'{BODY_INDENT}Region-growing: no usable seeds in a '
+                                     f'{sub_graph.number_of_nodes()}-node component -- Louvain fallback')
+                    parts = nx.community.louvain_communities(sub_graph, resolution=resolution, weight='weight')
+                    used_fallback = True
+                for new_c in parts:
                     sub_graphs.append(sub_graph.subgraph(new_c))
 
 
             clusters, samples, N_g_nks = communites2clusters(sub_graphs)
+
+            if not used_fallback:
+                # Fully deterministic split (no Louvain ran): the resolution
+                # sweep cannot change anything, so one pass is the result.
+                break
 
             total_bands_computed = len(self.solved) + len(clusters)
             if not compute_communities or np.abs(10 - len(clusters) * len(samples)) < 10:
