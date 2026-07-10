@@ -1350,12 +1350,44 @@ class MATERIAL:
                 # docstring: they are the trusted cycle partners locking the bands the
                 # bad slots need). CORRECT and DEGENERATE cells stay locked.
                 ###########################################################################
+                # Predicted (reference) energy per slot, from every direction whose
+                # nearest neighbour is trusted in that slot; median for robustness.
+                def _slot_ref(s):
+                    preds = [self._extrapolate_energy(k_nb, k, int(s), trusted=trusted)[0]
+                             for k_nb in self.neighbors[k]
+                             if k_nb != -1 and trusted[k_nb, s]]
+                    return float(np.median(preds)) if preds else None
+
+                bad_refs = [_slot_ref(s) for s in bad_slots]
+
                 co = np.zeros(self.total_bands, dtype=bool)
                 if validation is not None:
                     co = (((validation[k] == POTENTIAL_MISTAKE) |
                            (validation[k] == FORCED_CONTINUITY)) &
                           ~bad[k] & (self.bands_final[k] != -1) &
                           (self.signal_final[k] != DEGENERATE))
+                    if co.any():
+                        # Energy window: a cycle partner's held band must lie within the
+                        # gross-jump gate of a bad slot's held band (the band the partner
+                        # would take over) or of a bad slot's reference energy (the band
+                        # the bad slot needs from the partner). Cells further away cannot
+                        # take part in any admissible exchange, so freeing them only
+                        # risks losing them to the Hungarian. Without this, valence OTHER
+                        # cells co-freed at conduction-failure k-points ended as holes ->
+                        # force-fill -> "suspect", costing a clean band (phosphorene
+                        # band 5, Jul 10 run).
+                        bad_bands = self.bands_final[k, bad_slots]
+                        anchors = list(self.eigenvalues[k, bad_bands[bad_bands >= 0]])
+                        anchors += [r for r in bad_refs if r is not None]
+                        if anchors:
+                            anchors = np.asarray(anchors, dtype=float)
+                            co_idx = np.where(co)[0]
+                            co_E = self.eigenvalues[k, self.bands_final[k, co_idx]]
+                            near = np.min(np.abs(co_E[:, None] - anchors[None, :]),
+                                          axis=1) <= self.accept_E
+                            co[co_idx[~near]] = False
+                        else:
+                            co[:] = False
                 free_slots = np.concatenate([bad_slots, np.where(co)[0]]).astype(int)
                 n_genuine = len(bad_slots)
                 locked = np.ones(self.total_bands, dtype=bool)
@@ -1365,14 +1397,7 @@ class MATERIAL:
                 available = list(np.setdiff1d(all_bands, used))
                 avail_E = [float(self.eigenvalues[k, b]) for b in available]
 
-                # Predicted (reference) energy per freed slot, from every direction
-                # whose nearest neighbour is trusted in that slot; median for robustness.
-                refs = []
-                for s in free_slots:
-                    preds = [self._extrapolate_energy(k_nb, k, int(s), trusted=trusted)[0]
-                             for k_nb in self.neighbors[k]
-                             if k_nb != -1 and trusted[k_nb, s]]
-                    refs.append(float(np.median(preds)) if preds else None)
+                refs = bad_refs + [_slot_ref(s) for s in free_slots[n_genuine:]]
 
                 original = self.bands_final[k, free_slots].copy()
                 self.bands_final[k, free_slots] = -1
