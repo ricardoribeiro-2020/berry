@@ -1263,6 +1263,16 @@ class MATERIAL:
         local adjacent gap where it resolves the band's dispersion, ``self.accept_E``
         elsewhere -- see ``_local_scales``).
 
+        The POTENTIAL_MISTAKE / FORCED_CONTINUITY cells of a bad k-point are
+        CO-FREED into the same joint assignment: the residual failures are
+        permutation cycles (bands rotated among 3+ slots at a crossing filament)
+        where only the largest-jump member is graded MISTAKE -- its cycle partners
+        sit at OTHER/FOR, count as trusted, and lock exactly the bands the repair
+        needs, leaving no admissible candidate. Co-freeing puts the whole cycle on
+        the table; CORRECT cells stay locked, and a co-freed cell that finds no
+        admissible reassignment is restored, so the co-free only enlarges the
+        search space.
+
         Repaired points become trusted, so the repair propagates from the boundary
         of a bad island inward, one layer per round, until nothing changes. Slots
         that cannot be repaired keep their original attribution (left for the final
@@ -1311,6 +1321,7 @@ class MATERIAL:
         all_bands = np.arange(self.total_bands)
         neigh = np.asarray(self.neighbors)
         n_repaired = 0
+        n_co_moved = 0
 
         for round_ in range(max_rounds):
             ks_bad = np.where(np.any(bad, axis=1))[0]
@@ -1335,24 +1346,36 @@ class MATERIAL:
                 k = int(ks_bad[idx])
                 bad_slots = np.where(bad[k])[0]
                 ###########################################################################
-                # Free all bad slots at k; bands kept by trusted slots stay used.
+                # Free all bad slots at k, CO-FREEING its OTHER/FOR cells (see the
+                # docstring: they are the trusted cycle partners locking the bands the
+                # bad slots need). CORRECT and DEGENERATE cells stay locked.
                 ###########################################################################
-                kept = self.bands_final[k][~bad[k]]
+                co = np.zeros(self.total_bands, dtype=bool)
+                if validation is not None:
+                    co = (((validation[k] == POTENTIAL_MISTAKE) |
+                           (validation[k] == FORCED_CONTINUITY)) &
+                          ~bad[k] & (self.bands_final[k] != -1) &
+                          (self.signal_final[k] != DEGENERATE))
+                free_slots = np.concatenate([bad_slots, np.where(co)[0]]).astype(int)
+                n_genuine = len(bad_slots)
+                locked = np.ones(self.total_bands, dtype=bool)
+                locked[free_slots] = False
+                kept = self.bands_final[k][locked]
                 used = np.unique(kept[kept != -1])
                 available = list(np.setdiff1d(all_bands, used))
                 avail_E = [float(self.eigenvalues[k, b]) for b in available]
 
-                # Predicted (reference) energy per bad slot, from every direction
+                # Predicted (reference) energy per freed slot, from every direction
                 # whose nearest neighbour is trusted in that slot; median for robustness.
                 refs = []
-                for s in bad_slots:
+                for s in free_slots:
                     preds = [self._extrapolate_energy(k_nb, k, int(s), trusted=trusted)[0]
                              for k_nb in self.neighbors[k]
                              if k_nb != -1 and trusted[k_nb, s]]
                     refs.append(float(np.median(preds)) if preds else None)
 
-                original = self.bands_final[k, bad_slots].copy()
-                self.bands_final[k, bad_slots] = -1
+                original = self.bands_final[k, free_slots].copy()
+                self.bands_final[k, free_slots] = -1
 
                 ###########################################################################
                 # Jointly reassign the freed slots to the available bands (Hungarian),
@@ -1373,7 +1396,7 @@ class MATERIAL:
                     BIG = 1e6
                     cost = np.full((len(pred_idx), len(available)), BIG)
                     for row, i in enumerate(pred_idx):
-                        s = int(bad_slots[i])
+                        s = int(free_slots[i])
                         for col, b in enumerate(available):
                             gate = self._local_accept(k, int(b))
                             resid = abs(avail_E[col] - refs[i])
@@ -1387,27 +1410,43 @@ class MATERIAL:
                     for r_, c_ in zip(rows_, cols_):
                         if cost[r_, c_] >= BIG:
                             continue                        # only inadmissible pairings left
-                        self.bands_final[k, int(bad_slots[pred_idx[r_]])] = available[c_]
+                        self.bands_final[k, int(free_slots[pred_idx[r_]])] = available[c_]
                         taken.append(c_)
                     for c_ in sorted(taken, reverse=True):
                         available.pop(c_)
                         avail_E.pop(c_)
 
-                for i, s in enumerate(bad_slots):
+                for i, s in enumerate(free_slots):
                     s = int(s)
+                    genuine = i < n_genuine
                     if self.bands_final[k, s] != -1:
-                        # Repaired: trust it so the next layer can extrapolate through it.
-                        bad[k, s] = False
-                        trusted[k, s] = True
-                        progress += 1
+                        if genuine and self.bands_final[k, s] != original[i]:
+                            # Repaired: trust it so the next layer can extrapolate through it.
+                            # Re-picking the ORIGINAL band is not a repair -- in a blob
+                            # core the refs run through still-wrong (OTHER, trusted)
+                            # trajectories and just confirm the standing cycle; promoting
+                            # that to trusted locks the core before the rim has healed.
+                            # Leave it flagged: every later round retries it with the
+                            # refs the earlier repairs have improved.
+                            bad[k, s] = False
+                            trusted[k, s] = True
+                            progress += 1
                         if self.bands_final[k, s] != original[i]:
                             repaired_mask[k, s] = True
                             n_repaired += 1
+                            if not genuine:
+                                # A cycle partner moved: the canvas changed, so give the
+                                # next round a chance to build on it. An unchanged
+                                # co-freed cell is NOT progress (it would spin the round
+                                # loop on k-points the repair can no longer improve).
+                                n_co_moved += 1
+                                progress += 1
                             if self.logger.level <= logging.DEBUG:
                                 nb_ = int(self.bands_final[k, s])
                                 rE = refs[i]
                                 self.logger.debug(
-                                    f'{BODY_INDENT}  [repair] k={k} slot={s}: '
+                                    f'{BODY_INDENT}  [repair] k={k} slot={s}'
+                                    f'{"" if genuine else " (co-freed)"}: '
                                     f'band {int(original[i])}->{nb_}  '
                                     f'E={float(self.eigenvalues[k, nb_]):.4f}  '
                                     f'refE={("%.4f" % rE) if rE is not None else "n/a"}  round={round_ + 1}')
@@ -1418,6 +1457,13 @@ class MATERIAL:
                         available.pop(j)
                         avail_E.pop(j)
                         self.bands_final[k, s] = original[i]
+                    elif not genuine:
+                        # Co-freed cell whose band was claimed by the cycle unwind and
+                        # which found no admissible replacement this round: hand it to
+                        # the repair as a genuine hole (later rounds gain anchors as the
+                        # neighbourhood heals; the completeness pass is the backstop).
+                        bad[k, s] = True
+                        trusted[k, s] = False
 
             self.logger.debug(f'\t\tRepair round {round_ + 1}: {progress} point(s) re-anchored')
             if progress == 0:
@@ -1425,7 +1471,8 @@ class MATERIAL:
 
         n_left = int(np.sum(bad))
         self.logger.info(f'{BODY_INDENT}Energy repair: {n_bad_initial} flagged point(s), '
-                         f'{n_repaired} reassigned, {n_left} not repairable '
+                         f'{n_repaired} reassigned ({n_co_moved} co-freed OTHER/FOR '
+                         f'cycle partner(s) among them), {n_left} not repairable '
                          f'(kept original attribution or left for the completeness pass)')
 
         ###########################################################################
