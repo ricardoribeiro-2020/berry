@@ -3325,11 +3325,13 @@ class MATERIAL:
         touching isolated bands, so genuine crossings of well-separated bands (which
         the dp tracking follows correctly) are preserved.
 
-        Only broken slots are (re)assigned: a slot already holding a distinct in-group
-        band keeps its dp-chosen value; empty/duplicate/out-of-group slots are filled,
-        preferring identity (slot == band, i.e. energy order). Filled cells are marked
-        FORCED_CONTINUITY in ``correct_signalfinal`` so the band no longer counts as
-        not-solved while the fills stay visible (FOR column) for audit.
+        A group is only completed when one of its bands is missing from the WHOLE
+        row (or duplicated): a group band parked at an out-of-group slot by the dp
+        tracking (legitimate crossing) counts as attributed, and slots holding a
+        unique band are never overwritten. Fills prefer identity (slot == band,
+        i.e. energy order) and are marked FORCED_CONTINUITY in
+        ``correct_signalfinal`` so the band no longer counts as not-solved while
+        the fills stay visible (FOR column) for audit.
 
         ``ethr`` defaults to ``self.degen_ethr`` (0.005 Ry ~ 68 meV; eigenvalues.npy
         is stored in Ry -- the same scale degenrotation groups on, and the centre of
@@ -3352,24 +3354,42 @@ class MATERIAL:
                     continue                                            # still inside the current group
                 hi = b - 1                                              # close group of bands [lo, hi]
                 if hi > lo:                                             # degenerate group (singletons skipped)
-                    if hi - lo + 1 > 2:
-                        grown += 1
-                    band_set = set(range(lo, hi + 1))                   # slots == bands owned by this group
-                    seen, held = set(), set()
-                    for s in range(lo, hi + 1):                         # keep already-correct in-group slots
-                        v = int(bf[k, s])
-                        if v in band_set and v not in seen:
-                            seen.add(v); held.add(s)
-                    miss = [bd for bd in range(lo, hi + 1) if bd not in seen]
-                    free = [s for s in range(lo, hi + 1) if s not in held]
+                    # Whole-ROW census, not group-slot census: when bands cross, the
+                    # dp tracking legitimately parks a group band at an out-of-group
+                    # slot (e.g. the mirror-axis rows where band 5 sits at slot 7).
+                    # A band held exactly once ANYWHERE in the row is attributed --
+                    # judging only slots lo..hi declared such rows broken, force-
+                    # filled duplicates over correct cells and left FOR/"suspect"
+                    # grades on them (cost phosphorene band 5 its CLEAN grade).
+                    row_counts = {}
+                    for v in bf[k]:
+                        if v >= 0:
+                            row_counts[int(v)] = row_counts.get(int(v), 0) + 1
+                    miss = [bd for bd in range(lo, hi + 1)
+                            if row_counts.get(bd, 0) == 0]
                     if miss:
+                        if hi - lo + 1 > 2:
+                            grown += 1
+                        # Fill only group slots that are empty or hold a band
+                        # duplicated elsewhere in the row; a slot holding a unique
+                        # band (in- or out-of-group) keeps its dp-chosen value --
+                        # overwriting it would orphan that band.
+                        free = [s for s in range(lo, hi + 1)
+                                if int(bf[k, s]) < 0
+                                or row_counts.get(int(bf[k, s]), 0) > 1]
                         miss_set = set(miss)
+                        def _fill(s, bd):
+                            old = int(bf[k, s])
+                            if old >= 0:
+                                row_counts[old] -= 1
+                            bf[k, s] = bd; csf[k, s] = FORCED_CONTINUITY
+                            row_counts[bd] = row_counts.get(bd, 0) + 1
                         for s in [s for s in free if s in miss_set]:    # identity first (slot == band)
-                            bf[k, s] = s; csf[k, s] = FORCED_CONTINUITY
+                            _fill(s, s)
                             miss_set.discard(s); free.remove(s); filled += 1
                             resolved.setdefault(s, []).append(k)
                         for s, bd in zip(free, sorted(miss_set)):       # pair any leftovers in energy order
-                            bf[k, s] = bd; csf[k, s] = FORCED_CONTINUITY; filled += 1
+                            _fill(s, bd); filled += 1
                             resolved.setdefault(bd, []).append(k)
                 lo = b                                                  # next group starts here
 
