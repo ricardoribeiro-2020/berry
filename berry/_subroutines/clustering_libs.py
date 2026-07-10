@@ -2379,9 +2379,7 @@ class MATERIAL:
                                                            accept_E=self.accept_E,
                                                            disp_scale=self.disp_scale,
                                                            fe_eweight=self.fe_eweight,
-                                                           tol=self.tol,
-                                                           local_gap=self.local_gap,
-                                                           band_disp=self.band_disp)  # Calculate the score (new f(E))
+                                                           tol=self.tol)  # Calculate the score (new f(E))
                 result.append([i_s, [np.max(scores), np.argmax(scores)], sample.scores])
 
             if _FE_DEBUG:
@@ -3946,7 +3944,6 @@ class MATERIAL:
         self.alpha = alpha # The initial alpha is 1.0: alpha*<i|j> + (1-alpha)*f(E)
         self.init_alpha = alpha
         COUNT = 0     # Counter iteration
-        bands_final_flag = True
         self.final_report = ''
         self.bands_final_prev = np.copy(self.bands_final)
         self.best_bands_final = np.copy(self.bands_final)
@@ -3971,7 +3968,7 @@ class MATERIAL:
         ###########################################################################
         # Algorithm
         ###########################################################################
-        while bands_final_flag and self.alpha >= min_alpha:
+        while self.alpha >= min_alpha:
             COUNT += 1
             start_time = time.time()
             self.logger.info()
@@ -3992,8 +3989,13 @@ class MATERIAL:
             # the reverted best). The convergence test uses the attempt's quality.
             attempt_not_solved = self.total_not_solved
 
-            # Verification if the result is similar to the previous one
-            bands_final_flag = np.sum(np.abs(self.bands_final_prev - self.bands_final)) != 0
+            # An attempt identical to the previous one is a fixed point of the
+            # (deterministic) region-growing partition at this alpha: repeating it can
+            # change nothing. It used to end the whole solve here -- which under the
+            # deterministic partitioner fired before the stall patience could ever
+            # elapse and left the alpha sweep dead. Now it fast-forwards the alpha
+            # descent below, so the sweep always completes down to min_alpha.
+            result_stable = COUNT > 1 and np.array_equal(self.bands_final_prev, self.bands_final)
             self.bands_final_prev = np.copy(self.bands_final)
 
             # Verify and store the best result
@@ -4041,7 +4043,15 @@ class MATERIAL:
             n_bands = len(self.final_score)
             total_solved_flag = first_max_bands_score >= first_max_bands_best_score and total_score > total_best_score and total_not_solved < total_not_solved_best
             total_solved_flag = total_solved_flag or (total_score/n_bands > 0.9 and total_best_score/n_bands < 0.9)
-            if total_solved_flag or solved >= max_solved or COUNT == 1:
+            # A drastically cleaner attempt (under half the reigning best's not-solved
+            # count) wins even when its contiguous solved-band count is lower: the
+            # per-band chain above breaks at the first non-improving band, which let a
+            # 10-band draw with 4566 not-solved hold the title against a 734-not-solved
+            # one (phosphorene, Jul 10). The score guard keeps a low-not-solved but
+            # low-overlap solution from displacing a genuinely solved one.
+            much_cleaner = (total_not_solved < 0.5 * total_not_solved_best
+                            and total_score >= 0.9 * total_best_score)
+            if total_solved_flag or much_cleaner or solved >= max_solved or COUNT == 1:
                 self.best_bands_final = np.copy(self.bands_final)
                 self.best_score = np.copy(self.final_score)
                 self.best_signal_final = np.copy(self.signal_final)
@@ -4070,7 +4080,12 @@ class MATERIAL:
             # one notch per descent (bounded, floored at 0.10 -- unlike the old
             # per-iteration decay), and the alpha sweep still guarantees termination
             # (alpha eventually drops below min_alpha).
-            if attempt_not_solved < self.alpha_best_ns:
+            if result_stable:
+                # Fixed point at this alpha: skip the remaining patience and descend now.
+                self.alpha_stall = alpha_patience
+                self.logger.info(f'\n\t\tAlpha {self.alpha:.4f}: result repeated exactly '
+                                 f'(fixed point) -- forcing the alpha descent')
+            elif attempt_not_solved < self.alpha_best_ns:
                 self.alpha_best_ns = attempt_not_solved
                 self.alpha_stall = 0
             else:
@@ -4354,8 +4369,7 @@ class COMPONENT:
     def get_cluster_score(self, cluster : COMPONENT, min_band : int, max_band : int,
                           neighbors : np.ndarray, energies : np.ndarray, connections : np.ndarray, alpha : float = 0.5,
                           accept_E : float = None, disp_scale : float = None, fe_eweight : float = 1.0,
-                          tol : float = None, local_gap : np.ndarray = None,
-                          band_disp : np.ndarray = None) -> float:
+                          tol : float = None) -> float:
         '''
         This function returns the similarity between components taking
         into account the dot product of all essential points and their
@@ -4432,23 +4446,16 @@ class COMPONENT:
             # old min(|Ei - E_all_bands|)/delta_energy ratio: score the candidate
             # band against the prediction along the join line ONLY, and veto any
             # jump beyond the gate (a real inter-group wall can never be crossed).
-            # The gate/decay scales sharpen to the candidate band's local
-            # neighbourhood where the adjacent gap resolves the band's dispersion
-            # (see _local_scales); unresolved (near-degenerate) regions keep the
-            # loose global scales, so no in-loop edge is ever cut where energy
-            # cannot judge.
-            _aE, _dS = accept_E, disp_scale
-            if local_gap is not None and band_disp is not None and accept_E is not None:
-                if self.dimensions == 1:
-                    k2 = int(self.matrix[ik_n])
-                elif self.dimensions == 2:
-                    k2 = int(self.matrix[ik_n, jk_n])
-                else:
-                    k2 = int(self.matrix[ik_n, jk_n, kk_n])
-                _aE, _dS = _local_scales(accept_E, disp_scale,
-                                         float(local_gap[k2, bn2]), float(band_disp[bn2]))
+            # The gate stays at the GLOBAL scales on purpose: band_disp is a p95, so
+            # ~5% of genuine one-step dispersions exceed it (the max is ~2.3x p95 on
+            # phosphorene) and a locally sharpened gate vetoes real continuations in
+            # the steep parts of a resolved manifold, fragmenting clusters (the
+            # log1-vs-log2 phosphorene regression, and e90a33a before it). The local
+            # gates (_local_accept) stay where a trusted trajectory exists to judge
+            # against: seeds/growth in _partition_fused_component, the repair pass,
+            # the outlier mask and the completeness fill.
             return _energy_continuity_score(float(Ei), float(Ecand),
-                                            accept_E=_aE, disp_scale=_dS)
+                                            accept_E=accept_E, disp_scale=disp_scale)
         
         def fit_energy(bn1 : int, bn2 : int, iK1 : list[int], iK2: list[int]) -> float:
             '''
