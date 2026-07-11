@@ -28,7 +28,9 @@ from typing import Tuple, Union, Callable
 
 import logging
 
-from scipy.ndimage import sobel, correlate
+from scipy.ndimage import sobel
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import maximum_flow
 from scipy.optimize import curve_fit, linear_sum_assignment
 
 import numpy as np
@@ -68,6 +70,38 @@ FORCED_CONTINUITY = 5   # correct_signalfinal / evaluate_point (energy-continuit
 # exact value is not critical; 0.5 sits in the empty middle. Used by the post-loop
 # dp-evidence passes (_dp_support_counts / _repair_dp_swaps / _flag_dp_unsupported).
 DP_SUP_TOL = 0.5
+
+# CERTAIN link: dp >= DP_CERTAIN between a state at k and a state at a neighbouring
+# k-point identifies the continuation with near-certainty, and normalization makes
+# that a hard guarantee (Bessel: sum_b dp^2 <= 1, so two partners >= 0.9 are
+# impossible -- any threshold above 1/sqrt(2) has a UNIQUE partner -- and a certain
+# partner caps every rival continuation at sqrt(1 - 0.81) ~ 0.44). Certain links
+# therefore form a partial matching per (k, direction) and act as must-keep
+# constraints -- but only LOCALLY: character transport is path-dependent (around a
+# conical intersection it returns on the other sheet), so the transitive closure is
+# NOT single-slottable and global constructions over it are meaningless (see
+# _repair_certain_links for the local enforcement and _certain_partner_map for the
+# map). DP_FORBID marks the other mode of the bimodal distribution: a same-slot
+# continuation this weak is evidence AGAINST the attribution whenever any evidence
+# exists at all.
+DP_CERTAIN = 0.9
+# dp-seam relocation (tier 2): threshold of the LOOSER partner map used for
+# its acceptance accounting. Still unique-partner-valid (> 1/sqrt(2), Bessel).
+# Counting split links at 0.9 only lets a patch "improve" by relocating its
+# damage into merely sub-certain (0.8-0.9) seams; counting at 0.8 closes that
+# blind spot (observed: two (14,17) patches zeroed their 0.9-links while
+# growing the finer-grained refuted-edge count).
+DP_FLOOD_SUPPORT = 0.8
+DP_FORBID = 0.1
+# Post-loop min-cut seam placement (S2 of the dp-seam correction plan,
+# docs/cluster0_dp_seam_correction_proposal.md): after the greedy dp-seam
+# relocation, place the label seam of each remaining refuted (s,t) pattern
+# region at its exact optimum via s-t min-cut (seams are free inside
+# near-degenerate corridors and on the certain forest's refusal cuts -- the
+# physical branch cuts -- and pay the dp-certainty weight where they split a
+# certain link). Every move is still vetoed by the exact global
+# refuted-census guard, so this can only reduce the strict census.
+DP_SEAM_MINCUT = True
 
 # Seeded region-growing of oversized (multi-band fused) graph components,
 # replacing the inner Louvain split (which optimises edge density with no
@@ -308,7 +342,8 @@ COLUMN_LEGEND = {
     'Forced': 'force-filled points (not a genuine solve)',
     'Benign': 'force-fills inside a near-degenerate doublet (gauge-level relabeling; do not affect usability)',
     'Susp':   'force-fills across a real energy gap (suspect; downgrade the band)',
-    'Status': 'CLEAN (pristine, nothing flagged) / USABLE (no genuine errors; may carry benign force-fills or a sub-pristine score) / ROTATE (needs basis rotation) / CHECK (a suspect force-fill across a real gap -> verify) / FAIL (genuine energy break, or many force-fills across a real gap)',
+    'Silent': 'validated cells sitting on a gross energy jump (> accept_E) to a same-slot neighbour -- the cliffs visible in a band plot',
+    'Status': 'CLEAN (pristine, nothing flagged) / USABLE (no genuine errors; may carry benign force-fills or a sub-pristine score) / ROTATE (needs basis rotation) / CHECK (a suspect force-fill across a real gap, or a silent cliff -> verify) / FAIL (genuine energy break, or many suspect/silent cells)',
 }
 
 # All report tables and their surrounding content use these two indent levels:
@@ -1796,7 +1831,6 @@ class MATERIAL:
         # Establish the edges on the graph from edges array
         self.GRAPH.add_weighted_edges_from(edges)
 
-
         if not_first_iteration:
             return
 
@@ -2149,8 +2183,23 @@ class MATERIAL:
         if not targets:
             return None
 
+        # One group per state node (the P0 certain-sheet quotient was removed
+        # Jul 2026 -- atomic mixed sheets starved their twin slot and froze the
+        # sweep; see docs/cluster0_dp_seam_correction_proposal.md).
+        group_of = {n: n for n in comp_nodes}           # state node -> group key
+        members = {n: [n] for n in comp_nodes}          # group key -> [state nodes]
+        gks = {n: {n % nks} for n in comp_nodes}        # group key -> {k-points}
+
         ###########################################################################
-        # 2. Seeds: largest k-connected sovereign region per target band.
+        # 2. Seeds: largest k-connected sovereign region per target band
+        # (sovereign = the local gap resolves the band's dispersion AND every
+        # in-component same-band neighbour overlap is certain), expressed as
+        # the set of GROUPS covering that region. With singleton groups
+        # the seed IS the region.
+        # (The Jul-11 sheet-atomic rewrite seeded "greedily by sovereign
+        # mass" per group, which with singleton groups degenerates to mass-1
+        # ties -- ONE arbitrary state per band -- and wrecked the in-loop
+        # solve: phosphorene NS stuck ~3100-3500 vs run 6's descent to 5.)
         ###########################################################################
         neigh = np.asarray(self.neighbors)
         ks_of_band = {b: set() for b in targets}
@@ -2159,7 +2208,7 @@ class MATERIAL:
             if b in ks_of_band:
                 ks_of_band[b].add(n % nks)
 
-        seeds: dict = {}
+        regions: dict = {}                              # band -> largest sovereign region (k set)
         for b in targets:
             band_ks = ks_of_band[b]
             sov = set()
@@ -2187,82 +2236,101 @@ class MATERIAL:
                 if best is None or len(region) > len(best):
                     best = region
             if best:
-                seeds[b] = best
+                regions[b] = best
+
+        seeds: dict = {}                                # band -> [seed groups]
+        seeded_groups: set = set()
+        for b, region in sorted(regions.items(), key=lambda t: -len(t[1])):
+            gs: list = []
+            ks_held: set = set()
+            for k in sorted(region):
+                g = group_of[k + b * nks]
+                if g in seeded_groups or gks[g] & ks_held:
+                    continue
+                seeded_groups.add(g)
+                ks_held |= gks[g]
+                gs.append(g)
+            if gs:
+                seeds[b] = gs
         if not seeds:
             return None
 
         ###########################################################################
-        # 3. Multi-source cheapest-frontier growth.
+        # 3. Multi-source cheapest-frontier growth over groups.
         ###########################################################################
-        assigned: dict = {}                             # node -> label (a seed band id)
+        assigned: dict = {}                             # group -> label (a seed band id)
         owns_k = {b: set() for b in seeds}              # label -> k-points it holds
-        offers: dict = {}                               # node -> {label: best offered cost}
+        offers: dict = {}                               # group -> {label: best offered cost}
         deferred: set = set()
         heap: list = []
 
-        def push_frontier(v: int, label: int) -> None:
-            kv, bv = v % nks, v // nks
-            Ev = float(self.eigenvalues[kv, bv])
-            for w in sub_graph[v]:
-                w = int(w)
-                if w in assigned or w in deferred:
-                    continue
-                kw, bw = w % nks, w // nks
-                if kw in owns_k[label]:
-                    continue                            # label already holds this k-point
-                if abs(float(self.eigenvalues[kw, bw]) - Ev) > self._local_accept(kw, bw):
-                    continue                            # across a local energy wall
-                cost = max(0.0, 1.0 - float(sub_graph[v][w].get('weight', 0.0)))
-                node_offers = offers.setdefault(w, {})
-                if cost < node_offers.get(label, np.inf):
-                    node_offers[label] = cost
-                    heappush(heap, (cost, label, w))
+        def push_frontier(g, label: int) -> None:
+            for v in members[g]:
+                kv, bv = v % nks, v // nks
+                Ev = float(self.eigenvalues[kv, bv])
+                for w in sub_graph[v]:
+                    w = int(w)
+                    gw = group_of[w]
+                    if gw == g or gw in assigned or gw in deferred:
+                        continue
+                    kw, bw = w % nks, w // nks
+                    if kw in owns_k[label]:
+                        continue                        # cheap pre-filter; full group check at claim
+                    if abs(float(self.eigenvalues[kw, bw]) - Ev) > self._local_accept(kw, bw):
+                        continue                        # across a local energy wall
+                    cost = max(0.0, 1.0 - float(sub_graph[v][w].get('weight', 0.0)))
+                    node_offers = offers.setdefault(gw, {})
+                    if cost < node_offers.get(label, np.inf):
+                        node_offers[label] = cost
+                        heappush(heap, (cost, label, gw))
 
-        for b, region in seeds.items():
-            for k in region:
-                node = k + b * nks
-                assigned[node] = b
-                owns_k[b].add(k)
-        for node, b in list(assigned.items()):
-            push_frontier(node, b)
+        for b, gs in seeds.items():
+            for g in gs:
+                assigned[g] = b
+                owns_k[b] |= gks[g]
+        for b, gs in seeds.items():
+            for g in gs:
+                push_frontier(g, b)
 
         while heap:
-            cost, label, v = heappop(heap)
-            if v in assigned or v in deferred:
+            cost, label, g = heappop(heap)
+            if g in assigned or g in deferred:
                 continue
-            kv = v % nks
-            if kv in owns_k[label]:
-                continue                                # label filled this k since the push
-            # Contested: another label still able to claim v (does not own kv)
+            if gks[g] & owns_k[label]:
+                continue                                # k-collision materialized since the push
+            # Contested: another label still able to claim g (no k-collision)
             # offered a cost within the margin -- defer instead of guessing.
-            rivals = offers.get(v, {})
+            rivals = offers.get(g, {})
             if any(l2 != label and (c2 - cost) < RG_DEFER_MARGIN
-                   and kv not in owns_k[l2] for l2, c2 in rivals.items()):
-                deferred.add(v)
+                   and not (gks[g] & owns_k[l2]) for l2, c2 in rivals.items()):
+                deferred.add(g)
                 continue
-            assigned[v] = label
-            owns_k[label].add(kv)
-            push_frontier(v, label)
+            assigned[g] = label
+            owns_k[label] |= gks[g]
+            push_frontier(g, label)
 
         ###########################################################################
         # 4. Output: one node-set per grown band + leftover connected pieces.
         ###########################################################################
         label_nodes = {b: set() for b in seeds}
-        for n, b in assigned.items():
-            label_nodes[b].add(n)
+        claimed: set = set()
+        for g, b in assigned.items():
+            label_nodes[b].update(members[g])
+            claimed.update(members[g])
         parts = [nodes for nodes in label_nodes.values() if nodes]
-        leftover = comp_nodes - set(assigned)
+        leftover = comp_nodes - claimed
         n_pieces = 0
         if leftover:
             for piece in nx.connected_components(sub_graph.subgraph(leftover)):
                 parts.append(set(int(x) for x in piece))
                 n_pieces += 1
         grown = sorted(seeds)
-        self.logger.info(f'{BODY_INDENT}Region-growing: {len(comp_nodes)}-node component, '
+        self.logger.info(f'{BODY_INDENT}Region-growing: {len(comp_nodes)}-node component '
+                         f'({len(members)} group(s)), '
                          f'{len(targets)} fused band(s) {targets} -> grown '
                          f'{[len(label_nodes[b]) for b in grown]} node(s) for bands {grown} '
-                         f'(seeds {[len(seeds[b]) for b in grown]}), '
-                         f'{len(deferred)} contested deferred, '
+                         f'(seeds {[sum(len(members[g]) for g in seeds[b]) for b in grown]}), '
+                         f'{len(deferred)} contested group(s) deferred, '
                          f'{len(leftover)} leftover in {n_pieces} piece(s)')
         return parts
 
@@ -3066,12 +3134,6 @@ class MATERIAL:
         # edges below are built from a duplicate-free canvas.
         self._enforce_bijection()
 
-        # k_ot = k_other[other_same]                                                  # Store these repeated k-points
-        # bn_ot = bn_other[other_same]                                                # Save their bands
-        # not_same = np.logical_not(other_same)                                       # Identify which points are different
-        # k_other = k_other[not_same]                                                 # The different k-points
-        # bn_other = bn_other[not_same]                                               # Their bands
-
         ks = np.concatenate((k_error, k_other))                                     # Join the k-points marked as a mistake or other signal
         bnds = np.concatenate((bn_error, bn_other))                                 # Join the k-points' bands
 
@@ -3095,22 +3157,47 @@ class MATERIAL:
         elif self.dimensions == 3:
             bands_signaling[bnds, ik, jk, kk] = 1
 
-        mean_fitler = np.ones((3,3))                                                # It is the kernel used to select the problems' boundary
         self.GRAPH = nx.Graph()                                                     # The new Graph
         self.GRAPH.add_nodes_from(np.arange(len(self.vectors)))                     # Set the nodes
         edges = []
+
+        # Near-degenerate cells for the glue test below: inside a collapsed gap
+        # (adjacent gap < degen_ethr) a vanishing overlap is gauge, not evidence.
+        _ethr = getattr(self, 'degen_ethr', 0.005)
+        _dE_close = np.diff(self.eigenvalues, axis=1) < _ethr
+        _close = np.zeros(self.eigenvalues.shape, bool)
+        _close[:, 1:] |= _dE_close
+        _close[:, :-1] |= _dE_close
+
+        def continuity_edge(kp, kneig, b_p, b_pn):
+            '''
+            Append the continuity edge (same slot at adjacent k-points), UNLESS the
+            step it asserts is GLUE: dot product < DP_FORBID with both endpoints
+            energy-resolved (outside any near-degenerate group). Such a step is an
+            assignment-agreement across a vanishing overlap -- e.g. the 12/13 seam
+            staircase, dp ~0.02 across a 13 mRy jump -- and re-fused the
+            mis-attributed patch every iteration. Steps inside near-degenerate /
+            crossing corridors keep their edge regardless of dp (there the label
+            is gauge and slot chains legitimately switch sheet-owners).
+
+            The weight stays 1 (accumulating += 1 on repeat, below) ON PURPOSE:
+            these edges are the solver's RATCHET -- they re-inject the previous
+            iteration's accepted assignment at region-growing cost 0, which is
+            what lets each iteration re-claim the full bands and converge.
+            Replacing them with dp-metric weights removed the ratchet and the
+            in-loop descent froze at its first fixed point (phosphorene: 3312
+            not-solved forever, vs 18 with the ratchet; bands 10-24 collapsed).
+            '''
+            i_neig = np.where(self.neighbors[kp] == kneig)[0]
+            if len(i_neig) == 0:
+                return
+            dp = float(self.connections[kp, i_neig[0], b_p, b_pn])
+            if dp < DP_FORBID and not (_close[kp, b_p] or _close[kneig, b_pn]):
+                return                                              # resolved forbidden step: glue, no edge
+            edges.append((int(kp + b_p * self.nks), int(kneig + b_pn * self.nks)))
+
         for bn, band in enumerate(bands_signaling):
             # For each band construct the new graph
-            # bn += self.min_band                                                                     # Initial band correction
-            #if self.dimensions == 2 and np.sum(band) > self.nks*0.20:
-                # If there are more than 5% of marked points, the boundaries of 
-                # the problem are considered a problem too.
-            #    identify_points = correlate(band, mean_fitler, output=None,
-            #                                mode='reflect', cval=0.0, origin=0) > 0                 # The mean kernel is applied
-            #else:
-                # Otherwise, just the marked points are considered
-            #    identify_points = band > 0
-        
             identify_points = band > 0          # The marked points are considered
         
             if self.dimensions == 1:
@@ -3136,9 +3223,7 @@ class MATERIAL:
                             b_pn = self.bands_final[kn, bn]
                             if b_p < 0 or b_pn < 0:
                                 continue                                                        # invalidated cell -> no continuity edge
-                            p = kp + b_p*self.nks
-                            pn = kneig + b_pn*self.nks
-                            edges.append([p, pn])                                               # Establish an edge between nodes p (k-point) and pn (neighbor)
+                            continuity_edge(kp, kneig, b_p, b_pn)                               # weight-1 ratchet edge unless glue (see continuity_edge)
 
             if self.dimensions == 2:
                 directions = np.array([[1, 0], [0, 1]])                                     # Auxiliary array with the directions to evaluate the edges' existence
@@ -3163,9 +3248,7 @@ class MATERIAL:
                                 b_pn = self.bands_final[kneig, bn]                      # The neighbor's attributed band
                                 if b_p < 0 or b_pn < 0:
                                     continue                                            # invalidated cell -> no continuity edge
-                                p = kp + b_p*self.nks                                   # The kpoint's node id
-                                pn = kneig + b_pn*self.nks                              # The neighbor's node id
-                                edges.append([p, pn])                                                   # Establish an edge between nodes p (k-point) and pn (neighbor)
+                                continuity_edge(kp, kneig, b_p, b_pn)                   # weight-1 ratchet edge unless glue (see continuity_edge)
 
             if self.dimensions == 3:
                 directions = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])                        # Auxiliary array with the directions to evaluate the edges' existence
@@ -3191,9 +3274,7 @@ class MATERIAL:
                                     b_pn = self.bands_final[kneig, bn]                       # The neighbor's attributed band
                                     if b_p < 0 or b_pn < 0:
                                         continue                                             # invalidated cell -> no continuity edge
-                                    p = kp + b_p*self.nks                                     # The kpoint's node id
-                                    pn = kneig + b_pn*self.nks                                # The neighbor's node id
-                                    edges.append([p, pn])                                                       # Establish an edge between nodes p (k-point) and pn (neighbor)
+                                    continuity_edge(kp, kneig, b_p, b_pn)                     # weight-1 ratchet edge unless glue (see continuity_edge)
 
         self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)                       # Save the currect result
 
@@ -3237,9 +3318,10 @@ class MATERIAL:
                              f'({100.0*len(error_nodes)/max(len(self.vectors),1):.0f}%)')
             self.make_connections(self.tol, not_first_iteration=True, node_subset=error_nodes)
             self.repeat_communities = True
-            for edge in edges:
-                # For each edge, the graph is built
-                p, pn = edge
+            for p, pn in edges:
+                # For each edge, the graph is built. The weight-1 (+= 1 on repeat)
+                # ratchet is intentional -- see continuity_edge; only the glue
+                # edges (resolved dp < DP_FORBID steps) are excluded above.
                 if self.GRAPH.has_edge(p, pn):
                     # If the edge already exists, the weight is updated
                     self.GRAPH[p][pn]['weight'] += 1                    # This value can be updated later
@@ -3251,9 +3333,7 @@ class MATERIAL:
             # single component, so plain connected-components clustering is correct and
             # cheap. No dot-product edges are needed here.
             self.repeat_communities = False
-            edges = np.array(edges)
             self.GRAPH.add_edges_from(edges)                                                        # Build the identified edges
-            # self.correct_signalfinal[k_ot, bn_ot] = CORRECT-1                                       # Signaling as CORRECT the repeated k-points
 
         # Structural anti-shatter safety net: guarantee no node is left isolated,
         # independent of the `tol` threshold or which branch built the graph above.
@@ -3525,6 +3605,1164 @@ class MATERIAL:
             tot += comparable
             sup += comparable & (vals >= tol)
         return sup, tot
+
+    def _certain_sheet_forest(self) -> np.ndarray:
+        '''
+        The maximal collision-free certain forest (the "sheets"). POST-LOOP
+        MEASUREMENT ONLY: the in-loop locking that once consumed this (P0
+        SHEET_LOCK: glue in every graph build, whole-sheet claims, Louvain
+        reunification, final audit) froze the sweep and was removed Jul 2026
+        (see docs/cluster0_dp_seam_correction_proposal.md). The measurement
+        itself is sound and feeds the post-loop seam passes (refusal cuts =
+        free seam locations) and a future sheet-guided relabel.
+
+        Every certain link (dp >= DP_CERTAIN, unique partner by Bessel) is a
+        must-keep constraint -- but only locally: character transport around a
+        conical intersection returns on the other sheet, so the full closure is
+        not single-slottable (measured: 44k-state component, 41k same-k
+        collisions). The maximal consistent subset is built here: union-find
+        over states (node id = k + b*nks), processing links strongest-first and
+        REFUSING any merge that would put two states at the same k-point in one
+        component. The refusals land exactly on the frustrated loops -- the
+        physical branch cuts of the crossings.
+
+        Energy safety is measured, not assumed: on phosphorene run 6 the energy
+        step along every one of the 139,184 certain links is <= 0.033 Ry --
+        under half of accept_E -- so locking sheets can never create a cliff.
+
+        Returns ``sheet_id`` (nks, nbnd) int32, -1 for singleton states, and
+        caches: ``self.sheet_id``, ``self._sheet_members`` {sid: [state ids]},
+        ``self._sheet_glue`` [(a, b, 1.0), ...] (the kept links, for gluing).
+        The connections array is static input, so this is computed once.
+        '''
+        cached = getattr(self, 'sheet_id', None)
+        if cached is not None:
+            return cached
+        nks, nb = self.nks, self.nbnd
+        conn = self.connections                                     # (nks, ndirs, nbnd, nbnd)
+        part = np.argmax(conn, axis=3)
+        best = np.take_along_axis(conn, part[..., None], axis=3)[..., 0]
+        neigh = np.asarray(self.neighbors)
+
+        links = []                                                  # (dp, state_a, state_b)
+        for d in range(self.number_neighbors):
+            kn = neigh[:, d]
+            for b in range(nb):
+                sel = (kn >= 0) & (best[:, d, b] >= DP_CERTAIN)
+                for k in np.where(sel)[0]:
+                    links.append((float(best[k, d, b]),
+                                  int(k) + b * nks,
+                                  int(kn[k]) + int(part[k, d, b]) * nks))
+        links.sort(key=lambda t: -t[0])                             # strongest first
+
+        parent = np.arange(nks * nb)
+
+        def find(x: int) -> int:
+            root = x
+            while parent[root] != root:
+                root = parent[root]
+            while parent[x] != root:                                # path compression
+                parent[x], x = root, parent[x]
+            return root
+
+        ksets: dict = {}                                            # root -> set of k it covers
+
+        def kset(r: int) -> set:
+            s = ksets.get(r)
+            if s is None:
+                s = {r % nks}
+                ksets[r] = s
+            return s
+
+        refused_links: list = []
+        for _, a, c in links:
+            ra, rc = find(a), find(c)
+            if ra == rc:
+                continue                                            # consistent cycle inside a sheet
+            sa, sc = kset(ra), kset(rc)
+            if len(sa) < len(sc):
+                ra, rc, sa, sc = rc, ra, sc, sa
+            if sa & sc:
+                refused_links.append((a, c))                        # frustrated loop: branch cut stays open
+                continue
+            parent[rc] = ra
+            sa |= sc
+            ksets.pop(rc, None)
+        refused = len(refused_links)
+        # The refusal cuts are the physical branch cuts of the crossing
+        # holonomy: laying a label seam ON one is free (the certain link is
+        # already unkeepable). Consumed by the min-cut seam placement.
+        self._sheet_refusals = set(frozenset(l) for l in refused_links)
+
+        # components -> sheet ids (size >= 2), glue = every kept (intra-sheet) link
+        roots: dict = {}
+        for st in range(nks * nb):
+            roots.setdefault(find(st), []).append(st)
+        sheet_id = np.full((nks, nb), -1, np.int32)
+        self._sheet_members = {}
+        sid = 0
+        for mem in sorted(roots.values(), key=len, reverse=True):
+            if len(mem) < 2:
+                break
+            for st in mem:
+                sheet_id[st % nks, st // nks] = sid
+            self._sheet_members[sid] = mem
+            sid += 1
+        glue = set()
+        for _, a, c in links:
+            if find(a) == find(c):
+                glue.add((a, c) if a < c else (c, a))
+        self._sheet_glue = [(a, c, 1.0) for a, c in glue]
+        self.sheet_id = sheet_id
+
+        sizes = sorted((len(m) for m in self._sheet_members.values()), reverse=True)
+        covered = int(sum(sizes))
+        self.logger.info(f'{BODY_INDENT}Certain-sheet forest: {len(links)} certain link(s), '
+                         f'{refused} refused (same-k collision = branch cuts), '
+                         f'{sid} sheet(s) covering {covered}/{nks*nb} states '
+                         f'({100.0*covered/(nks*nb):.1f}%); largest: {sizes[:10]}')
+        return sheet_id
+
+    def _certain_partner_map(self, threshold: float = DP_CERTAIN) -> np.ndarray:
+        '''
+        ``cert[k, d, b]`` = the unique raw band at neighbour ``d`` of ``k`` whose
+        dot product with raw band ``b`` at ``k`` is >= ``threshold`` (default
+        ``DP_CERTAIN``), or -1 when no such partner exists (or the neighbour is
+        outside the grid).
+
+        Well-defined by normalization: sum_b' dp^2 <= 1 (Bessel), so at most one
+        partner can clear any threshold above 1/sqrt(2) ~ 0.707, and a certain
+        partner caps every rival at sqrt(1 - threshold^2). Cached per threshold
+        -- the connections array is static input.
+        '''
+        cached = getattr(self, '_cert_maps', None)
+        if cached is None:
+            cached = self._cert_maps = {}
+        if threshold in cached:
+            return cached[threshold]
+        conn = self.connections                                     # (nks, ndirs, nbnd, nbnd)
+        part = np.argmax(conn, axis=3)
+        best = np.take_along_axis(conn, part[..., None], axis=3)[..., 0]
+        cert = np.where(best >= threshold, part, -1).astype(np.int32)
+        cert[np.asarray(self.neighbors) == -1] = -1                 # no neighbour that way
+        cached[threshold] = cert
+        return cert
+
+    def _near_degenerate_mask(self) -> np.ndarray:
+        '''
+        ``close[k, b]`` = the (k, band) cell sits inside a collapsed gap
+        (adjacent-band spacing < degen_ethr). There a vanishing overlap is
+        gauge, not evidence, so certain-link accounting and seam costs exempt
+        these cells. Cached -- eigenvalues are static input.
+        '''
+        cached = getattr(self, '_near_degen_mask', None)
+        if cached is not None:
+            return cached
+        ethr = getattr(self, 'degen_ethr', 0.005)
+        dE_close = np.diff(self.eigenvalues, axis=1) < ethr
+        close = np.zeros(self.eigenvalues.shape, bool)
+        close[:, 1:] |= dE_close
+        close[:, :-1] |= dE_close
+        self._near_degen_mask = close
+        return close
+
+    def _dir_index(self) -> dict:
+        '''
+        ``{(k1, k2): d}`` for every ordered neighbour pair -- the direction
+        index needed to look a step up in the connections array. Cached.
+        '''
+        cached = getattr(self, '_dir_idx_map', None)
+        if cached is not None:
+            return cached
+        neigh = np.asarray(self.neighbors)
+        dir_idx: dict = {}
+        for d in range(neigh.shape[1]):
+            for k1, k2 in enumerate(neigh[:, d]):
+                if k2 >= 0:
+                    dir_idx[(int(k1), int(k2))] = d
+        self._dir_idx_map = dir_idx
+        return dir_idx
+
+    def _repair_certain_links(self, max_rounds: int = 16) -> int:
+        '''
+        Post-loop wavefunction-evidence repair: at every energy-broken k-point
+        row, each slot takes the band its trusted neighbours' CERTAIN successors
+        mandate.
+
+        A certain link (see ``_certain_partner_map``) identifies a state's
+        continuation with near-certainty, so at a k-point where slot ``s`` is
+        trusted at a neighbour ``kn`` (holding band ``b_n``), the band that slot
+        ``s`` must hold at ``k`` is ``cert[kn, d_rev, b_n]`` -- unique when it
+        exists. The pairwise dp-swap repair cannot use this evidence on two
+        whole classes of defects:
+
+          * a self-consistent wrong PATCH (a smooth sheet carried by the wrong
+            slot over a stretch of k-points): its interior cells keep dp support
+            from their equally-wrong neighbours, so the ``sup == 0`` trigger
+            never fires (phosphorene bands 12/13, rows 37/38 seam);
+          * permutation CYCLES of order > 2, and cells invalidated to -1 (a
+            pairwise swap needs two occupied cells).
+
+        Scope is strictly LOCAL and trigger-based -- no global structure is
+        assumed. (Both global formulations fail on real data: character
+        transport is path-dependent around conical intersections, and the
+        labelling legitimately changes sheet-owners at crossing corridors where
+        the dp dips below certainty, so neither "certain component" nor
+        "consistent region" is single-slotted in a correct output.)
+
+          1. TRIGGER k-points: any slot that is unattributed (-1), graded
+             NOT/MIS, or sitting on a gross energy jump (> accept_E) to a
+             same-slot neighbour. Deliberately NOT triggered: energy-quiet
+             cells whose links are dp-forbidden -- those mark the corridors
+             where sheet ownership legitimately switches (and the braid), and
+             relabelling them trades energy continuity away (tested: FAIL
+             11 -> 72 on phosphorene when they are included).
+          2. At each triggered k-point, EVERY slot collects the certain
+             successors of its trusted neighbours. A slot with a UNANIMOUS
+             mandate b* != current takes b*; disagreeing or absent mandates
+             propose nothing (every tested arbitration between disagreeing
+             mandates -- component majority, region consensus, region-size
+             dominance -- damaged the crossing corridors and the braid on real
+             data, where sheet ownership legitimately switches and no labelling
+             satisfies every certain link). Near-degenerate states (adjacent
+             gap < ``degen_ethr``) neither mandate nor move -- inside a
+             collapsed gap the label is gauge (basisrotation territory).
+          3. The mandated moves are applied per row at once: bands displaced
+             from mandated slots are matched to the vacated/empty slots by dp
+             affinity with an energy tie-break, and a row is committed only if
+             it remains a duplicate-free permutation (reverted otherwise). A
+             row-scale permutation cycle (the 12->13->15->14 seam) resolves in
+             one shot because every member slot receives its mandate from the
+             SAME trusted neighbouring row.
+
+        Rounds repeat (a repaired row becomes the next row's trusted anchor, so
+        a patch peels inward) until a fixed point. Runs on the final canvas
+        BEFORE the pairwise dp-swap pass (which keeps handling sub-certain
+        evidence). Both signals of every changed cell are re-derived and the
+        energy-continuity signal of their same-slot neighbours is re-graded, so
+        the report grades what is actually shipped. Returns the number of
+        changed cells.
+        '''
+        bf = self.bands_final
+        nks, nslots = bf.shape
+        nbnd = self.connections.shape[2]
+        neigh = np.asarray(self.neighbors)
+        n_dir = neigh.shape[1]
+        cert = self._certain_partner_map()
+
+        # reverse-direction lookup: neigh[k, d] == kn  <=>  neigh[kn, rev[k, d]] == k
+        rev = np.full((nks, n_dir), -1, dtype=np.int8)
+        for d in range(n_dir):
+            kn_col = neigh[:, d]
+            ok = np.where(kn_col >= 0)[0]
+            for dr in range(n_dir):
+                back = neigh[kn_col[ok], dr] == ok
+                rev[ok[back], d] = dr
+
+        # near-degenerate (k, band) cells: exempt (gauge territory)
+        ethr = getattr(self, 'degen_ethr', 0.005)
+        dE_close = np.diff(self.eigenvalues, axis=1) < ethr
+        close = np.zeros(self.eigenvalues.shape, bool)
+        close[:, 1:] |= dE_close
+        close[:, :-1] |= dE_close
+
+        changed_cells: list = []
+        frozen: set = set()                                          # cells changed once stay put
+        n_revert = n_ambig = 0
+        n_trigger0 = 0
+
+        for round_ in range(max_rounds):
+            ###########################################################################
+            # 1. Trigger cells and trusted anchors on the current canvas.
+            ###########################################################################
+            bad = (bf < 0) | np.isin(self.correct_signalfinal, (NOT_SOLVED, MISTAKE))
+            for d in range(n_dir):                                   # gross same-slot energy jumps
+                kn_col = neigh[:, d]
+                ok = kn_col >= 0
+                kn_s = np.where(ok, kn_col, 0)
+                b1, b2 = bf, bf[kn_s]
+                comp = ok[:, None] & (b1 >= 0) & (b2 >= 0)
+                E1 = self.eigenvalues[np.arange(nks)[:, None], np.where(b1 >= 0, b1, 0)]
+                E2 = self.eigenvalues[kn_s[:, None], np.where(b2 >= 0, b2, 0)]
+                bad |= comp & (np.abs(E1 - E2) > self.accept_E)
+            bad &= self.signal_final != DEGENERATE
+            trusted = (bf >= 0) & ~bad & (self.signal_final != DEGENERATE)
+            if round_ == 0:
+                n_trigger0 = int(bad.sum())
+            if not bad.any():
+                break
+
+            ###########################################################################
+            # 2. Certain mandates at every triggered k-point. UNANIMOUS only: a
+            #    wrong patch always counter-mandates its own continuation at the
+            #    boundary, so any arbitration between disagreeing mandates has to
+            #    guess which side is wrong -- and every tested arbiter (component
+            #    majority, region consensus, region-size dominance at 3x) damaged
+            #    the crossing corridors and the braid on real data, where sheet
+            #    ownership legitimately switches and no labelling satisfies every
+            #    certain link. Disagreement therefore proposes nothing; the cost
+            #    is that patches whose trusted rim is thinner than the wrong core
+            #    stay (honestly) broken.
+            ###########################################################################
+            proposals: dict = {}                                     # k -> [(slot, band)]
+            for k in np.where(bad.any(axis=1))[0]:
+                k = int(k)
+                row_props = {}
+                mandated_bands = {}
+                for s in range(nslots):
+                    exps = set()
+                    for d in range(n_dir):
+                        kn = int(neigh[k, d])
+                        if kn < 0 or not trusted[kn, s]:
+                            continue
+                        dr = int(rev[k, d])
+                        if dr < 0:
+                            continue
+                        b_exp = int(cert[kn, dr, int(bf[kn, s])])
+                        if b_exp >= 0:
+                            exps.add(b_exp)
+                    if len(exps) != 1:
+                        if len(exps) > 1:
+                            n_ambig += 1
+                        continue                                     # no unanimous mandate
+                    b_exp = exps.pop()
+                    if close[k, b_exp] or (bf[k, s] >= 0 and close[k, int(bf[k, s])]):
+                        continue                                     # gauge territory: hands off
+                    if b_exp == int(bf[k, s]):
+                        continue
+                    if (k, s) in frozen:
+                        continue                                     # no flip-flopping across rounds
+                    if b_exp in mandated_bands:                      # two slots mandated one band
+                        row_props.pop(mandated_bands[b_exp], None)
+                        n_ambig += 1
+                        continue
+                    mandated_bands[b_exp] = s
+                    row_props[s] = b_exp
+                if row_props:
+                    proposals[k] = list(row_props.items())
+
+            if not proposals:
+                break
+
+            ###########################################################################
+            # 3. Apply per k-point row: mandates first, then close the induced
+            #    permutation (displaced bands -> vacated/empty slots).
+            ###########################################################################
+            round_changed = 0
+            for k, props in proposals.items():
+                old_row = bf[k].copy()
+                new_row = old_row.copy()
+                moved = set()
+                targets = set()
+                for s, b in props:
+                    new_row[s] = b
+                    moved.add(int(b))
+                    targets.add(int(s))
+                for s in range(nslots):                              # vacate the moved bands' old slots
+                    if s not in targets and int(old_row[s]) in moved:
+                        new_row[s] = -1
+                empty = [s for s in range(nslots) if int(new_row[s]) == -1]
+                in_row = {int(v) for v in new_row if v >= 0}
+                free = [b for b in range(nbnd) if b not in in_row]
+                if len(free) == len(empty) and free:
+                    cost = np.zeros((len(free), len(empty)))
+                    for i_, b in enumerate(free):
+                        for j_, s in enumerate(empty):
+                            aff = self._dp_affinity(k, int(s), int(b))
+                            dp_term = (1.0 - aff) if aff is not None else 0.5
+                            pen = self._slot_energy_penalty(k, int(s), int(b))
+                            cost[i_, j_] = dp_term + 0.25 * min(pen / max(self.accept_E, 1e-12), 4.0)
+                    rows_, cols_ = linear_sum_assignment(cost)
+                    for r_, c_ in zip(rows_, cols_):
+                        new_row[empty[c_]] = free[r_]
+                vals = new_row[new_row >= 0]
+                if len(np.unique(vals)) != len(vals) or (new_row == -1).sum() > (old_row == -1).sum():
+                    n_revert += 1                                    # bijection safety first
+                    continue
+                diff = np.where(new_row != old_row)[0]
+                # A changed cell must keep at least one dp-supported direction
+                # (the mandated ones do by construction; this guards the
+                # Hungarian row-closing from parking a band with no evidence).
+                ok_row = True
+                for s in diff:
+                    b1 = int(new_row[s])
+                    if b1 < 0:
+                        continue
+                    sup_n = tot_n = 0
+                    for d_ in range(n_dir):
+                        kn_ = int(neigh[k, d_])
+                        if kn_ < 0:
+                            continue
+                        b2_ = int(bf[kn_, s]) if kn_ != k else -1
+                        if b2_ < 0:
+                            continue
+                        tot_n += 1
+                        if self.connections[k, d_, b1, b2_] >= DP_SUP_TOL:
+                            sup_n += 1
+                    if tot_n > 0 and sup_n == 0:
+                        ok_row = False
+                        break
+                if not ok_row:
+                    n_revert += 1
+                    continue
+                bf[k] = new_row
+                changed_cells.extend((int(k), int(s)) for s in diff)
+                frozen.update((int(k), int(s)) for s in diff)
+                round_changed += len(diff)
+            self.logger.debug(f'{BODY_INDENT}  [cert-repair] round {round_ + 1}: '
+                              f'{int(bad.sum())} trigger cell(s), {len(proposals)} row(s) '
+                              f'with mandates, {round_changed} cell(s) changed')
+            if round_changed == 0:
+                break
+
+        if n_trigger0:
+            self.logger.info(f'{BODY_INDENT}Certain-link repair: {n_trigger0} energy-broken/'
+                             f'unattributed cell(s) triggered; certain-successor mandates changed '
+                             f'{len(changed_cells)} cell(s) at '
+                             f'{len(set(k for k, _ in changed_cells))} k-point(s) '
+                             f'over {round_ + 1} round(s)'
+                             + (f', {n_ambig} ambiguous mandate(s) skipped' if n_ambig else '')
+                             + (f', {n_revert} row(s) reverted' if n_revert else ''))
+            for k, s in changed_cells:
+                self.logger.debug(f'{BODY_INDENT}  [cert-repair] k={k} slot={s}: '
+                                  f'band ->{int(bf[k, s])}  '
+                                  f'E={float(self.eigenvalues[k, bf[k, s]]) if bf[k, s] >= 0 else np.nan:.4f}')
+        else:
+            self.logger.info(f'{BODY_INDENT}Certain-link repair: no energy-broken or '
+                             f'unattributed cells (nothing to do)')
+        if not changed_cells:
+            return 0
+
+        ###########################################################################
+        # Re-derive both signals of the changed cells and re-grade the energy-
+        # continuity signal of their same-slot neighbours (their fits changed).
+        # DEGENERATE keeps its marker; untouched FORCED cells keep their audit.
+        ###########################################################################
+        changed_set = set(changed_cells)
+        regrade = set(changed_cells)
+        for k, s in changed_cells:
+            for kn in neigh[k]:
+                if kn >= 0:
+                    regrade.add((int(kn), s))
+        for k, s in sorted(regrade):
+            if self.signal_final[k, s] == DEGENERATE:
+                continue
+            if (k, s) in changed_set:
+                b1 = int(bf[k, s])
+                if b1 >= 0:
+                    values = []
+                    for i_neig, kn in enumerate(self.neighbors[k]):
+                        if kn == -1:
+                            continue
+                        b2 = int(bf[kn, s])
+                        if b2 < 0:
+                            continue
+                        values.append(self.connections[k, i_neig, b1, b2])
+                    self.signal_final[k, s] = min(evaluate_result(values) if values else NOT_SOLVED,
+                                                  POTENTIAL_CORRECT)
+                if hasattr(self, 'forced_mask'):
+                    self.forced_mask[k, s] = False                   # a mandate is not a force-fill
+            elif self.correct_signalfinal[k, s] == FORCED_CONTINUITY:
+                continue
+            if int(bf[k, s]) < 0:
+                self.correct_signalfinal[k, s] = NOT_SOLVED
+                continue
+            sig, _ = evaluate_point(self.dimensions, k, s, self.kpoints_index,
+                                    self.matrix, self.signal_final, bf, self.eigenvalues,
+                                    accept_E=self.accept_E, disp_scale=self.disp_scale,
+                                    local_gap=self.local_gap, band_disp=self.band_disp)
+            self.correct_signalfinal[k, s] = sig
+        return len(changed_cells)
+
+    def _slot_wall_edges(self) -> list:
+        '''
+        Every undirected same-slot adjacency whose energy step is a gross jump
+        (> accept_E), as ``(jump, k, kn, slot)`` sorted worst first -- the edge set
+        behind both the Silent report column and the visible cliffs. Degenerate-
+        signalled endpoints are excluded (their label is gauge).
+        '''
+        bf = self.bands_final
+        ev = self.eigenvalues
+        neigh = np.asarray(self.neighbors)
+        nks, nslots = bf.shape
+        karr = np.arange(nks)
+        walls = []
+        for d in range(neigh.shape[1]):
+            kn_col = neigh[:, d]
+            ok = kn_col >= 0
+            kns = np.where(ok, kn_col, 0)
+            comp = (ok & (karr < kns))[:, None] & (bf >= 0) & (bf[kns] >= 0) \
+                   & (self.signal_final != DEGENERATE) \
+                   & (self.signal_final[kns] != DEGENERATE)
+            E1 = ev[karr[:, None], np.where(bf >= 0, bf, 0)]
+            E2 = ev[kns[:, None], np.where(bf[kns] >= 0, bf[kns], 0)]
+            jump = np.abs(E1 - E2)
+            for k, s in zip(*np.where(comp & (jump > self.accept_E))):
+                walls.append((float(jump[k, s]), int(k), int(kns[k]), int(s)))
+        walls.sort(reverse=True)
+        return walls
+
+    def _dp_refuted_seam_edges(self) -> list:
+        '''
+        Every undirected same-slot adjacency where the slot switches raw band
+        AGAINST the wavefunction evidence: the state held at one endpoint has a
+        CERTAIN successor (dp >= DP_CERTAIN, unique by normalization -- see
+        ``_certain_partner_map``) at the other endpoint, and it is not the band
+        the slot holds there. By the Bessel bound the assigned continuation then
+        carries dp <= sqrt(1 - DP_CERTAIN^2) ~ 0.44: the seam breaks
+        wavefunction continuity while its energy step may sit anywhere below
+        the gross-jump gate, invisible to ``_slot_wall_edges``. Returned as
+        ``(dp_assigned, k, kn, slot)`` sorted worst (lowest dp) first.
+        Degenerate-signalled endpoints and near-degenerate cells are excluded
+        (their label is gauge -- basisrotation territory).
+        '''
+        bf = self.bands_final
+        neigh = np.asarray(self.neighbors)
+        nks, nslots = bf.shape
+        karr = np.arange(nks)
+        cert = self._certain_partner_map()
+        close = self._near_degenerate_mask()
+
+        best: dict = {}
+        for d in range(neigh.shape[1]):
+            kn_col = neigh[:, d]
+            ok = kn_col >= 0
+            kns = np.where(ok, kn_col, 0)
+            b1 = np.where(bf >= 0, bf, 0)
+            b2v = bf[kns]
+            b2 = np.where(b2v >= 0, b2v, 0)
+            comp = ok[:, None] & (bf >= 0) & (b2v >= 0) & (bf != b2v) \
+                   & (self.signal_final != DEGENERATE) \
+                   & (self.signal_final[kns] != DEGENERATE) \
+                   & ~close[karr[:, None], b1] & ~close[kns[:, None], b2]
+            succ = cert[:, d, :][karr[:, None], b1]     # certain successor of the held state
+            comp &= (succ >= 0) & (succ != b2v)
+            dpv = self.connections[karr[:, None], d, b1, b2]
+            for k, s in zip(*np.where(comp)):
+                kn = int(kns[k])
+                key = (min(int(k), kn), max(int(k), kn), int(s))
+                v = float(dpv[k, s])
+                if key not in best or v < best[key]:
+                    best[key] = v
+        out = [(v, a, c, s) for (a, c, s), v in best.items()]
+        out.sort()
+        return out
+
+    def _log_refuted_census(self, tag: str) -> int:
+        '''
+        Log the global strict refuted-edge census (len of _dp_refuted_seam_edges)
+        so consecutive runs are comparable pass-by-pass without an external
+        audit script. Cheap: the 0.9 partner map is cached.
+        '''
+        n = len(self._dp_refuted_seam_edges())
+        self.logger.info(f'{BODY_INDENT}dp-refuted census [{tag}]: {n} edge(s)')
+        return n
+
+    def _exchange_region_counts(self, R: set, s: int, t: int, swapped: bool,
+                                cert_acc: np.ndarray) -> Tuple[int, int, int]:
+        '''
+        (gross-jump walls, split ``cert_acc`` links, strict refuted edges) over
+        every edge touching region ``R`` for slots s and t, in the current
+        (``swapped=False``) or the exchanged (``swapped=True``) configuration.
+        The refuted count applies ``_dp_refuted_seam_edges``' predicate verbatim
+        (0.9 map, corridor- and DEGENERATE-exempt, the bands must differ),
+        counted undirected like the census. Since an s<->t exchange only changes
+        edges of slots s,t touching R, the refuted delta IS the global census
+        delta: an acceptance guard built on it is exact, not heuristic.
+        Signals travel with the exchange, so the DEGENERATE exemption is read
+        through the same source columns as the bands.
+        '''
+        bf = self.bands_final
+        ev = self.eigenvalues
+        neigh = np.asarray(self.neighbors)
+        n_dir = neigh.shape[1]
+        cert = self._certain_partner_map()
+        close = self._near_degenerate_mask()
+        n_wall = n_cert = 0
+        ref_keys: set = set()
+        for k1 in R:
+            for d in range(n_dir):
+                k2 = int(neigh[k1, d])
+                if k2 < 0:
+                    continue
+                in2 = k2 in R
+                for slot, other in ((s, t), (t, s)):
+                    src1 = other if swapped else slot            # column the content
+                    src2 = other if (swapped and in2) else slot  # is read from
+                    b1 = int(bf[k1, src1])
+                    b2 = int(bf[k2, src2])
+                    if b1 < 0 or b2 < 0:
+                        continue
+                    if abs(ev[k1, b1] - ev[k2, b2]) > self.accept_E:
+                        n_wall += 1
+                    p = int(cert_acc[k1, d, b1])
+                    if p >= 0 and p != b2 and not (close[k1, b1] or close[k2, b2]):
+                        n_cert += 1
+                    if (b1 != b2
+                            and self.signal_final[k1, src1] != DEGENERATE
+                            and self.signal_final[k2, src2] != DEGENERATE
+                            and not (close[k1, b1] or close[k2, b2])
+                            and int(cert[k1, d, b1]) >= 0
+                            and int(cert[k1, d, b1]) != b2):
+                        ref_keys.add((min(k1, k2), max(k1, k2), slot))
+        return n_wall, n_cert, len(ref_keys)
+
+    def _seam_partner_candidates(self, anchor: int, start: int, s: int,
+                                 use_dp: bool) -> list:
+        '''
+        Partner slots ``t`` for exchanging slot ``s`` content at the seam cell
+        ``start``, as ``[(energy_mismatch, t), ...]`` best first: the (at most
+        two) energy-matched slots within accept_E of the anchored state's
+        energy -- content never crosses a genuine inter-band wall -- and, with
+        ``use_dp``, the slot holding the certain successor of the anchored
+        state front-inserted (dp names the partner outright, still subject to
+        the accept_E veto).
+        '''
+        bf = self.bands_final
+        ev = self.eigenvalues
+        nslots = bf.shape[1]
+        ba = int(bf[anchor, s])
+        if ba < 0:
+            return []
+        Ea = float(ev[anchor, ba])
+        cands = sorted((abs(float(ev[start, bf[start, t]]) - Ea), t)
+                       for t in range(nslots)
+                       if t != s and bf[start, t] >= 0)
+        cands = [c for c in cands[:2] if c[0] <= self.accept_E]
+        if use_dp:
+            d_as = self._dir_index().get((anchor, start), -1)
+            succ = int(self._certain_partner_map()[anchor, d_as, ba]) if d_as >= 0 else -1
+            if succ >= 0:
+                for t in range(nslots):
+                    if t != s and bf[start, t] == succ:
+                        dmatch = abs(float(ev[start, succ]) - Ea)
+                        if dmatch <= self.accept_E:
+                            cands.insert(0, (dmatch, t))
+                        break
+        return cands
+
+    def _apply_slot_exchange(self, R: set, s: int, t: int) -> list:
+        '''
+        Exchange slots s and t over every k-point of ``R`` on the final canvas
+        (bands, both signals, and the forced/repaired audit masks travel with
+        the content -- the per-row exchange preserves the bijection by
+        construction). Returns the changed (k, slot) cells for re-grading.
+        '''
+        bf = self.bands_final
+        changed = []
+        for kk in sorted(R):
+            for arr in (bf, self.signal_final, self.correct_signalfinal):
+                arr[kk, s], arr[kk, t] = arr[kk, t], arr[kk, s]
+            for name in ('forced_mask', 'repaired_mask'):
+                m = getattr(self, name, None)
+                if m is not None:                    # audit travels with the content
+                    m[kk, s], m[kk, t] = m[kk, t], m[kk, s]
+            changed.extend(((kk, s), (kk, t)))
+        return changed
+
+    def _regrade_cells(self, changed_cells: list) -> None:
+        '''
+        Re-grade on the final canvas: both signals of the exchanged cells and
+        the energy-continuity signal of their same-slot neighbours. The audit
+        masks moved with the content, so force-filled cells keep their FORCED
+        marker wherever they landed.
+        '''
+        bf = self.bands_final
+        neigh = np.asarray(self.neighbors)
+        changed_set = set(changed_cells)
+        regrade = set(changed_cells)
+        for k, s in changed_cells:
+            for kn in neigh[k]:
+                if kn >= 0:
+                    regrade.add((int(kn), s))
+        forced = getattr(self, 'forced_mask', None)
+        for k, s in sorted(regrade):
+            if self.signal_final[k, s] == DEGENERATE:
+                continue
+            if (k, s) in changed_set:
+                b1 = int(bf[k, s])
+                if b1 >= 0:
+                    values = []
+                    for i_neig, kn in enumerate(self.neighbors[k]):
+                        if kn == -1:
+                            continue
+                        b2 = int(bf[kn, s])
+                        if b2 < 0:
+                            continue
+                        values.append(self.connections[k, i_neig, b1, b2])
+                    self.signal_final[k, s] = min(evaluate_result(values) if values else NOT_SOLVED,
+                                                  POTENTIAL_CORRECT)
+                    if forced is not None and forced[k, s]:
+                        self.signal_final[k, s] = FORCED
+                        self.correct_signalfinal[k, s] = FORCED_CONTINUITY
+                        continue
+            elif self.correct_signalfinal[k, s] == FORCED_CONTINUITY:
+                continue
+            if int(bf[k, s]) < 0:
+                self.correct_signalfinal[k, s] = NOT_SOLVED
+                continue
+            sig, _ = evaluate_point(self.dimensions, k, s, self.kpoints_index,
+                                    self.matrix, self.signal_final, bf, self.eigenvalues,
+                                    accept_E=self.accept_E, disp_scale=self.disp_scale,
+                                    local_gap=self.local_gap, band_disp=self.band_disp)
+            self.correct_signalfinal[k, s] = sig
+
+    def _relocate_wall_patches(self, max_patches: int = 64) -> int:
+        '''
+        Tier-1 patch relocation, seeded on the SILENT cliffs (gross energy
+        jumps > accept_E between same-slot neighbours).
+
+        WHERE THE CLIFFS FORM. In-loop, the seeded region-growing splits a fused
+        multi-band component by racing label frontiers (cheapest dot-product step
+        first). A frontier can walk through a crossing corridor onto the other
+        band's sheet -- every one-step energy residual inside the corridor passes
+        the local gate -- and claim a chunk of it before the rightful label
+        arrives. The two frontiers then collide MID-SHEET, and nothing in the
+        race makes the collision line coincide with the corridor: the wall
+        between the labels lands on a gross energy jump. The patch interior is
+        internally perfect (its dp support comes from its equally-swapped
+        neighbours), so evaluate_point's 3-of-4 census validates it, the
+        continuity-edge ratchet re-injects it on every following iteration, and
+        the unanimity-gated post-loop repairs refuse to touch it because BOTH
+        sides of the wall hold dp ~0.99 mandates (it is a genuinely two-sided
+        disagreement between two internally-consistent regions). It therefore
+        ships as a validated band with a visible cliff -- the Silent column.
+
+        The exchange machinery is shared with the dp-seeded tier 2; see
+        ``_relocate_patches`` for the flood and acceptance rules.
+        '''
+        return self._relocate_patches('walls', max_patches)
+
+    def _relocate_dp_seam_patches(self, max_patches: int = 64) -> int:
+        '''
+        Tier-2 patch relocation, seeded on dp-REFUTED seams (split certain
+        links, ``_dp_refuted_seam_edges``): mis-slotted patches whose energy
+        step sits BELOW accept_E, so tier 1 never sees them, while the
+        wavefunction evidence -- the quantity this program exists to make
+        continuous -- is broken across the seam with near-certainty
+        (phosphorene run 5: the 13<->15 staircase attenuated to 93% of the
+        gate, the 10-12 mirror filament, the 19-21 skirt).
+
+        Same patch-exchange machinery as tier 1 with the roles of the two
+        guards inverted (see ``_relocate_patches``): seeds and flood cost come
+        from dp, acceptance requires the split certain links to at least HALVE
+        while gross-jump walls may not increase. Running after tier 1 the
+        touched edges normally carry zero walls, so "not increase" means no
+        exchange may ever create a jump > accept_E: dp evidence acts strictly
+        within the energy gate. Cell-scale residue (row cycles, braids) is
+        left to _repair_certain_links, unchanged.
+
+        Cannot undo tier 1: tier-1 exchanges land their seams on crossing
+        corridors where dp is sub-certain, which produces no split certain
+        links and is therefore never seeded here.
+        '''
+        return self._relocate_patches('dp', max_patches)
+
+    def _relocate_patches(self, seed: str, max_patches: int = 64) -> int:
+        '''
+        Shared patch-relocation core: exchange whole mis-slotted patches
+        between two slots, relocating the label seam onto the crossing corridor
+        where it belongs.
+
+        Since the per-k bijection holds, a slot sitting on the wrong sheet
+        forces some other slot to hold its sheet: the defect is an ORDER-2
+        exchange over a k-region (verified on the real canvas: every wall edge
+        has an energy-matched partner slot on the far side). For the worst seed
+        edge first, the partner slot ``t`` is identified by energy continuation
+        across the seam (``seed='dp'`` additionally lets the certain successor
+        of the anchored state name ``t`` outright, still energy-vetoed at
+        accept_E so content is never pulled across a genuine inter-band wall),
+        and the patch is flooded with a seam-cost rule: a neighbouring k-point
+        joins the patch iff swapping it too is strictly cheaper than leaving
+        the seam on that edge -- cost measured in energy steps (``'walls'``) or
+        dp mis-continuity (``'dp'``). At a corridor the two options tie, inside
+        correct territory keeping wins: the flood is self-bounding. The dp
+        flood is additionally confined to the seed cell's (raw_s, raw_t)
+        PATTERN region: an edge's gluing is invariant under swapping both of
+        its endpoints, so the cost rule alone cannot tell a wrong patch
+        interior from correct territory, and sub-gate strips hug genuine
+        corridors through which an unconstrained flood leaks (runaway); a
+        same-pattern region is sheet-coherent by construction (any crossing
+        involving either slot's sheet flips the pattern), and a multi-pattern
+        wrong strip is simply relocated as several patches over the rounds.
+        The dp acceptance counts split links at ``DP_FLOOD_SUPPORT`` instead
+        of ``DP_CERTAIN`` so a patch cannot relocate its damage into merely
+        sub-certain seams. The s<->t exchange over the patch is accepted only when,
+        over every edge touching the patch,
+
+          * ``seed='walls'``: the gross-jump wall count at least HALVES and the
+            split certain links (dp >= DP_CERTAIN steps assigned across labels,
+            near-degenerate endpoints exempt) do not increase;
+          * ``seed='dp'``:   the split certain links at least HALVE and the
+            gross-jump wall count does not increase;
+          * both tiers: the strict refuted-edge census (0.9-map predicate of
+            _dp_refuted_seam_edges) may not increase. Without this guard the
+            tier-2 halving acts on the looser 0.8-map count -- a SUPERSET of
+            the refuted edges -- so an accepted exchange could reduce 0.8-splits
+            while increasing strict refuted edges on its border (observed:
+            run-6 refuted 429 -> 474).
+
+        Halving (not mere decrease) keeps out the marginal mega-exchanges that
+        shuffle hundreds of cells for a few defects and relocate damage instead
+        of removing it (A/B on the real canvas: new silent cells 24 -> 1, walls
+        healed 450->47 vs 450->32). Signals and the forced/repaired audit
+        masks travel with the exchanged content, changed cells are re-graded on
+        the final canvas, and the per-row exchange preserves the bijection by
+        construction. Braids that no pairwise exchange improves are left alone
+        and keep their honest CHECK/FAIL grade.
+
+        Runs before _repair_certain_links: the patches fixed here are exactly
+        the two-sided defects unanimity cannot arbitrate, and removing them
+        turns their seam cells into trusted anchors for the remaining passes.
+        Returns the number of exchanged cells.
+        '''
+        bf = self.bands_final
+        ev = self.eigenvalues
+        conn = self.connections
+        neigh = np.asarray(self.neighbors)
+        nks, nslots = bf.shape
+        n_dir = neigh.shape[1]
+        cert = self._certain_partner_map()
+        # dp acceptance counts split links against the looser support map:
+        # a patch may not zero its certain links by relocating the damage
+        # into merely sub-certain (0.8-0.9) seams the 0.9 map cannot see.
+        cert_acc = cert if seed == 'walls' else self._certain_partner_map(DP_FLOOD_SUPPORT)
+        max_patch_cells = nks // 3
+        label = 'Wall-patch relocation' if seed == 'walls' else 'dp-seam relocation'
+        unit = 'wall edge(s)' if seed == 'walls' else 'dp-refuted seam edge(s)'
+
+        def grow(start: int, s: int, t: int) -> Union[set, None]:
+            # Seam-cost flood: k2 joins iff moving the seam past it is strictly
+            # cheaper than leaving the seam on the (k1, k2) edge.
+            R = {start}
+            queue = deque([start])
+            while queue:
+                k1 = queue.popleft()
+                bs1, bt1 = int(bf[k1, s]), int(bf[k1, t])
+                for d in range(n_dir):
+                    k2 = int(neigh[k1, d])
+                    if k2 < 0 or k2 in R:
+                        continue
+                    bs2, bt2 = int(bf[k2, s]), int(bf[k2, t])
+                    if bs2 < 0 or bt2 < 0 or bs1 < 0 or bt1 < 0:
+                        continue
+                    if seed == 'walls':
+                        keep = abs(ev[k1, bt1] - ev[k2, bs2]) + abs(ev[k1, bs1] - ev[k2, bt2])
+                        swap = abs(ev[k1, bt1] - ev[k2, bt2]) + abs(ev[k1, bs1] - ev[k2, bs2])
+                    else:
+                        # Pattern-constrained: within a same-(raw_s, raw_t)
+                        # region both slots follow fixed raw bands and any
+                        # crossing involving either slot's sheet flips the
+                        # pattern, so the region is sheet-coherent -- the
+                        # strip cannot leak through a corridor or a braid
+                        # junction onto correctly-labelled territory (an
+                        # unconstrained dp-cost flood does: edge gluing is
+                        # invariant under swapping both endpoints, so cost
+                        # alone cannot tell wrong-interior from correct).
+                        if (bs2, bt2) != (bs1, bt1):
+                            continue
+                        c12 = conn[k1, d]
+                        keep = (1.0 - c12[bt1, bs2]) + (1.0 - c12[bs1, bt2])
+                        swap = (1.0 - c12[bt1, bt2]) + (1.0 - c12[bs1, bs2])
+                    if swap < keep:
+                        R.add(k2)
+                        queue.append(k2)
+                        if len(R) > max_patch_cells:
+                            return None                  # runaway: not a patch
+            return R
+
+        seed_edges = (self._slot_wall_edges if seed == 'walls'
+                      else self._dp_refuted_seam_edges)
+
+        changed_cells: list = []
+        n_patch = 0
+        edges0 = None
+        for _ in range(max_patches):
+            worst = seed_edges()
+            if edges0 is None:
+                edges0 = len(worst)
+            if not worst:
+                break
+            accepted = None
+            tried = set()
+            for metric, k, kn, s in worst:
+                for anchor, start in ((k, kn), (kn, k)):
+                    for dmatch, t in self._seam_partner_candidates(
+                            anchor, start, s, use_dp=(seed == 'dp')):
+                        key = (start, s, t)
+                        if key in tried:
+                            continue
+                        tried.add(key)
+                        R = grow(start, s, t)
+                        if R is None:
+                            continue
+                        w0, c0, r0 = self._exchange_region_counts(R, s, t, False, cert_acc)
+                        w1, c1, r1 = self._exchange_region_counts(R, s, t, True, cert_acc)
+                        if seed == 'walls':
+                            ok_acc = w1 < w0 and 2 * w1 <= w0 and c1 <= c0 and r1 <= r0
+                        else:
+                            ok_acc = c1 < c0 and 2 * c1 <= c0 and w1 <= w0 and r1 <= r0
+                        if ok_acc:
+                            accepted = (R, s, t, w0, w1, c0, c1, r0, r1)
+                            break
+                    if accepted:
+                        break
+                if accepted:
+                    break
+            if accepted is None:
+                break
+            R, s, t, w0, w1, c0, c1, r0, r1 = accepted
+            changed_cells.extend(self._apply_slot_exchange(R, s, t))
+            n_patch += 1
+            self.logger.info(f'{BODY_INDENT}{label}: slots ({s},{t}) '
+                             f'exchanged over {len(R)} k-point(s) -- walls {w0}->{w1}, '
+                             f'split certain links {c0}->{c1}, refuted {r0}->{r1}')
+
+        if not changed_cells:
+            self.logger.info(f'{BODY_INDENT}{label}: no exchangeable patch '
+                             f'({edges0 or 0} {unit} on the final canvas)')
+            return 0
+        self.logger.info(f'{BODY_INDENT}{label}: {n_patch} patch(es), '
+                         f'{len(changed_cells)} cell(s) exchanged; {unit} '
+                         f'{edges0} -> {len(seed_edges())}')
+
+        self._regrade_cells(changed_cells)
+        return len(changed_cells)
+
+    def _pattern_region(self, start: int, s: int, t: int) -> set:
+        '''
+        The k-connected region around ``start`` where slots s and t hold the
+        same raw-band pair as at ``start`` -- the pattern constraint of the
+        greedy dp flood without its cost rule (the min-cut supplies the
+        labeling the greedy rule approximated). Sheet-coherent by construction:
+        any crossing involving either slot's sheet flips the pattern. No
+        runaway cap is needed -- the min-cut may legally swap any subset (the
+        seed is pinned, so never none).
+        '''
+        bf = self.bands_final
+        neigh = np.asarray(self.neighbors)
+        pat = (int(bf[start, s]), int(bf[start, t]))
+        if pat[0] < 0 or pat[1] < 0:
+            return set()
+        R = {start}
+        queue = deque([start])
+        while queue:
+            k1 = queue.popleft()
+            for k2 in neigh[k1]:
+                k2 = int(k2)
+                if k2 < 0 or k2 in R:
+                    continue
+                if (int(bf[k2, s]), int(bf[k2, t])) == pat:
+                    R.add(k2)
+                    queue.append(k2)
+        return R
+
+    def _mincut_labeling(self, start: int, s: int, t: int) -> Union[set, None]:
+        '''
+        Exact binary seam placement for the (s, t) pattern region around
+        ``start``: one keep/swap variable per k-point, solved as an s-t min-cut
+        (scipy maximum_flow). Pairwise capacities are the seam-laying cost
+        minus the gluing cost of each grid edge (clamped at 0 -- the
+        non-submodular clamp only under-counts seam cost, and the caller's
+        exact global guard vets the final labeling); border cells outside the
+        region are fixed to keep via terminal attachments, and the seed cell is
+        pinned to swap so the trivial labeling is excluded. A seam step is free
+        inside a near-degenerate corridor and on a certain-forest refusal cut
+        (the physical branch cuts), pays the dp-certainty weight where it
+        splits a certain link, and is impossible (INF) across a gross energy
+        jump. Returns the swap set, or None when no finite seam exists.
+        '''
+        SCALE = 1000
+        INF_CAP = 2 ** 29
+        bf = self.bands_final
+        ev = self.eigenvalues
+        conn = self.connections
+        neigh = np.asarray(self.neighbors)
+        nks = self.nks
+        n_dir = neigh.shape[1]
+        close = self._near_degenerate_mask()
+        cert = self._certain_partner_map()
+        dir_idx = self._dir_index()
+        refusals = getattr(self, '_sheet_refusals', None) or set()
+
+        B_s, B_t = int(bf[start, s]), int(bf[start, t])
+        R = self._pattern_region(start, s, t)
+        if len(R) < 2:
+            return None
+        Rl = sorted(R)
+        pos = {k: i for i, k in enumerate(Rl)}
+
+        def step_cost(k1: int, d: int, k2: int, b1: int, b2: int) -> float:
+            # cost of the same-slot step b1@k1 -> b2@k2 along direction d
+            if abs(ev[k1, b1] - ev[k2, b2]) > self.accept_E:
+                return np.inf                    # a step never crosses a gross jump
+            cost = 0.0
+            p = int(cert[k1, d, b1])
+            if p >= 0 and p != b2 and not (close[k1, b1] or close[k2, b2]):
+                # splitting a certain link costs its dp weight -- unless the
+                # link is a forest refusal cut (branch cut: unkeepable anyway)
+                if frozenset((k1 + b1 * nks, k2 + p * nks)) not in refusals:
+                    cost += float(conn[k1, d, b1, p])
+            # smooth tie-break toward character-continuous placement; epsilon
+            # keeps it below any single split-link weight
+            cost += 1e-3 * (1.0 - float(conn[k1, d, b1, b2]))
+            return cost
+
+        def as_cap(w: float) -> int:
+            return INF_CAP if not np.isfinite(w) else int(round(SCALE * w))
+
+        caps: dict = {}
+
+        def add_cap(u: int, v: int, w: int) -> None:
+            if w > 0:
+                caps[(u, v)] = min(caps.get((u, v), 0) + w, INF_CAP)
+            caps.setdefault((u, v), 0)
+            caps.setdefault((v, u), 0)           # reverse entry for the residual
+
+        n_clamped = 0
+        # node 0 = source (keep side), node 1 = sink (swap side), cell i -> 2+i
+        for k1 in Rl:
+            u = 2 + pos[k1]
+            for d in range(n_dir):
+                k2 = int(neigh[k1, d])
+                if k2 < 0:
+                    continue
+                if k2 in pos:
+                    if k1 > k2:
+                        continue                 # one undirected capacity per pair,
+                    d21 = dir_idx.get((k2, k1))  # both directional costs summed
+                    sides = [(k1, d, k2)] + ([(k2, d21, k1)] if d21 is not None else [])
+                    g = c = 0.0
+                    for ka, dd, kb in sides:
+                        g += step_cost(ka, dd, kb, B_s, B_s) + step_cost(ka, dd, kb, B_t, B_t)
+                        c += step_cost(ka, dd, kb, B_s, B_t) + step_cost(ka, dd, kb, B_t, B_s)
+                    # objective per edge = const + [labels differ] * (c - g);
+                    # clamp handles the non-submodular case c < g (a glue step
+                    # that itself splits a certain link while the seam step
+                    # follows one): the edge becomes free to cut, which only
+                    # UNDER-counts seam cost -- acceptance stays exact.
+                    if np.isfinite(c) and np.isfinite(g) and c < g:
+                        n_clamped += 1
+                    if not np.isfinite(c):
+                        w = INF_CAP
+                    elif not np.isfinite(g):
+                        w = 0
+                    else:
+                        w = max(as_cap(c - g), 0)
+                    v = 2 + pos[k2]
+                    add_cap(u, v, w)
+                    add_cap(v, u, w)
+                else:
+                    C_s, C_t = int(bf[k2, s]), int(bf[k2, t])
+                    if C_s < 0 or C_t < 0:
+                        continue                 # matches _exchange_region_counts
+                    th_keep = step_cost(k1, d, k2, B_s, C_s) + step_cost(k1, d, k2, B_t, C_t)
+                    th_swap = step_cost(k1, d, k2, B_t, C_s) + step_cost(k1, d, k2, B_s, C_t)
+                    if not (np.isfinite(th_keep) or np.isfinite(th_swap)):
+                        return None              # conflicted border cell: no finite seam
+                    add_cap(u, 1, as_cap(th_keep))   # paid when the cell keeps
+                    add_cap(0, u, as_cap(th_swap))   # paid when the cell swaps
+        add_cap(2 + pos[start], 1, INF_CAP)      # pin the seed to swap
+
+        n_nodes = len(Rl) + 2
+        rows = np.fromiter((uv[0] for uv in caps), int, len(caps))
+        cols = np.fromiter((uv[1] for uv in caps), int, len(caps))
+        data = np.fromiter(caps.values(), np.int32, len(caps))
+        graph = csr_matrix((data, (rows, cols)), shape=(n_nodes, n_nodes), dtype=np.int32)
+        res = maximum_flow(graph, 0, 1)
+        if res.flow_value >= INF_CAP:
+            return None                          # no finite seam exists: refuse
+        # keep side = nodes reachable from the source in the residual network
+        residual = graph - res.flow
+        seen = np.zeros(n_nodes, bool)
+        seen[0] = True
+        queue = deque([0])
+        indptr, indices, rdata = residual.indptr, residual.indices, residual.data
+        while queue:
+            u = queue.popleft()
+            for e in range(indptr[u], indptr[u + 1]):
+                v = indices[e]
+                if rdata[e] > 0 and not seen[v]:
+                    seen[v] = True
+                    queue.append(v)
+        S = {k for k in Rl if not seen[2 + pos[k]]}
+        if n_clamped:
+            self.logger.debug(f'{BODY_INDENT}min-cut ({s},{t}): {n_clamped} '
+                              f'non-submodular edge(s) clamped over {len(Rl)} cells')
+        return S if S else None
+
+    def _mincut_seam_relocate(self, max_moves: int = 64) -> int:
+        '''
+        S2 of the dp-seam correction plan: place the label seam of each
+        remaining refuted (s, t) pattern region at its exact optimum via s-t
+        min-cut, iterating pairwise exchanges alpha-expansion-style over the
+        refuted-edge seeds until no pair improves. Runs AFTER the greedy
+        dp-seam relocation (which shrinks its work; every greedy-accepted move
+        is a feasible labeling here) and before _repair_certain_links, for the
+        same reason the greedy passes do. Each move is accepted only on a
+        STRICT decrease of the exact global refuted-edge census (no halving --
+        the optimum needs no marginal-exchange filter) with walls and split
+        support-links not increasing, so the pass terminates: every accepted
+        move decreases a non-negative integer. Braids no pairwise exchange
+        improves are honest residue (sub-certain: basisrotation territory).
+        '''
+        if not DP_SEAM_MINCUT:
+            return 0
+        bf = self.bands_final
+        # forest refusal cuts = free seam locations (computed once, cached);
+        # post-loop only -- this cannot freeze anything
+        self._certain_sheet_forest()
+        cert_acc = self._certain_partner_map(DP_FLOOD_SUPPORT)
+
+        moves = 0
+        total_cells = 0
+        edges0 = None
+        while moves < max_moves:
+            seeds = self._dp_refuted_seam_edges()
+            if edges0 is None:
+                edges0 = len(seeds)
+            if not seeds:
+                break
+            accepted = False
+            tried = set()
+            for metric, k, kn, s in seeds:
+                for anchor, start in ((k, kn), (kn, k)):
+                    for dmatch, t in self._seam_partner_candidates(
+                            anchor, start, s, use_dp=True):
+                        key = (int(bf[start, s]), int(bf[start, t]), s, t)
+                        if key in tried:
+                            continue
+                        tried.add(key)
+                        S = self._mincut_labeling(start, s, t)
+                        if not S:
+                            continue
+                        w0, c0, r0 = self._exchange_region_counts(S, s, t, False, cert_acc)
+                        w1, c1, r1 = self._exchange_region_counts(S, s, t, True, cert_acc)
+                        if not (r1 < r0 and w1 <= w0 and c1 <= c0):
+                            continue
+                        self._regrade_cells(self._apply_slot_exchange(S, s, t))
+                        moves += 1
+                        total_cells += 2 * len(S)
+                        self.logger.info(f'{BODY_INDENT}min-cut seam placement: slots '
+                                         f'({s},{t}) exchanged over {len(S)} k-point(s) '
+                                         f'-- walls {w0}->{w1}, split links {c0}->{c1}, '
+                                         f'refuted {r0}->{r1}')
+                        accepted = True
+                        break
+                    if accepted:
+                        break
+                if accepted:
+                    break
+            if not accepted:
+                break                            # no pair improves: honest residue
+        if moves:
+            self.logger.info(f'{BODY_INDENT}min-cut seam placement: {moves} move(s), '
+                             f'{total_cells} cell(s) exchanged; refuted seam edges '
+                             f'{edges0} -> {len(self._dp_refuted_seam_edges())}')
+        else:
+            self.logger.info(f'{BODY_INDENT}min-cut seam placement: no improving move '
+                             f'({edges0 or 0} refuted seam edge(s) on the final canvas)')
+        return total_cells
 
     def _repair_dp_swaps(self, max_rounds: int = 32) -> int:
         '''
@@ -3807,9 +5045,22 @@ class MATERIAL:
                 count += 1
             return total / count if count else self.final_score[i]
 
-        header_line = ' Band | Failed | Degen | Benign | Susp | Score | Status'
+        ###########################################################################
+        # SILENT discontinuities: validated cells (OTHER/CORRECT) sitting on a
+        # gross energy jump (> accept_E) to a same-slot neighbour. They pass the
+        # per-direction validation (>= 3 of 4 directions agree) yet are exactly
+        # the cliffs visible in a band plot -- a band carrying them must not be
+        # called USABLE on the strength of its Failed column alone.
+        ###########################################################################
+        _jumps = self._nn_energy_jump_map()
+        _silent_mask = ((self.bands_final >= 0) &
+                        (np.nan_to_num(_jumps, nan=0.0) > self.accept_E) &
+                        np.isin(self.correct_signalfinal, (3, 4)))          # OTHER, CORRECT
+        silent_counts = _silent_mask.sum(axis=0)
+
+        header_line = ' Band | Failed | Degen | Benign | Susp | Silent | Score | Status'
         table = f'\n{TITLE_INDENT}====== Final Report ======\n'
-        table += _format_legend(['Failed', 'Degen', 'Benign', 'Susp', 'Score', 'Status'])
+        table += _format_legend(['Failed', 'Degen', 'Benign', 'Susp', 'Silent', 'Score', 'Status'])
         table += f'\n{BODY_INDENT}{header_line}'
         table += f'\n{BODY_INDENT}' + '-' * len(header_line)
         band_grade = []
@@ -3817,6 +5068,7 @@ class MATERIAL:
             failed = int(report_a2[i, NOT_SOLVED] + report_a2[i, MISTAKE])
             degen = int(report_a2[i, DEGENERATE])
             forced = int(report_a2[i, FORCED_CONTINUITY])
+            silent = int(silent_counts[i]) if i < len(silent_counts) else 0
             if forced:
                 suspect, benign_ks = _forced_split(i)
             else:
@@ -3840,10 +5092,10 @@ class MATERIAL:
             # reported as USABLE -- never FAIL on score alone. A suspect force-fill
             # (across a real gap) asks for verification; a benign force-fill is
             # gauge-level and does not affect usability.
-            if failed > 0 or suspect > FORCED_FAIL_FRAC * self.nks:
+            if failed > 0 or suspect + silent > FORCED_FAIL_FRAC * self.nks:
                 status = 'FAIL'
-            elif suspect > 0:
-                status = 'CHECK'                # force-fill across a real gap -> verify
+            elif suspect > 0 or silent > 0:
+                status = 'CHECK'                # force-fill across a real gap / silent cliff -> verify
             elif degen > 0:
                 status = 'ROTATE'               # usable after basis rotation
             elif forced == 0 and score >= TOL_CLEAN:
@@ -3852,9 +5104,9 @@ class MATERIAL:
                 status = 'USABLE'               # nothing flagged (benign fills and/or score < clean)
             band_grade.append(status)
             table += (f'\n{BODY_INDENT} {i+self.min_band:<4d} | {failed:^6d} | {degen:^5d} | '
-                      f'{benign:^6d} | {suspect:^4d} | {score:>5.2f} | {status}')
+                      f'{benign:^6d} | {suspect:^4d} | {silent:^6d} | {score:>5.2f} | {status}')
             if status in ('FAIL', 'CHECK'):
-                bands_attention.append((i, failed, degen, benign, suspect, status))
+                bands_attention.append((i, failed, degen, benign, suspect, silent, status))
         table += '\n'
         self.final_report += table
 
@@ -3863,13 +5115,15 @@ class MATERIAL:
         ###########################################################################
         if bands_attention:
             self.final_report += f'\n{BODY_INDENT}Bands needing attention:'
-            for i, failed, degen, benign, suspect, status in bands_attention:
+            for i, failed, degen, benign, suspect, silent, status in bands_attention:
+                reasons = []
                 if failed > 0:
-                    reason = f'{failed} failed (energy discontinuity / low overlap)'
-                elif suspect > 0:
-                    reason = f'{suspect} of {benign+suspect} force-fill(s) across a real energy gap'
-                else:
-                    reason = f'score {self.final_score[i]:.2f}'
+                    reasons.append(f'{failed} failed (energy discontinuity / low overlap)')
+                if suspect > 0:
+                    reasons.append(f'{suspect} of {benign+suspect} force-fill(s) across a real energy gap')
+                if silent > 0:
+                    reasons.append(f'{silent} silent cliff(s) (validated cells on a jump > accept_E)')
+                reason = ' + '.join(reasons) if reasons else f'score {self.final_score[i]:.2f}'
                 verdict = 'NOT usable' if status == 'FAIL' else 'verify before use'
                 self.final_report += (f'\n{BODY_INDENT}  Band {i+self.min_band:>3d} : {reason} - {verdict}')
             self.final_report += '\n'
@@ -4234,15 +5488,32 @@ class MATERIAL:
         self.correct_signalfinal[self.forced_mask] = FORCED_CONTINUITY
 
         ###########################################################################
-        # Wavefunction-evidence pass. The energy machinery above cannot see a label
-        # swap between near-parallel bands (a few-mHa error passes every energy
-        # gate), so first exchange the zero-dp-support cells where the swap is
-        # dp-favoured (and re-grade the failed cells on the final canvas), then
-        # demote whatever zero-support cells remain so the report cannot call a
-        # silently swapped band clean.
+        # Structural + wavefunction-evidence passes. First relocate whole
+        # mis-slotted patches -- tier 1 seeded on the SILENT cliffs (gross
+        # energy jumps), tier 2 seeded on dp-refuted seams whose energy step
+        # hides below the gate (both two-sided, internally perfect, validated:
+        # the one defect class the cell-level passes below cannot arbitrate;
+        # see _relocate_patches) -- then place the seams of the refuted
+        # regions the greedy flood refuses at their exact optimum (min-cut,
+        # see _mincut_seam_relocate) -- then make every CERTAIN component
+        # single-slotted (wrong patches at cell scale, permutation cycles of
+        # any order and -1 holes), then exchange the remaining
+        # zero-dp-support cells where the swap is dp-favoured (sub-certain
+        # evidence), then demote whatever zero-support cells remain so the
+        # report cannot call a silently swapped band clean.
         ###########################################################################
+        self._log_refuted_census('post correct_signal')
+        self._relocate_wall_patches()
+        self._log_refuted_census('post wall relocation')
+        self._relocate_dp_seam_patches()
+        self._log_refuted_census('post dp-seam relocation')
+        self._mincut_seam_relocate()
+        self._log_refuted_census('post min-cut placement')
+        self._repair_certain_links()
+        self._log_refuted_census('post certain-link repair')
         self._repair_dp_swaps()
         self._flag_dp_unsupported()
+        self._log_refuted_census('final')
 
         self.logger.info(self.report())
 
