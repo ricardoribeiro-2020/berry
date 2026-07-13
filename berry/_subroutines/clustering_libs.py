@@ -102,6 +102,18 @@ DP_FORBID = 0.1
 # certain link). Every move is still vetoed by the exact global
 # refuted-census guard, so this can only reduce the strict census.
 DP_SEAM_MINCUT = True
+# Near-degenerate patch relocation (post-loop): the tier-2 dp-seam passes exempt
+# near-degenerate / DEGENERATE cells (their per-band label is gauge -- basisrotation
+# territory). A small patch that attached to the WRONG near-degenerate band is
+# therefore invisible to them even though its wavefunction evidence cleanly names
+# the correct band. _relocate_degenerate_patches block-exchanges exactly those
+# patches into the right slot (so the seam becomes dp-continuous), leaving the
+# intra-subspace gauge to basisrotation. When True, an accepted exchange must also
+# not raise the strict (0.9-map) refuted census on its border -- a non-regression
+# floor that can only reject, never wrongly accept (guards the run-6 429->474
+# border-refuted failure mode). Flip to False to relax to pure "seam halves, no new
+# wall" acceptance.
+DEGEN_FREEZE_REFUTED = True
 
 # Seeded region-growing of oversized (multi-band fused) graph components,
 # replacing the inner Louvain split (which optimises edge density with no
@@ -4148,6 +4160,57 @@ class MATERIAL:
         out.sort()
         return out
 
+    def _degenerate_seam_edges(self) -> list:
+        '''
+        The near-degenerate counterpart of ``_dp_refuted_seam_edges``: every
+        undirected same-slot adjacency where the slot switches raw band against
+        a FLOOD-CERTAIN successor (dp >= ``DP_FLOOD_SUPPORT``, unique by Bessel)
+        AND at least one endpoint is near-degenerate or DEGENERATE-signalled.
+
+        These are exactly the seams tier 2 (``_dp_refuted_seam_edges``) SKIPS:
+        there the per-band label is gauge, so the strict pass hands them to
+        basisrotation. But a small patch that attached to the WRONG member of a
+        near-degenerate pair still has clean wavefunction evidence naming the
+        right band (dp ~ 1 to the correct continuation, exactly what
+        ``DP_FLOOD_SUPPORT`` detects); only the vanishing energy gap fooled the
+        assignment. This seed feeds ``_relocate_degenerate_patches`` so the
+        block is exchanged into the correct slot. A genuine 50/50 crossing has
+        no 0.8 partner (dp ~ 0.7 each) and produces no seed -- it is left to
+        basisrotation, untouched. Returned as ``(dp_assigned, k, kn, slot)``
+        sorted worst (lowest dp) first, the same shape tier 1/2 seeds use.
+        '''
+        bf = self.bands_final
+        neigh = np.asarray(self.neighbors)
+        nks, nslots = bf.shape
+        karr = np.arange(nks)
+        cert = self._certain_partner_map(DP_FLOOD_SUPPORT)
+        close = self._near_degenerate_mask()
+
+        best: dict = {}
+        for d in range(neigh.shape[1]):
+            kn_col = neigh[:, d]
+            ok = kn_col >= 0
+            kns = np.where(ok, kn_col, 0)
+            b1 = np.where(bf >= 0, bf, 0)
+            b2v = bf[kns]
+            b2 = np.where(b2v >= 0, b2v, 0)
+            near = (close[karr[:, None], b1] | close[kns[:, None], b2]
+                    | (self.signal_final == DEGENERATE)
+                    | (self.signal_final[kns] == DEGENERATE))
+            comp = ok[:, None] & (bf >= 0) & (b2v >= 0) & (bf != b2v) & near
+            succ = cert[:, d, :][karr[:, None], b1]     # flood successor (0.8) of the held state
+            comp &= (succ >= 0) & (succ != b2v)
+            dpv = self.connections[karr[:, None], d, b1, b2]
+            for k, s in zip(*np.where(comp)):
+                kn = int(kns[k])
+                key = (min(int(k), kn), max(int(k), kn), int(s))
+                v = float(dpv[k, s])
+                if key not in best or v < best[key]:
+                    best[key] = v
+        out = [(v, a, c, s) for (a, c, s), v in best.items()]
+        out.sort()
+        return out
+
     def _log_refuted_census(self, tag: str) -> int:
         '''
         Log the global strict refuted-edge census (len of _dp_refuted_seam_edges)
@@ -4159,7 +4222,8 @@ class MATERIAL:
         return n
 
     def _exchange_region_counts(self, R: set, s: int, t: int, swapped: bool,
-                                cert_acc: np.ndarray) -> Tuple[int, int, int]:
+                                cert_acc: np.ndarray,
+                                ignore_close: bool = False) -> Tuple[int, int, int]:
         '''
         (gross-jump walls, split ``cert_acc`` links, strict refuted edges) over
         every edge touching region ``R`` for slots s and t, in the current
@@ -4171,6 +4235,12 @@ class MATERIAL:
         delta: an acceptance guard built on it is exact, not heuristic.
         Signals travel with the exchange, so the DEGENERATE exemption is read
         through the same source columns as the bands.
+
+        ``ignore_close=True`` drops the near-degenerate exemption from the SPLIT
+        ``cert_acc``-link count only (the degen-patch pass' halving metric, whose
+        seams live inside collapsed gaps and would otherwise all be exempted to
+        zero). The strict refuted census stays corridor- and DEGENERATE-exempt
+        regardless, so it remains comparable to the global ``_log_refuted_census``.
         '''
         bf = self.bands_final
         ev = self.eigenvalues
@@ -4196,7 +4266,8 @@ class MATERIAL:
                     if abs(ev[k1, b1] - ev[k2, b2]) > self.accept_E:
                         n_wall += 1
                     p = int(cert_acc[k1, d, b1])
-                    if p >= 0 and p != b2 and not (close[k1, b1] or close[k2, b2]):
+                    cl_cert = False if ignore_close else (close[k1, b1] or close[k2, b2])
+                    if p >= 0 and p != b2 and not cl_cert:
                         n_cert += 1
                     if (b1 != b2
                             and self.signal_final[k1, src1] != DEGENERATE
@@ -4208,15 +4279,17 @@ class MATERIAL:
         return n_wall, n_cert, len(ref_keys)
 
     def _seam_partner_candidates(self, anchor: int, start: int, s: int,
-                                 use_dp: bool) -> list:
+                                 use_dp: bool, dp_tol: float = DP_CERTAIN) -> list:
         '''
         Partner slots ``t`` for exchanging slot ``s`` content at the seam cell
         ``start``, as ``[(energy_mismatch, t), ...]`` best first: the (at most
         two) energy-matched slots within accept_E of the anchored state's
         energy -- content never crosses a genuine inter-band wall -- and, with
-        ``use_dp``, the slot holding the certain successor of the anchored
-        state front-inserted (dp names the partner outright, still subject to
-        the accept_E veto).
+        ``use_dp``, the slot holding the ``dp_tol``-certain successor of the
+        anchored state front-inserted (dp names the partner outright, still
+        subject to the accept_E veto). The degen-patch pass passes
+        ``dp_tol=DP_FLOOD_SUPPORT`` so a sub-certain-but-clear (0.8) successor
+        still names the target slot.
         '''
         bf = self.bands_final
         ev = self.eigenvalues
@@ -4231,7 +4304,7 @@ class MATERIAL:
         cands = [c for c in cands[:2] if c[0] <= self.accept_E]
         if use_dp:
             d_as = self._dir_index().get((anchor, start), -1)
-            succ = int(self._certain_partner_map()[anchor, d_as, ba]) if d_as >= 0 else -1
+            succ = int(self._certain_partner_map(dp_tol)[anchor, d_as, ba]) if d_as >= 0 else -1
             if succ >= 0:
                 for t in range(nslots):
                     if t != s and bf[start, t] == succ:
@@ -4358,6 +4431,30 @@ class MATERIAL:
         '''
         return self._relocate_patches('dp', max_patches)
 
+    def _relocate_degenerate_patches(self, max_patches: int = 64) -> int:
+        '''
+        Near-degenerate patch relocation, seeded on ``_degenerate_seam_edges``:
+        the small patches that attached to the WRONG member of a near-degenerate
+        band pair. Tiers 1/2 cannot see them -- the energy step hides below the
+        gate (near-degenerate) and the strict 0.9 seam predicate exempts the
+        collapsed-gap cells as gauge -- yet the wavefunction evidence still
+        cleanly names the correct band (dp ~ 1, caught by the 0.8 flood map).
+
+        Same exchange machinery as tier 2 (``_relocate_patches('degen')``): dp
+        flood cost and pattern constraint, partner slot named by the 0.8-certain
+        successor (energy-vetoed at accept_E, trivially satisfied here). An
+        exchange is accepted when the near-degenerate split-link count at least
+        HALVES and no gross-jump wall appears; with ``DEGEN_FREEZE_REFUTED`` the
+        strict refuted census may additionally not rise on the border.
+
+        Complementary to basisrotation, not competing: this only moves the
+        near-degenerate subspace into the correct SLOT (healing the seam);
+        resolving the intra-subspace gauge is still basisrotation's job, now
+        started from the right slot. Genuine 50/50 crossings have no 0.8 partner,
+        produce no seed, and are left untouched.
+        '''
+        return self._relocate_patches('degen', max_patches)
+
     def _relocate_patches(self, seed: str, max_patches: int = 64) -> int:
         '''
         Shared patch-relocation core: exchange whole mis-slotted patches
@@ -4427,9 +4524,12 @@ class MATERIAL:
         # a patch may not zero its certain links by relocating the damage
         # into merely sub-certain (0.8-0.9) seams the 0.9 map cannot see.
         cert_acc = cert if seed == 'walls' else self._certain_partner_map(DP_FLOOD_SUPPORT)
+        is_degen = seed == 'degen'
         max_patch_cells = nks // 3
-        label = 'Wall-patch relocation' if seed == 'walls' else 'dp-seam relocation'
-        unit = 'wall edge(s)' if seed == 'walls' else 'dp-refuted seam edge(s)'
+        label = {'walls': 'Wall-patch relocation', 'dp': 'dp-seam relocation',
+                 'degen': 'degenerate-patch relocation'}[seed]
+        unit = {'walls': 'wall edge(s)', 'dp': 'dp-refuted seam edge(s)',
+                'degen': 'near-degenerate seam edge(s)'}[seed]
 
         def grow(start: int, s: int, t: int) -> Union[set, None]:
             # Seam-cost flood: k2 joins iff moving the seam past it is strictly
@@ -4471,8 +4571,9 @@ class MATERIAL:
                             return None                  # runaway: not a patch
             return R
 
-        seed_edges = (self._slot_wall_edges if seed == 'walls'
-                      else self._dp_refuted_seam_edges)
+        seed_edges = {'walls': self._slot_wall_edges,
+                      'dp': self._dp_refuted_seam_edges,
+                      'degen': self._degenerate_seam_edges}[seed]
 
         changed_cells: list = []
         n_patch = 0
@@ -4488,7 +4589,8 @@ class MATERIAL:
             for metric, k, kn, s in worst:
                 for anchor, start in ((k, kn), (kn, k)):
                     for dmatch, t in self._seam_partner_candidates(
-                            anchor, start, s, use_dp=(seed == 'dp')):
+                            anchor, start, s, use_dp=(seed != 'walls'),
+                            dp_tol=(DP_FLOOD_SUPPORT if is_degen else DP_CERTAIN)):
                         key = (start, s, t)
                         if key in tried:
                             continue
@@ -4496,12 +4598,16 @@ class MATERIAL:
                         R = grow(start, s, t)
                         if R is None:
                             continue
-                        w0, c0, r0 = self._exchange_region_counts(R, s, t, False, cert_acc)
-                        w1, c1, r1 = self._exchange_region_counts(R, s, t, True, cert_acc)
+                        w0, c0, r0 = self._exchange_region_counts(R, s, t, False, cert_acc,
+                                                                  ignore_close=is_degen)
+                        w1, c1, r1 = self._exchange_region_counts(R, s, t, True, cert_acc,
+                                                                  ignore_close=is_degen)
                         if seed == 'walls':
                             ok_acc = w1 < w0 and 2 * w1 <= w0 and c1 <= c0 and r1 <= r0
                         else:
-                            ok_acc = c1 < c0 and 2 * c1 <= c0 and w1 <= w0 and r1 <= r0
+                            ok_acc = c1 < c0 and 2 * c1 <= c0 and w1 <= w0
+                            if not is_degen or DEGEN_FREEZE_REFUTED:
+                                ok_acc = ok_acc and r1 <= r0
                         if ok_acc:
                             accepted = (R, s, t, w0, w1, c0, c1, r0, r1)
                             break
@@ -5495,8 +5601,10 @@ class MATERIAL:
         # the one defect class the cell-level passes below cannot arbitrate;
         # see _relocate_patches) -- then place the seams of the refuted
         # regions the greedy flood refuses at their exact optimum (min-cut,
-        # see _mincut_seam_relocate) -- then make every CERTAIN component
-        # single-slotted (wrong patches at cell scale, permutation cycles of
+        # see _mincut_seam_relocate) -- then relocate the near-degenerate
+        # patches the strict passes exempt as gauge but the 0.8 flood map still
+        # names (see _relocate_degenerate_patches) -- then make every CERTAIN
+        # component single-slotted (wrong patches at cell scale, cycles of
         # any order and -1 holes), then exchange the remaining
         # zero-dp-support cells where the swap is dp-favoured (sub-certain
         # evidence), then demote whatever zero-support cells remain so the
@@ -5509,6 +5617,8 @@ class MATERIAL:
         self._log_refuted_census('post dp-seam relocation')
         self._mincut_seam_relocate()
         self._log_refuted_census('post min-cut placement')
+        self._relocate_degenerate_patches()
+        self._log_refuted_census('post degenerate relocation')
         self._repair_certain_links()
         self._log_refuted_census('post certain-link repair')
         self._repair_dp_swaps()
