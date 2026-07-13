@@ -1806,9 +1806,9 @@ class MATERIAL:
                 for j_ in ks:
                     k2 = j_ % self.nks
                     bn2 = j_//self.nks  # bj
-                    i_neig = np.where(self.neighbors[k1] == k2)[0]
-                    connection = self.connections[k1, i_neig,
-                                                    bn1, bn2]  # <i|j>
+                    i_neig = int(np.where(self.neighbors[k1] == k2)[0][0])
+                    connection = float(self.connections[k1, i_neig,
+                                                    bn1, bn2])  # <i|j>
                     '''
                     for each first neighbor
                     Edge(i,j) = 1 iff <i, j> ~ 1
@@ -1828,7 +1828,7 @@ class MATERIAL:
                     # the same band stays strong cannot disconnect a band from its own
                     # chain; genuine crossings (same-band overlap collapsed) are kept.
                     if bn1 != bn2:
-                        same = self.connections[k1, i_neig, bn1, bn1]   # <bn1@k1|bn1@k2>
+                        same = float(self.connections[k1, i_neig, bn1, bn1])   # <bn1@k1|bn1@k2>
                         same = 1 - 2/np.pi * np.arccos(same)
                         if same > tol:
                             continue
