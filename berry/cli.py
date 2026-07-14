@@ -478,9 +478,17 @@ berry [package options] script parameter [script options]
                                          default=32.0,
                                          metavar="GB",
                                          help="Memory budget in GB for the streaming buffers (default: 32).")
-            geometry_parser.add_argument("-prop", 
-                                         type=str, 
-                                         default="both", 
+            geometry_parser.add_argument("-tau",
+                                         type=float,
+                                         default=0.05,
+                                         metavar="",
+                                         help="Seam-regularization threshold: k-points whose assigned-band overlap to a "
+                                              "neighbour drops below tau are wavefunction-discontinuity 'seams' that spike "
+                                              "the FD gradient; the connection/curvature is interpolated over them before "
+                                              "writing (default: 0.05; 0 disables).")
+            geometry_parser.add_argument("-prop",
+                                         type=str,
+                                         default="both",
                                          metavar="",
                                          choices=["both", "conn", "curv", "chern", "chern_curl", "chern_bp", "chern_bp_bz"],
                                          help="Specify which property to calculate. Possible choices are 'both', 'conn', 'curv', 'chern', 'chern_curl', 'chern_bp' and 'chern_bp_bz' (default: both)")
@@ -880,6 +888,7 @@ def berry_props_cli(args: argparse.Namespace):
     args_dict["prop"] = args.prop
     args_dict["digits"] = args.d
     args_dict["mem_gb"] = args.mem
+    args_dict["regularize_tau"] = args.tau
     args_dict["flush"] = args.flush
 
     run_berry_geometry(**args_dict)

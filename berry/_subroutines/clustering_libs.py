@@ -355,7 +355,9 @@ COLUMN_LEGEND = {
     'Benign': 'force-fills inside a near-degenerate doublet (gauge-level relabeling; do not affect usability)',
     'Susp':   'force-fills across a real energy gap (suspect; downgrade the band)',
     'Silent': 'validated cells sitting on a gross energy jump (> accept_E) to a same-slot neighbour -- the cliffs visible in a band plot',
-    'Status': 'CLEAN (pristine, nothing flagged) / USABLE (no genuine errors; may carry benign force-fills or a sub-pristine score) / ROTATE (needs basis rotation) / CHECK (a suspect force-fill across a real gap, or a silent cliff -> verify) / FAIL (genuine energy break, or many suspect/silent cells)',
+    'Cliff':  'raw-band switch edges surviving on a jump above the LOCAL continuity gate (sub-accept_E cliffs the Silent column is too loose to see); a band with any is downgraded',
+    'dpBreak': 'raw-band switch edges surviving against a CERTAIN dp link -- the energy-quiet permutation cycles the rotation pass could not unwind (a wavefunction discontinuity invisible to every energy column); a band with any is downgraded',
+    'Status': 'CLEAN (pristine, nothing flagged) / USABLE (no genuine errors; may carry benign force-fills or a sub-pristine score) / ROTATE (needs basis rotation) / CHECK (a suspect force-fill across a real gap, a silent cliff, a sub-gate cliff, or a dp break -> verify) / FAIL (genuine energy break, or many suspect/silent/cliff/dp-break cells)',
 }
 
 # All report tables and their surrounding content use these two indent levels:
@@ -996,6 +998,18 @@ class MATERIAL:
         _gate = np.minimum(self.accept_E,
                            np.maximum(0.5 * self.local_gap, self.band_disp[None, :]))
         _resolved = self.local_gap > 2.0 * self.band_disp[None, :]
+        # continuity_gate: per-(k, band) energy gate used ONLY by the cliff
+        # machinery (_cliff_seam_edges detection, cliff-patch repair, the final
+        # _verify_no_cliffs invariant, and the report's Cliff column). It is the
+        # SAME sharpened value _local_scales() returns, promoted to an array:
+        # where the local adjacent-band gap resolves the band's own dispersion
+        # (local_gap > 2*band_disp) it gates at half the local gap, and where it
+        # does not (near-degenerate crowding) it falls back to the LOOSE accept_E,
+        # so genuine crossings are never flagged. accept_E, _energy_continuity_score
+        # and the in-loop clustering score are deliberately left untouched (a tight
+        # gate on graph edges is the e90a33a shatter trap); the cliff pass is
+        # post-loop and confined to raw-band SWITCH edges.
+        self.continuity_gate = np.where(_resolved, _gate, self.accept_E)
         n_sharp = int(np.sum(_resolved & (_gate < self.accept_E)))
         self.logger.info(f'{BODY_INDENT}Local energy gates: {n_sharp}/{self.local_gap.size} '
                          f'(k, band) cells sharpen below the global accept_E '
@@ -3383,6 +3397,130 @@ class MATERIAL:
                              f'(every k-point maps each band to at most one slot)')
         return excess
 
+    def _verify_no_cliffs(self) -> int:
+        '''
+        Final continuity invariant: no band-slot may ship a raw-band SWITCH across
+        an energy step larger than the local continuity gate (see
+        ``_cliff_seam_edges``) -- the sub-accept_E cliffs the flat gross-jump gate
+        is too loose to catch. Recomputed AFTER every relocation pass, so what
+        remains is exactly the cliffs no pairwise exchange could remove (a genuine
+        two-sided braid, or a defect the flood refused). Stores the per-slot count
+        (``self.cliff_counts``) and the surviving edges (``self.cliff_edges``) so
+        the report downgrades those bands to CHECK/FAIL instead of shipping a
+        silent USABLE band, and logs a loud warning. Soft like the bijection check
+        -- it does not raise. Returns the number of surviving cliff edges.
+        '''
+        edges = self._cliff_seam_edges()
+        nslots = self.bands_final.shape[1]
+        counts = np.zeros(nslots, dtype=int)
+        for _jump, _k, _kn, s in edges:
+            counts[int(s)] += 1
+        self.cliff_edges = edges
+        self.cliff_counts = counts
+        if edges:
+            slots = sorted({int(s) for _j, _k, _kn, s in edges})
+            wj, wk, wkn, ws = edges[0]
+            self.logger.warning(
+                f'{BODY_INDENT}Cliff check: {len(edges)} intra-slot energy cliff(s) '
+                f'survive in slot(s) {slots} (worst {wj:.4g} Ry at slot {ws}, '
+                f'k={wk}<->{wkn}) -- these bands are graded CHECK/FAIL, not silently USABLE')
+        else:
+            self.logger.info(f'{BODY_INDENT}Cliff check: OK '
+                             f'(no sub-gate intra-slot energy cliffs)')
+        return len(edges)
+
+    def _verify_no_dp_cycles(self) -> int:
+        '''
+        Final wavefunction-continuity invariant: no band-slot may ship a raw-band
+        SWITCH that breaks a CERTAIN dp link (see ``_dp_refuted_seam_edges``) --
+        the energy-quiet permutation cycles that pass every energy gate yet are a
+        visible discontinuity in the wavefunction character. Recomputed AFTER the
+        cycle-rotation and all other passes, so what remains is exactly the seams
+        no rotation or exchange could remove (a genuine sub-certain braid ->
+        basisrotation territory). Stores the per-slot count (``self.refuted_counts``)
+        and the surviving edges (``self.refuted_edges``) so the report downgrades
+        those bands to CHECK/FAIL instead of shipping a silent USABLE band, and
+        logs a loud warning. Soft like the cliff/bijection checks -- it does not
+        raise. Returns the number of surviving refuted edges.
+        '''
+        edges = self._dp_refuted_seam_edges()
+        nslots = self.bands_final.shape[1]
+        counts = np.zeros(nslots, dtype=int)
+        for _dp, _k, _kn, s in edges:
+            counts[int(s)] += 1
+        self.refuted_edges = edges
+        self.refuted_counts = counts
+        if edges:
+            slots = sorted({int(s) for _v, _k, _kn, s in edges})
+            wv, wk, wkn, ws = edges[0]
+            self.logger.warning(
+                f'{BODY_INDENT}dp-cycle check: {len(edges)} wavefunction-broken '
+                f'seam edge(s) survive in slot(s) {slots} (worst dp {wv:.3g} at '
+                f'slot {ws}, k={wk}<->{wkn}) -- these bands are graded CHECK/FAIL/'
+                f'ROTATE, not silently USABLE')
+        else:
+            self.logger.info(f'{BODY_INDENT}dp-cycle check: OK '
+                             f'(no wavefunction-broken seam edges)')
+        return len(edges)
+
+    def _handoff_dp_residue_to_rotation(self) -> int:
+        '''
+        Conservative basisrotation handoff for the dp-broken seams
+        ``_repair_dp_cycles`` could not remove. The strict refuted census already
+        excludes cells whose two SWITCHING bands are near-degenerate; a survivor
+        is handed to basisrotation only when an endpoint band is near-degenerate
+        (adjacent gap < ``degen_ethr``) with a THIRD band -- a genuine multi-band
+        crowding where the per-band label is gauge and no rotation can name a
+        unique continuation. Such cells are marked DEGENERATE (the report grades
+        the band ROTATE, not a silent USABLE) and appended to ``degenerate_final``
+        (the array basisrotation consumes). Clean, well-separated cycles never
+        touch a degeneracy, so they keep their honest CHECK grade from the
+        dpBreak column and are NOT sent here. Runs before ``_verify_no_dp_cycles``
+        so the handed-off cells leave the refuted census (now DEGENERATE-exempt)
+        and land in the report's Degen/ROTATE column instead. Returns the number
+        of cells handed off.
+        '''
+        edges = self._dp_refuted_seam_edges()
+        if not edges:
+            return 0
+        ev = self.eigenvalues
+        ethr = getattr(self, 'degen_ethr', 0.005)
+        nbnd = ev.shape[1]
+        handed: list = []
+        seen: set = set()
+        for _v, k, kn, s in edges:
+            for kk in (int(k), int(kn)):
+                if (kk, s) in seen:
+                    continue
+                b = int(self.bands_final[kk, s])
+                if b < 0:
+                    continue
+                adj = -1
+                if b > 0 and abs(ev[kk, b] - ev[kk, b - 1]) < ethr:
+                    adj = b - 1
+                elif b + 1 < nbnd and abs(ev[kk, b + 1] - ev[kk, b]) < ethr:
+                    adj = b + 1
+                if adj < 0:
+                    continue                          # no degeneracy: keep CHECK grade
+                self.signal_final[kk, s] = DEGENERATE
+                self.correct_signalfinal[kk, s] = DEGENERATE
+                handed.append([kk, b, adj])
+                seen.add((kk, s))
+        if not handed:
+            self.logger.info(f'{BODY_INDENT}dp-residue handoff: no near-degenerate gauge '
+                             f'seam among the {len(edges)} surviving dp break(s) '
+                             f'(all graded CHECK/FAIL)')
+            return 0
+        handed_arr = np.array(handed, dtype=int)
+        existing = getattr(self, 'degenerate_final', None)
+        if existing is not None and len(existing) > 0:
+            self.degenerate_final = np.vstack([np.asarray(existing), handed_arr])
+        else:
+            self.degenerate_final = handed_arr
+        self.logger.info(f'{BODY_INDENT}dp-residue handoff: {len(handed)} near-degenerate '
+                         f'gauge seam cell(s) marked DEGENERATE for basisrotation')
+        return len(handed)
+
     def _slot_energy_penalty(self, k: int, c: int, b: int) -> float:
         '''
         Energy mismatch of putting band ``b`` in slot ``c`` at k-point ``k``: the mean
@@ -4114,6 +4252,61 @@ class MATERIAL:
         walls.sort(reverse=True)
         return walls
 
+    def _cliff_seam_edges(self) -> list:
+        '''
+        The sub-accept_E energy cliffs ``_slot_wall_edges`` cannot see. Every
+        undirected same-slot adjacency where the slot SWITCHES raw band
+        (``bf[k] != bf[kn]``) across an energy step larger than the LOCAL
+        continuity gate ``continuity_gate`` (``min`` of the two endpoints' gates)
+        -- i.e. a switch that lands where the two bands are far apart in energy,
+        not at a genuine near-degenerate crossing.
+
+        This is the intra-slot continuity guard the flat ``accept_E`` gate is too
+        loose to enforce (accept_E ~ 3*disp_scale ~ 1 eV; a real 1 eV cliff sits
+        just under it and reads as "continuous"). ``continuity_gate`` sharpens to
+        half the local adjacent-band gap where that gap resolves the band's own
+        dispersion, and only there -- near-degenerate crowding keeps the loose
+        accept_E, so genuine 50/50 crossings (small energy step, bands meeting)
+        are never flagged. Near-degenerate / DEGENERATE-signalled endpoints are
+        excluded outright (their per-band label is gauge -- basisrotation
+        territory), exactly as ``_slot_wall_edges`` excludes DEGENERATE.
+
+        Restricting to raw-band SWITCH edges is load-bearing: a legitimate steep
+        one-band step (same band both ends, no switch) can exceed the local gate
+        yet is genuine dispersion, so it must never be flagged. Returned as
+        ``(jump, k, kn, slot)`` sorted worst (largest jump) first -- the same
+        shape ``_slot_wall_edges`` uses, so the wall-relocation core consumes it
+        unchanged.
+        '''
+        bf = self.bands_final
+        ev = self.eigenvalues
+        neigh = np.asarray(self.neighbors)
+        cg = self.continuity_gate
+        close = self._near_degenerate_mask()
+        nks, nslots = bf.shape
+        karr = np.arange(nks)
+        cliffs = []
+        for d in range(neigh.shape[1]):
+            kn_col = neigh[:, d]
+            ok = kn_col >= 0
+            kns = np.where(ok, kn_col, 0)
+            b1 = np.where(bf >= 0, bf, 0)
+            b2v = bf[kns]
+            b2 = np.where(b2v >= 0, b2v, 0)
+            comp = (ok & (karr < kns))[:, None] & (bf >= 0) & (b2v >= 0) \
+                   & (bf != b2v) \
+                   & (self.signal_final != DEGENERATE) \
+                   & (self.signal_final[kns] != DEGENERATE) \
+                   & ~close[karr[:, None], b1] & ~close[kns[:, None], b2]
+            E1 = ev[karr[:, None], b1]
+            E2 = ev[kns[:, None], b2]
+            jump = np.abs(E1 - E2)
+            gate = np.minimum(cg[karr[:, None], b1], cg[kns[:, None], b2])
+            for k, s in zip(*np.where(comp & (jump > gate))):
+                cliffs.append((float(jump[k, s]), int(k), int(kns[k]), int(s)))
+        cliffs.sort(reverse=True)
+        return cliffs
+
     def _dp_refuted_seam_edges(self) -> list:
         '''
         Every undirected same-slot adjacency where the slot switches raw band
@@ -4223,7 +4416,8 @@ class MATERIAL:
 
     def _exchange_region_counts(self, R: set, s: int, t: int, swapped: bool,
                                 cert_acc: np.ndarray,
-                                ignore_close: bool = False) -> Tuple[int, int, int]:
+                                ignore_close: bool = False,
+                                wall_gate: np.ndarray = None) -> Tuple[int, int, int]:
         '''
         (gross-jump walls, split ``cert_acc`` links, strict refuted edges) over
         every edge touching region ``R`` for slots s and t, in the current
@@ -4241,6 +4435,14 @@ class MATERIAL:
         seams live inside collapsed gaps and would otherwise all be exempted to
         zero). The strict refuted census stays corridor- and DEGENERATE-exempt
         regardless, so it remains comparable to the global ``_log_refuted_census``.
+
+        ``wall_gate`` overrides the gross-jump gate the wall count keys to. Left
+        None it is the global ``accept_E`` (every seed except ``'cliff'``), and a
+        wall is any same-slot edge over that flat gate. Passed the per-(k, band)
+        ``continuity_gate`` array (the ``'cliff'`` pass) a wall is instead a
+        raw-band SWITCH edge whose step exceeds the LOCAL gate ``min`` of the two
+        endpoints -- the sub-accept_E cliffs; same-band steps (however steep) are
+        never counted, so a legitimate steep dispersion cannot block a repair.
         '''
         bf = self.bands_final
         ev = self.eigenvalues
@@ -4263,8 +4465,12 @@ class MATERIAL:
                     b2 = int(bf[k2, src2])
                     if b1 < 0 or b2 < 0:
                         continue
-                    if abs(ev[k1, b1] - ev[k2, b2]) > self.accept_E:
-                        n_wall += 1
+                    if wall_gate is None:
+                        if abs(ev[k1, b1] - ev[k2, b2]) > self.accept_E:
+                            n_wall += 1                       # gross wall (flat accept_E)
+                    elif b1 != b2 and abs(ev[k1, b1] - ev[k2, b2]) > min(
+                            wall_gate[k1, b1], wall_gate[k2, b2]):
+                        n_wall += 1                           # local cliff (switch only)
                     p = int(cert_acc[k1, d, b1])
                     cl_cert = False if ignore_close else (close[k1, b1] or close[k2, b2])
                     if p >= 0 and p != b2 and not cl_cert:
@@ -4331,6 +4537,31 @@ class MATERIAL:
                 if m is not None:                    # audit travels with the content
                     m[kk, s], m[kk, t] = m[kk, t], m[kk, s]
             changed.extend(((kk, s), (kk, t)))
+        return changed
+
+    def _apply_slot_rotation(self, R: set, order: tuple) -> list:
+        '''
+        Rotate slots along ``order`` = (c0, c1, ..., c_{L-1}) over every
+        k-point of ``R`` on the final canvas: each slot takes the content of
+        the NEXT slot in ``order`` (``new[c_i] = old[c_{i+1 mod L}]``), so a
+        slot whose certain successor currently sits in the next cycle member
+        recovers its own band. Bands, both signals and the forced/repaired
+        audit masks travel together; the per-row cyclic permutation preserves
+        the bijection by construction. A length-2 ``order`` is exactly
+        ``_apply_slot_exchange``. Returns the changed (k, slot) cells.
+        '''
+        bf = self.bands_final
+        L = len(order)
+        arrays = [bf, self.signal_final, self.correct_signalfinal]
+        arrays += [m for m in (getattr(self, 'forced_mask', None),
+                               getattr(self, 'repaired_mask', None)) if m is not None]
+        changed = []
+        for kk in sorted(R):
+            for arr in arrays:
+                vals = [arr[kk, c] for c in order]           # snapshot before writing
+                for i, c in enumerate(order):
+                    arr[kk, c] = vals[(i + 1) % L]
+            changed.extend((kk, c) for c in order)
         return changed
 
     def _regrade_cells(self, changed_cells: list) -> None:
@@ -4405,6 +4636,29 @@ class MATERIAL:
         ``_relocate_patches`` for the flood and acceptance rules.
         '''
         return self._relocate_patches('walls', max_patches)
+
+    def _relocate_cliff_patches(self, max_patches: int = 64) -> int:
+        '''
+        The tighter sibling of ``_relocate_wall_patches``: the SUB-accept_E
+        cliffs. The same mid-sheet collision that produces a gross wall (see
+        ``_relocate_wall_patches``) also lands on jumps that are large on the
+        scale of the LOCAL band gap yet still below the flat gross-jump gate --
+        the phosphorene band-13 seam (~1 eV, but accept_E ~ 1.02 eV, so it reads
+        as "0 silent"). Seeded on ``_cliff_seam_edges`` (raw-band switch edges
+        whose step exceeds the per-(k, band) ``continuity_gate``), it exchanges
+        the mis-slotted patch onto the crossing corridor exactly as tier 1 does.
+
+        Same energy-based flood and acceptance as tier 1 (``_relocate_patches``),
+        but the wall count is taken at the local ``continuity_gate`` instead of
+        the flat ``accept_E`` (``wall_gate`` argument), and only over switch
+        edges -- a legitimate steep one-band step never counts, so it can neither
+        seed nor block a repair. Near-degenerate / DEGENERATE cells are exempt
+        (gauge -- basisrotation), so a genuine 50/50 crossing is left untouched.
+        Runs after tier 1 so the gross walls are already placed. A cliff no
+        pairwise exchange can remove survives to ``_verify_no_cliffs`` and is
+        graded honestly (CHECK/FAIL), never shipped as a silent USABLE band.
+        '''
+        return self._relocate_patches('cliff', max_patches)
 
     def _relocate_dp_seam_patches(self, max_patches: int = 64) -> int:
         '''
@@ -4523,13 +4777,19 @@ class MATERIAL:
         # dp acceptance counts split links against the looser support map:
         # a patch may not zero its certain links by relocating the damage
         # into merely sub-certain (0.8-0.9) seams the 0.9 map cannot see.
-        cert_acc = cert if seed == 'walls' else self._certain_partner_map(DP_FLOOD_SUPPORT)
+        cert_acc = cert if seed in ('walls', 'cliff') else self._certain_partner_map(DP_FLOOD_SUPPORT)
         is_degen = seed == 'degen'
+        is_cliff = seed == 'cliff'
+        # the cliff pass counts walls at the per-(k, band) local continuity gate
+        # over raw-band SWITCH edges only; every other seed keeps the flat accept_E.
+        wall_gate = self.continuity_gate if is_cliff else None
         max_patch_cells = nks // 3
         label = {'walls': 'Wall-patch relocation', 'dp': 'dp-seam relocation',
-                 'degen': 'degenerate-patch relocation'}[seed]
+                 'degen': 'degenerate-patch relocation',
+                 'cliff': 'cliff-patch relocation'}[seed]
         unit = {'walls': 'wall edge(s)', 'dp': 'dp-refuted seam edge(s)',
-                'degen': 'near-degenerate seam edge(s)'}[seed]
+                'degen': 'near-degenerate seam edge(s)',
+                'cliff': 'sub-gate cliff edge(s)'}[seed]
 
         def grow(start: int, s: int, t: int) -> Union[set, None]:
             # Seam-cost flood: k2 joins iff moving the seam past it is strictly
@@ -4546,7 +4806,7 @@ class MATERIAL:
                     bs2, bt2 = int(bf[k2, s]), int(bf[k2, t])
                     if bs2 < 0 or bt2 < 0 or bs1 < 0 or bt1 < 0:
                         continue
-                    if seed == 'walls':
+                    if seed in ('walls', 'cliff'):
                         keep = abs(ev[k1, bt1] - ev[k2, bs2]) + abs(ev[k1, bs1] - ev[k2, bt2])
                         swap = abs(ev[k1, bt1] - ev[k2, bt2]) + abs(ev[k1, bs1] - ev[k2, bs2])
                     else:
@@ -4573,7 +4833,8 @@ class MATERIAL:
 
         seed_edges = {'walls': self._slot_wall_edges,
                       'dp': self._dp_refuted_seam_edges,
-                      'degen': self._degenerate_seam_edges}[seed]
+                      'degen': self._degenerate_seam_edges,
+                      'cliff': self._cliff_seam_edges}[seed]
 
         changed_cells: list = []
         n_patch = 0
@@ -4589,7 +4850,7 @@ class MATERIAL:
             for metric, k, kn, s in worst:
                 for anchor, start in ((k, kn), (kn, k)):
                     for dmatch, t in self._seam_partner_candidates(
-                            anchor, start, s, use_dp=(seed != 'walls'),
+                            anchor, start, s, use_dp=(seed not in ('walls', 'cliff')),
                             dp_tol=(DP_FLOOD_SUPPORT if is_degen else DP_CERTAIN)):
                         key = (start, s, t)
                         if key in tried:
@@ -4599,10 +4860,12 @@ class MATERIAL:
                         if R is None:
                             continue
                         w0, c0, r0 = self._exchange_region_counts(R, s, t, False, cert_acc,
-                                                                  ignore_close=is_degen)
+                                                                  ignore_close=is_degen,
+                                                                  wall_gate=wall_gate)
                         w1, c1, r1 = self._exchange_region_counts(R, s, t, True, cert_acc,
-                                                                  ignore_close=is_degen)
-                        if seed == 'walls':
+                                                                  ignore_close=is_degen,
+                                                                  wall_gate=wall_gate)
+                        if seed in ('walls', 'cliff'):
                             ok_acc = w1 < w0 and 2 * w1 <= w0 and c1 <= c0 and r1 <= r0
                         else:
                             ok_acc = c1 < c0 and 2 * c1 <= c0 and w1 <= w0
@@ -4661,6 +4924,38 @@ class MATERIAL:
                 if (int(bf[k2, s]), int(bf[k2, t])) == pat:
                     R.add(k2)
                     queue.append(k2)
+        return R
+
+    def _pattern_region_cycle(self, start: int, slots: tuple) -> set:
+        '''
+        ``_pattern_region`` generalized to a set of ``slots``: the k-connected
+        region around ``start`` where EVERY slot in ``slots`` holds the same
+        raw band as at ``start`` (the cyclic pattern). Sheet-coherent by the
+        same argument -- any crossing involving one of the slots' sheets flips
+        the tuple -- so the region is bounded by the crossing corridors. Used
+        by ``_repair_dp_cycles`` to size the atomic rotation of a permutation
+        cycle. Capped at ``nks // 3`` (a rotation over a third of the BZ is not
+        a patch); returns the empty set on runaway or an unattributed pattern.
+        '''
+        bf = self.bands_final
+        neigh = np.asarray(self.neighbors)
+        pat = tuple(int(bf[start, s]) for s in slots)
+        if any(b < 0 for b in pat):
+            return set()
+        cap = self.nks // 3
+        R = {start}
+        queue = deque([start])
+        while queue:
+            k1 = queue.popleft()
+            for k2 in neigh[k1]:
+                k2 = int(k2)
+                if k2 < 0 or k2 in R:
+                    continue
+                if tuple(int(bf[k2, s]) for s in slots) == pat:
+                    R.add(k2)
+                    queue.append(k2)
+                    if len(R) > cap:
+                        return set()                 # runaway: not a patch
         return R
 
     def _mincut_labeling(self, start: int, s: int, t: int) -> Union[set, None]:
@@ -4869,6 +5164,165 @@ class MATERIAL:
             self.logger.info(f'{BODY_INDENT}min-cut seam placement: no improving move '
                              f'({edges0 or 0} refuted seam edge(s) on the final canvas)')
         return total_cells
+
+    def _dp_cycle_at(self, k: int, kn: int) -> Union[tuple, None]:
+        '''
+        Detect a k-local permutation CYCLE at ``kn`` mandated by the trusted
+        neighbour ``k`` across the (k -> kn) edge, from the CERTAIN successor
+        map (dp >= DP_CERTAIN). For each slot ``s`` whose k-content ``b_s`` has
+        a certain successor ``p_s`` toward ``kn``, band ``p_s`` BELONGS in slot
+        ``s`` at ``kn`` -- but currently lives in the slot ``t`` where
+        ``bf[kn, t] == p_s``. That defines ``src[s] = t`` (slot s must receive
+        the content of slot t). A closed cycle in ``src`` whose every leg is a
+        certain, non-degenerate switch is a wrong cyclic relabelling that no
+        pairwise exchange can unwind (the first swap only relocates a leg).
+
+        Returns the cycle as an ``order`` tuple for ``_apply_slot_rotation``
+        (``new[order[i]] = old[order[i+1]]``, i.e. ``order[i+1] = src[order[i]]``)
+        containing the seed relation of the (k, kn) edge, or None when no such
+        cycle exists here. A genuine crossing corridor has sub-certain dp / is
+        near-degenerate, so it produces no certain cycle and is never returned.
+        '''
+        bf = self.bands_final
+        d = self._dir_index().get((k, kn), -1)
+        if d < 0:
+            return None
+        cert = self._certain_partner_map()               # DP_CERTAIN
+        close = self._near_degenerate_mask()
+        nslots = bf.shape[1]
+        # band held at kn -> its slot (unique; the row is a permutation)
+        band_to_slot = {int(bf[kn, t]): t for t in range(nslots) if int(bf[kn, t]) >= 0}
+        src = {}                                          # slot s <- content of slot src[s]
+        for s in range(nslots):
+            b_s = int(bf[k, s])
+            if b_s < 0 or self.signal_final[k, s] == DEGENERATE:
+                continue
+            p_s = int(cert[k, d, b_s])                    # certain successor toward kn
+            if p_s < 0 or p_s == int(bf[kn, s]):
+                continue                                  # no mandate, or already satisfied
+            t = band_to_slot.get(p_s, -1)
+            if t < 0 or t == s:
+                continue
+            if close[k, b_s] or close[kn, p_s] or self.signal_final[kn, t] == DEGENERATE:
+                continue                                  # gauge territory: hands off
+            src[s] = t
+        if not src:
+            return None
+        # the seed edge must lie on a closed cycle of src that stays within src
+        for seed in src:
+            order = [seed]
+            cur = src[seed]
+            ok = True
+            while cur != seed:
+                if cur not in src or cur in order:
+                    ok = False
+                    break
+                order.append(cur)
+                cur = src[cur]
+            if ok and len(order) >= 2:
+                return tuple(order)
+        return None
+
+    def _repair_dp_cycles(self, max_rounds: int = 32) -> int:
+        '''
+        Post-loop repair of the energy-QUIET permutation cycles the pairwise
+        correctors cannot unwind and ``_repair_certain_links`` never sees.
+
+        A label frontier collision inside a near-parallel band group leaves a
+        k-region where the slots hold a cyclically PERMUTED set of bands
+        (phosphorene: 11<->12 2-cycles, the 15/16/17 and 17/18/19 3-cycles).
+        The energy is flat across the group so every gate passes (zero walls)
+        and the swapped interior validates -- so ``_repair_certain_links`` (its
+        trigger is energy-keyed: unattributed / NOT-MIS / gross jump) never
+        looks at it. The region correctors DO see the broken dp seams but are
+        strictly PAIRWISE: the first swap of a 3-cycle relocates a transposition
+        rather than removing it, so it fails their strict/halving acceptance and
+        is rejected. The cycle survives as a validated band carrying an invisible
+        wavefunction discontinuity.
+
+        This pass closes that gap. Seeded on ``_dp_refuted_seam_edges``, at each
+        seam it builds the slot permutation mandated by the CERTAIN (dp >= 0.9)
+        successors (``_dp_cycle_at``), finds a closed cycle, grows its cyclic
+        pattern region (``_pattern_region_cycle``) and applies the atomic L-way
+        rotation (``_apply_slot_rotation``). The rotation is COMMITTED only when
+        it strictly decreases the exact global refuted census with the gross-jump
+        wall count not increasing -- measured by trial-apply / revert, so the
+        guard is exact, not heuristic. Three guards keep the genuine crossing
+        corridors untouched (the failure mode that made the energy-quiet trigger
+        exclusion necessary, tested there as FAIL 11 -> 72): only CLOSED cycles
+        with all-certain mandates are candidates, near-degenerate cells are
+        exempt, and a move that does not strictly reduce refuted (a corridor
+        relabel merely relocates it) or that raises a wall is reverted.
+
+        Runs after the pairwise passes (they clear the 2-sided defects first) and
+        before ``_repair_certain_links``. Bijection preserved by the per-row
+        rotation; changed cells are re-graded on the final canvas. Returns the
+        number of exchanged cells.
+        '''
+        n_ref0 = len(self._dp_refuted_seam_edges())
+        if n_ref0 == 0:
+            return 0
+        changed_cells: list = []
+        n_cyc = 0
+        for _ in range(max_rounds):
+            seeds = self._dp_refuted_seam_edges()
+            if not seeds:
+                break
+            ref0 = len(seeds)
+            wall0 = len(self._slot_wall_edges())
+            accepted = None
+            tried: set = set()
+            for _v, k, kn, _s in seeds:
+                for a, b in ((k, kn), (kn, k)):
+                    order = self._dp_cycle_at(a, b)
+                    if order is None:
+                        continue
+                    key = (b, order)
+                    if key in tried:
+                        continue
+                    tried.add(key)
+                    R = self._pattern_region_cycle(b, order)
+                    if len(R) < 1:
+                        continue
+                    # trial-apply, measure exact global census, revert if worse.
+                    # Snapshot every array _apply_slot_rotation touches (bands,
+                    # both signals, and the audit masks) for the cycle's slots.
+                    arrays = [self.bands_final, self.signal_final,
+                              self.correct_signalfinal]
+                    arrays += [m for m in (getattr(self, 'forced_mask', None),
+                                           getattr(self, 'repaired_mask', None))
+                               if m is not None]
+                    snap = [(arr, {s: arr[:, s].copy() for s in order})
+                            for arr in arrays]
+                    cells = self._apply_slot_rotation(R, order)
+                    ref1 = len(self._dp_refuted_seam_edges())
+                    wall1 = len(self._slot_wall_edges())
+                    if ref1 < ref0 and wall1 <= wall0:
+                        accepted = (R, order, cells, ref0, ref1, wall0, wall1)
+                        break
+                    for arr, cols in snap:                      # revert every array
+                        for s, col in cols.items():
+                            arr[:, s] = col
+                if accepted:
+                    break
+            if accepted is None:
+                break
+            R, order, cells, ref0v, ref1v, wall0v, wall1v = accepted
+            self._regrade_cells(cells)
+            changed_cells.extend(cells)
+            n_cyc += 1
+            self.logger.info(f'{BODY_INDENT}dp-cycle repair: slots {order} rotated over '
+                             f'{len(R)} k-point(s) -- refuted {ref0v}->{ref1v}, '
+                             f'walls {wall0v}->{wall1v}')
+        if not changed_cells:
+            self.logger.info(f'{BODY_INDENT}dp-cycle repair: no improving rotation '
+                             f'({n_ref0} refuted seam edge(s) on the final canvas)')
+            return 0
+        n_k = len(set(c[0] for c in changed_cells))
+        self.logger.info(f'{BODY_INDENT}dp-cycle repair: {n_cyc} cycle(s) rotated over '
+                         f'{n_k} k-point(s); refuted {n_ref0} -> '
+                         f'{len(self._dp_refuted_seam_edges())}')
+        return len(changed_cells)
 
     def _repair_dp_swaps(self, max_rounds: int = 32) -> int:
         '''
@@ -5163,10 +5617,29 @@ class MATERIAL:
                         (np.nan_to_num(_jumps, nan=0.0) > self.accept_E) &
                         np.isin(self.correct_signalfinal, (3, 4)))          # OTHER, CORRECT
         silent_counts = _silent_mask.sum(axis=0)
+        # Cliff column: per-slot count of surviving sub-accept_E cliff edges
+        # (raw-band switches above the LOCAL continuity gate), populated by the
+        # end-of-solve _verify_no_cliffs invariant. Fall back to a fresh census if
+        # report() is called on a canvas that never ran the invariant.
+        cliff_counts = getattr(self, 'cliff_counts', None)
+        if cliff_counts is None:
+            cliff_counts = np.zeros(self.bands_final.shape[1], dtype=int)
+            for _j, _k, _kn, _s in self._cliff_seam_edges():
+                cliff_counts[int(_s)] += 1
+        # dpBreak column: per-slot count of surviving wavefunction-broken seam
+        # edges (raw-band switches against a CERTAIN dp link, the energy-quiet
+        # permutation cycles _repair_dp_cycles could not unwind), populated by
+        # the end-of-solve _verify_no_dp_cycles invariant. Fall back to a fresh
+        # census if report() is called on a canvas that never ran the invariant.
+        refuted_counts = getattr(self, 'refuted_counts', None)
+        if refuted_counts is None:
+            refuted_counts = np.zeros(self.bands_final.shape[1], dtype=int)
+            for _v, _k, _kn, _s in self._dp_refuted_seam_edges():
+                refuted_counts[int(_s)] += 1
 
-        header_line = ' Band | Failed | Degen | Benign | Susp | Silent | Score | Status'
+        header_line = ' Band | Failed | Degen | Benign | Susp | Silent | Cliff | dpBrk | Score | Status'
         table = f'\n{TITLE_INDENT}====== Final Report ======\n'
-        table += _format_legend(['Failed', 'Degen', 'Benign', 'Susp', 'Silent', 'Score', 'Status'])
+        table += _format_legend(['Failed', 'Degen', 'Benign', 'Susp', 'Silent', 'Cliff', 'dpBreak', 'Score', 'Status'])
         table += f'\n{BODY_INDENT}{header_line}'
         table += f'\n{BODY_INDENT}' + '-' * len(header_line)
         band_grade = []
@@ -5175,6 +5648,8 @@ class MATERIAL:
             degen = int(report_a2[i, DEGENERATE])
             forced = int(report_a2[i, FORCED_CONTINUITY])
             silent = int(silent_counts[i]) if i < len(silent_counts) else 0
+            cliff = int(cliff_counts[i]) if i < len(cliff_counts) else 0
+            dpbrk = int(refuted_counts[i]) if i < len(refuted_counts) else 0
             if forced:
                 suspect, benign_ks = _forced_split(i)
             else:
@@ -5198,10 +5673,10 @@ class MATERIAL:
             # reported as USABLE -- never FAIL on score alone. A suspect force-fill
             # (across a real gap) asks for verification; a benign force-fill is
             # gauge-level and does not affect usability.
-            if failed > 0 or suspect + silent > FORCED_FAIL_FRAC * self.nks:
+            if failed > 0 or suspect + silent + cliff + dpbrk > FORCED_FAIL_FRAC * self.nks:
                 status = 'FAIL'
-            elif suspect > 0 or silent > 0:
-                status = 'CHECK'                # force-fill across a real gap / silent cliff -> verify
+            elif suspect > 0 or silent > 0 or cliff > 0 or dpbrk > 0:
+                status = 'CHECK'                # suspect fill / silent cliff / sub-gate cliff / dp break -> verify
             elif degen > 0:
                 status = 'ROTATE'               # usable after basis rotation
             elif forced == 0 and score >= TOL_CLEAN:
@@ -5210,9 +5685,10 @@ class MATERIAL:
                 status = 'USABLE'               # nothing flagged (benign fills and/or score < clean)
             band_grade.append(status)
             table += (f'\n{BODY_INDENT} {i+self.min_band:<4d} | {failed:^6d} | {degen:^5d} | '
-                      f'{benign:^6d} | {suspect:^4d} | {silent:^6d} | {score:>5.2f} | {status}')
+                      f'{benign:^6d} | {suspect:^4d} | {silent:^6d} | {cliff:^5d} | {dpbrk:^5d} | '
+                      f'{score:>5.2f} | {status}')
             if status in ('FAIL', 'CHECK'):
-                bands_attention.append((i, failed, degen, benign, suspect, silent, status))
+                bands_attention.append((i, failed, degen, benign, suspect, silent, cliff, dpbrk, status))
         table += '\n'
         self.final_report += table
 
@@ -5221,7 +5697,7 @@ class MATERIAL:
         ###########################################################################
         if bands_attention:
             self.final_report += f'\n{BODY_INDENT}Bands needing attention:'
-            for i, failed, degen, benign, suspect, silent, status in bands_attention:
+            for i, failed, degen, benign, suspect, silent, cliff, dpbrk, status in bands_attention:
                 reasons = []
                 if failed > 0:
                     reasons.append(f'{failed} failed (energy discontinuity / low overlap)')
@@ -5229,6 +5705,10 @@ class MATERIAL:
                     reasons.append(f'{suspect} of {benign+suspect} force-fill(s) across a real energy gap')
                 if silent > 0:
                     reasons.append(f'{silent} silent cliff(s) (validated cells on a jump > accept_E)')
+                if cliff > 0:
+                    reasons.append(f'{cliff} sub-gate cliff edge(s) (raw-band switch above the local continuity gate)')
+                if dpbrk > 0:
+                    reasons.append(f'{dpbrk} dp-broken seam edge(s) (raw-band switch against a certain dp link)')
                 reason = ' + '.join(reasons) if reasons else f'score {self.final_score[i]:.2f}'
                 verdict = 'NOT usable' if status == 'FAIL' else 'verify before use'
                 self.final_report += (f'\n{BODY_INDENT}  Band {i+self.min_band:>3d} : {reason} - {verdict}')
@@ -5596,9 +6076,11 @@ class MATERIAL:
         ###########################################################################
         # Structural + wavefunction-evidence passes. First relocate whole
         # mis-slotted patches -- tier 1 seeded on the SILENT cliffs (gross
-        # energy jumps), tier 2 seeded on dp-refuted seams whose energy step
-        # hides below the gate (both two-sided, internally perfect, validated:
-        # the one defect class the cell-level passes below cannot arbitrate;
+        # energy jumps), tier 1b the SUB-gate cliffs seeded on the same collision
+        # measured at the local band gap (see _relocate_cliff_patches), tier 2
+        # seeded on dp-refuted seams whose energy step hides below the gate (all
+        # two-sided, internally perfect, validated: the one defect class the
+        # cell-level passes below cannot arbitrate;
         # see _relocate_patches) -- then place the seams of the refuted
         # regions the greedy flood refuses at their exact optimum (min-cut,
         # see _mincut_seam_relocate) -- then relocate the near-degenerate
@@ -5611,19 +6093,40 @@ class MATERIAL:
         # report cannot call a silently swapped band clean.
         ###########################################################################
         self._log_refuted_census('post correct_signal')
-        self._relocate_wall_patches()
-        self._log_refuted_census('post wall relocation')
-        self._relocate_dp_seam_patches()
-        self._log_refuted_census('post dp-seam relocation')
-        self._mincut_seam_relocate()
-        self._log_refuted_census('post min-cut placement')
-        self._relocate_degenerate_patches()
-        self._log_refuted_census('post degenerate relocation')
-        self._repair_certain_links()
-        self._log_refuted_census('post certain-link repair')
+        # The relocation/repair passes each have monotone acceptance, but they are
+        # sensitive to their STARTING canvas: applied once to the raw in-loop
+        # canvas (frontier-collision seams everywhere) they settle in a far worse
+        # optimum than when re-applied to their own, cleaner output. A second
+        # sweep from the cleaner canvas escapes that local optimum -- on
+        # phosphorene the refuted census drops 176 -> 95 on the re-sweep (band 15
+        # heals) and then converges. Iterate the sweep until the combined seam
+        # census (refuted + cliffs + walls) stops decreasing; each pass is
+        # monotone and the census is a non-negative integer, so this terminates.
+        def _seam_census():
+            return (len(self._dp_refuted_seam_edges())
+                    + len(self._cliff_seam_edges()) + len(self._slot_wall_edges()))
+
+        MAX_SWEEPS = 8
+        prev_census = None
+        for _sweep in range(MAX_SWEEPS):
+            self._relocate_wall_patches()
+            self._relocate_cliff_patches()
+            self._relocate_dp_seam_patches()
+            self._mincut_seam_relocate()
+            self._relocate_degenerate_patches()
+            self._repair_dp_cycles()
+            self._repair_certain_links()
+            census = _seam_census()
+            self._log_refuted_census(f'post relocation sweep {_sweep + 1}')
+            if prev_census is not None and census >= prev_census:
+                break
+            prev_census = census
         self._repair_dp_swaps()
         self._flag_dp_unsupported()
         self._log_refuted_census('final')
+        self._verify_no_cliffs()
+        self._handoff_dp_residue_to_rotation()
+        self._verify_no_dp_cycles()
 
         self.logger.info(self.report())
 
