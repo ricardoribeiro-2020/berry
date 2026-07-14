@@ -202,64 +202,44 @@ def _tile_gradient(pos_tile: np.ndarray, kshape) -> np.ndarray:
     return gra
 
 
-def _broken_kpoint_masks(bands, tau: float, logger):
-    """Per-band k-mesh masks of the wavefunction-discontinuity points.
+def _broken_kpoint_masks(bands, enabled: bool, logger):
+    """Per-band k-mesh masks of the wavefunction-discontinuity points to regularize.
 
-    At a mislabelled/near-degenerate-crossing seam the band assignment switches
-    to a near-orthogonal state between neighbouring k-points, so the central
-    finite-difference gradient (u(k+1) - u(k-1))/2h jumps by O(1) instead of
-    O(h): the Berry connection/curvature spikes ~1/h there (a lattice image of
-    a divergence). These points are a tiny, isolated minority (phosphorene bands
-    11/12: ~2.4% of k; clean bands: ~0%), yet a divergent integrand can dominate
-    a BZ sum, so they are flagged here and interpolated over before the geometry
-    files are written (see docs/berry_geometry_seam_regularization.md).
+    At a mislabelled seam the band assignment switches to a near-orthogonal state
+    between neighbouring k-points, so the central finite-difference gradient
+    (u(k+1) - u(k-1))/2h jumps by O(1) instead of O(h): the Berry
+    connection/curvature spikes ~1/h there (a lattice image of a divergence).
+    These points are a tiny, isolated minority, yet a divergent integrand can
+    dominate a BZ sum, so they are interpolated over before the geometry files
+    are written (see docs/berry_geometry_seam_regularization.md).
 
-    A k-point is flagged for band ``a`` when the ASSIGNED band's overlap to some
-    mesh neighbour falls below ``tau`` (both endpoints of the broken edge are
-    flagged -- each one's stencil reaches across it). The overlap is read from
-    ``dp.npy`` (|<u_a(k)|u_b(kn)>|, the modulus the clustering already stores),
-    band ``a`` mapping to column ``a`` of ``bandsfinal.npy`` (the same index the
-    wfcpos{a} files use). Returns ``{band: mask}`` with each mask of shape
-    ``_kshape()``; an empty dict (with a warning) if the inputs are unavailable.
+    The set of points is NOT recomputed here -- it is exactly the one the
+    clustering signals: the endpoints of its dp-broken seam edges (the report's
+    dpBrk column) on non-FAIL bands, written by the solve as ``dp_interp_mask.npy``
+    (shape ``(nks, nslots)``, column ``a`` = band ``a``, the same index the
+    wfcpos{a} files use; see MATERIAL.dp_interp_mask). Returns ``{band: mask}``
+    with each mask of shape ``_kshape()``; an empty dict (with a warning) if the
+    mask file is missing -- e.g. a run whose clustering predates this output, in
+    which case re-run the clustering step to regenerate it.
     """
-    if tau is None or tau <= 0:
+    if not enabled:
         return {}
     try:
-        dp = np.load(os.path.join(m.data_dir, "dp.npy"), mmap_mode="r")   # (nks,ndir,nbnd,nbnd)
-        bf = np.load(os.path.join(m.data_dir, "bandsfinal.npy"))          # (nks,nslots)
-        neigh = np.asarray(d.neighbors)                                   # (nks,ndir)
+        flag = np.load(os.path.join(m.data_dir, "dp_interp_mask.npy"))    # (nks,nslots) bool
         nktoijl = np.asarray(d.nktoijl)                                   # (nks,>=dim)
     except Exception as exc:
-        logger.warning(f"\tSeam regularization skipped (missing dp.npy/bandsfinal.npy/"
-                       f"neighbors/nktoijl: {exc})")
+        logger.warning(f"\tSeam regularization skipped (missing dp_interp_mask.npy -- "
+                       f"re-run the clustering step to regenerate it: {exc})")
         return {}
-    nks = bf.shape[0]
-    ndir = neigh.shape[1]
+    nks = flag.shape[0]
     kshape = _kshape()
     dim = len(kshape)
     masks = {}
     total_flagged = 0
     for a in bands:
-        if a >= bf.shape[1]:
+        if a >= flag.shape[1]:
             continue
-        ba = bf[:, a]
-        broken = np.zeros(nks, bool)
-        for dd in range(ndir):
-            kn = neigh[:, dd]
-            ok = (kn >= 0) & (ba >= 0)
-            kk = np.where(ok)[0]
-            if kk.size == 0:
-                continue
-            knn = kn[kk]
-            b1 = ba[kk]
-            b2 = bf[knn, a]
-            good = b2 >= 0
-            kk, knn, b1, b2 = kk[good], knn[good], b1[good], b2[good]
-            mag = np.abs(dp[kk, dd, b1, b2])
-            low = mag < tau
-            broken[kk[low]] = True
-            broken[knn[low]] = True          # both endpoints: central stencil reaches across
-        idx = np.where(broken)[0]
+        idx = np.where(flag[:, a])[0]
         mask = np.zeros(kshape, bool)
         if idx.size:
             ijl = nktoijl[idx]
@@ -272,10 +252,10 @@ def _broken_kpoint_masks(bands, tau: float, logger):
         masks[a] = mask
         total_flagged += int(mask.sum())
         if mask.any():
-            logger.info(f"\t  band {a}: {int(mask.sum())} seam k-point(s) "
+            logger.info(f"\t  band {a}: {int(mask.sum())} dp-broken seam k-point(s) "
                         f"({100 * mask.sum() / nks:.2f}%) flagged for regularization")
-    logger.info(f"\tSeam regularization (tau={tau}): {total_flagged} (band, k) cell(s) "
-                f"flagged across bands {bands[0]}-{bands[-1]}")
+    logger.info(f"\tSeam regularization: {total_flagged} signalled (band, k) cell(s) "
+                f"interpolated across bands {bands[0]}-{bands[-1]}")
     return masks
 
 
@@ -317,14 +297,14 @@ def _inpaint_periodic(arr: np.ndarray, mask: np.ndarray, max_iter: int = 16) -> 
 
 def _stream_connection_curvature(bands, do_conn: bool, do_curv: bool,
                                  mem_gb: float, logger,
-                                 regularize_tau: float = 0.05) -> None:
+                                 regularize: bool = True) -> None:
     """One pass over the wfcpos files; writes all berryConn / berryCur pairs.
 
-    ``regularize_tau`` > 0 flags wavefunction-discontinuity ("seam") k-points --
-    where the finite-difference gradient, and hence the connection/curvature,
-    spikes -- and interpolates over them before writing (see
-    ``_broken_kpoint_masks`` / docs/berry_geometry_seam_regularization.md). Set
-    to 0 to disable.
+    ``regularize`` interpolates the connection/curvature over the
+    clustering-signalled dp-broken seam k-points (``dp_interp_mask.npy``) before
+    writing -- the wavefunction-discontinuity points where the finite-difference
+    gradient spikes (see ``_broken_kpoint_masks`` /
+    docs/berry_geometry_seam_regularization.md). Set to ``False`` to disable.
     """
     N = len(bands)
     kshape = _kshape()
@@ -365,12 +345,11 @@ def _stream_connection_curvature(bands, do_conn: bool, do_curv: bool,
     stream.close()
     logger.info(f"\tstreaming pass finished: {t_read:.1f}s reading, {t_comp:.1f}s computing")
 
-    # Seam regularization: a (band, k) cell whose assigned wavefunction is
-    # discontinuous to a neighbour spikes the FD gradient. Flag those k-points
-    # per band and interpolate over them below; a pair (a, b) is regularized at
-    # every k where EITHER band is broken (both are differentiated in the
-    # curvature, and grad u_b spikes the connection A_ab).
-    masks = _broken_kpoint_masks(bands, regularize_tau, logger) if (do_conn or do_curv) else {}
+    # Seam regularization: the clustering-signalled dp-broken seam k-points
+    # (dp_interp_mask.npy) spike the FD gradient. Interpolate over them below;
+    # a pair (a, b) is regularized at every k where EITHER band is broken (both
+    # are differentiated in the curvature, and grad u_b spikes the connection A_ab).
+    masks = _broken_kpoint_masks(bands, regularize, logger) if (do_conn or do_curv) else {}
 
     def _pair_mask(a, b):
         ma = masks.get(bands[a]); mb = masks.get(bands[b])
@@ -569,7 +548,7 @@ def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
     return bcr
 
 
-def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Literal["curv", "conn", "both", "chern", "chern_curl", "chern_bp", "chern_bp_bz"] = "both", digits: int = 0, mem_gb: float = 32.0, regularize_tau: float = 0.05, logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
+def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Literal["curv", "conn", "both", "chern", "chern_curl", "chern_bp", "chern_bp_bz"] = "both", digits: int = 0, mem_gb: float = 32.0, regularize: bool = True, logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
     global chern_num, logger
     logger = log(logger_name, "BERRY GEOMETRY", level=logger_level, flush=flush)
 
@@ -593,8 +572,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Lit
     logger.info(f"\tMaximum band: {max_band}")
     logger.info(f"\tNumber of threads: {npr}")
     logger.info(f"\tMemory budget: {mem_gb} GB")
-    logger.info(f"\tSeam regularization tau: {regularize_tau}"
-                f"{' (disabled)' if not regularize_tau or regularize_tau <= 0 else ''}\n")
+    logger.info(f"\tSeam regularization: {'on (dp-broken seams)' if regularize else 'off'}\n")
     logger.info(f"\t{m.dimensions} dimensions calculation.\n")
 
     ###########################################################################
@@ -615,7 +593,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Lit
         start = time()
         with threadpool_limits(limits=npr):
             _stream_connection_curvature(bands, do_conn, do_curv, mem_gb, logger,
-                                         regularize_tau=regularize_tau)
+                                         regularize=regularize)
         logger.info(f"\tconnection/curvature pass took {time() - start:.2f} seconds")
 
     def _log_chern_numbers(values):

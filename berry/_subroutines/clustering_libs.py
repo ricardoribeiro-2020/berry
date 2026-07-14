@@ -4353,6 +4353,41 @@ class MATERIAL:
         out.sort()
         return out
 
+    def dp_interp_mask(self) -> np.ndarray:
+        '''
+        ``(nks, nslots)`` boolean mask of the k-points the Berry-geometry pass
+        should interpolate over: the endpoints of every dp-broken seam edge
+        (``_dp_refuted_seam_edges`` -- the report's dpBrk column) on a band that
+        is NOT graded FAIL. These are exactly the wavefunction-discontinuity
+        points the clustering signals; at each the assigned band switches to a
+        near-orthogonal state, so the central finite-difference gradient feeding
+        the connection/curvature spikes ~1/h. Both endpoints are flagged (each
+        one's stencil reaches across the broken edge).
+
+        FAIL-graded bands are excluded outright -- their attribution is not
+        trustworthy anywhere, so patching a few seam cells is meaningless. The
+        grade is read from ``self.band_grade`` (populated by ``report()``); if
+        that is unavailable, a slot is treated as FAIL when it carries any
+        genuine energy break (NOT_SOLVED / MISTAKE) in ``correct_signalfinal``.
+        Cliff edges and the loose |dp|<tau scan are deliberately NOT included:
+        only the signalled dp-broken seams, no more.
+        '''
+        nks, nslots = self.bands_final.shape
+        grade = getattr(self, 'band_grade', None)
+        if grade is not None:
+            fail = {s for s in range(nslots) if s < len(grade) and grade[s] == 'FAIL'}
+        else:
+            csf = self.correct_signalfinal
+            fail = {s for s in range(nslots)
+                    if bool(np.any((csf[:, s] == NOT_SOLVED) | (csf[:, s] == MISTAKE)))}
+        mask = np.zeros((nks, nslots), bool)
+        for _dp, k, kn, s in self._dp_refuted_seam_edges():
+            if s in fail:
+                continue
+            mask[k, s] = True
+            mask[kn, s] = True
+        return mask
+
     def _degenerate_seam_edges(self) -> list:
         '''
         The near-degenerate counterpart of ``_dp_refuted_seam_edges``: every
@@ -5690,6 +5725,10 @@ class MATERIAL:
             if status in ('FAIL', 'CHECK'):
                 bands_attention.append((i, failed, degen, benign, suspect, silent, cliff, dpbrk, status))
         table += '\n'
+        # Expose the per-band grade (indexed by slot) so downstream consumers --
+        # e.g. dp_interp_mask(), which must drop FAIL bands -- can read it without
+        # re-parsing the report string.
+        self.band_grade = band_grade
         self.final_report += table
 
         ###########################################################################
