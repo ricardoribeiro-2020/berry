@@ -177,7 +177,7 @@ def _extrap_weights(offsets: tuple) -> np.ndarray:
 # residual buckets are counts of |E_pred - E_neighbour| / disp_scale falling in
 # fixed ranges, so the distribution shape is mergeable too. _FE_DEBUG gates the
 # accumulation so a production run pays nothing when it is off.
-_FE_DEBUG: bool = True
+_FE_DEBUG: bool = False
 _FE_RESID_EDGES = (0.5, 1.0, 2.0, 5.0)      # residual / disp_scale bucket edges
 
 def _fe_stats_new() -> dict:
@@ -364,6 +364,7 @@ def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
             3     :  POTENTIAL_MISTAKE     C <= 0.8
             4     :  POTENTIAL_CORRECT     0.8 < C < 0.9
             5     :  CORRECT               C > 0.9
+            6     :  FORCED                (assigned by the completeness pass, not here)
     '''
 
     TOL = 0.9       # Tolerance for CORRECT output
@@ -378,13 +379,13 @@ def evaluate_result(values: Union[list[Connection], np.ndarray]) -> int:
     if value > TOL_DEG:
         return POTENTIAL_CORRECT
 
-    if value > TOL_MIN and value < TOL_DEG:
+    if value > TOL_MIN:
         return POTENTIAL_MISTAKE
 
     return MISTAKE
 
 def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_matrix: np.ndarray,
-                   signal: np.ndarray, bands: np.ndarray, energies: np.ndarray,
+                   bands: np.ndarray, energies: np.ndarray,
                    accept_E: float = None, disp_scale: float = None,
                    local_gap: np.ndarray = None, band_disp: np.ndarray = None) -> Tuple[int, list[int]]:
     '''
@@ -400,10 +401,8 @@ def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_ma
         k_index: array_like
             An array that contains the indices of each k point on the k-space matrix.
         k_matrix: array_like
-            An array with the shape of the k-space. 
+            An array with the shape of the k-space.
             It contains the value of each k point in their corresponding position.
-        signal: array_like
-            An array with the current signal value for each k point.
         bands: array_like
             An array with the information of current solution of band clustering.
         energies: array_like
@@ -452,7 +451,6 @@ def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_ma
         # silently read the LAST band). Grade it a mistake with no continuous
         # direction, matching the guard in _extrapolate_energy.
         return MISTAKE, np.zeros(N_NEIGS, dtype=int)
-    sig = signal[k, bn]             # signal
 
     if dimension == 1:
         ik = k_index[k]             # k point index on k-space
@@ -1863,13 +1861,12 @@ class MATERIAL:
                 N = []
                 for n1 in N1:
                     n2_idx = np.where(N2 % NKS == n1 % NKS)
-                    if len(n2_idx) == 0 or len(n2_idx[0]) == 0:
+                    if len(n2_idx[0]) == 0:
                         continue
                     n2 = N2[n2_idx[0][0]]
                     N.append([n1, n2])
                 if len(N) == 0:
                     continue
-                flag = False
             else:
                 if len(N1) == len(N2):
                     N = list(zip(N1, N2))
@@ -1878,7 +1875,7 @@ class MATERIAL:
                     N_1 = Ns[np.argmin([len(N1), len(N2)])]
                     N_2 = Ns[np.argmax([len(N1), len(N2)])]
                     n2_idx = np.where(N_2 % NKS == N_1[0] % NKS)
-                    if len(n2_idx) == 0 or len(n2_idx[0]) == 0:
+                    if len(n2_idx[0]) == 0:
                         continue
                     n2_index = n2_idx[0][0]
                     N = [[N_1[0], N_2[n2_index]]] \
@@ -2461,7 +2458,7 @@ class MATERIAL:
             if not compute_communities or np.abs(10 - len(clusters) * len(samples)) < 10:
                 break
 
-            if total_bands_computed == self.nbnd and len(self.solved) >= 0 and N_g_nks == 0:
+            if total_bands_computed == self.nbnd and N_g_nks == 0:
                 break
 
             if len(clusters) * len(samples) and (best_iteration is None or np.abs(self.nbnd - total_bands_computed) < best_score and len(self.solved) > max_solved and N_g_nks < N_g_nks_prev):
@@ -2506,10 +2503,6 @@ class MATERIAL:
                     if not cluster.validate(sample):
                         # If this sample can not join the cluster, the score is 0
                         continue
-                    if len(sample.k_edges) == 0:
-                        # Compute the edges
-                        sample.calculate_pointsMatrix()
-                        sample.calc_boundary()
                     scores[j_s] = sample.get_cluster_score(cluster,
                                                            self.neighbors,
                                                            self.ENERGIES,
@@ -2538,8 +2531,7 @@ class MATERIAL:
                 self.logger.debug(f'Size samples: {samples[0].N}')
                 self.logger.debug(f'Number solved: {len(self.solved)}')
                 break
-        
-            #self.n_process = 10 # min(self.n_process, len(samples))
+
             evaluate_samples_result = self.parallelize('\t\tClustering Samples', evaluate_sample, range(len(samples)), per_actual=count[0], N_total=count[1])
             count[0] += len(samples)
             for i_s, res, sample_scores in evaluate_samples_result:
@@ -2617,7 +2609,7 @@ class MATERIAL:
 
         self.clusters : list[COMPONENT] = clusters
 
-    def obtain_output(self, last=False) -> None:
+    def obtain_output(self) -> None:
         '''
         This function prepares the final data structures
         that are essential to other programs.
@@ -2820,6 +2812,11 @@ class MATERIAL:
                 continue
             bn1 = self.bands_final[k1, bn1]                                 # K-point's band
             bn2 = self.bands_final[k2, bn2]                                 # K-point's band
+            if bn1 < 0 or bn2 < 0:
+                # Unattributed slot: no dp evidence to test (connections[..., -1, ...]
+                # would silently read the LAST band) and a [k, -1, b] row must never
+                # reach degeneratefinal.npy. The DEGENERATE signal above stands.
+                continue
             dps = self.connections[k1, i_neigs, bn1, bn2]        # Dot-product between the k-point and their neighbors
             if np.any(np.logical_and(dps >= 0.5, dps <= 0.8)):
                 # It is considered degenerate if the k-point has some 
@@ -2828,10 +2825,7 @@ class MATERIAL:
 
 
 
-        # Otherwise, the program continues to the next step. Here it finds the degenerate points
-        k_basis_rotation : list[Tuple[Kpoint, Kpoint, Band, list[Band]]] = []           # Storage pairs of points that are degenerates by dot product 0.5 < <i|j> < 0.8
         for bn in range(self.total_bands):
-            # Search these degenerate points on each band
             # Calculating the score of the result
             score = 0
             for k in range(self.nks):
@@ -2854,107 +2848,10 @@ class MATERIAL:
                 k = np.repeat(k, len(kneigs))                                               # Array with the same k-point
                 bn_k = np.repeat(bn_k, len(kneigs))                                         # Array with the same K-point's band
                 dps = self.connections[k, i_neigs, bn_k, bn_neighs]                         # The array with the dot-product between the k-point and their neighbors
-                if np.any(np.logical_and(dps >= 0.5, dps <= 0.8)):
-                    # It is considered degenerate if the k-point has some 
-                    # neighbor's dot-product between 0.5 and 0.8
-                    dps_deg = self.connections[k, i_neigs, bn_k]                                # All k-point dot-products
-                    k = k[0]                                                                    # K-point
-                    i_deg, bn_deg = np.where(np.logical_and(dps_deg >= 0.5, dps_deg <= 0.8))    # Find where the k-point dot-product is considered degenerate
-                    k_deg = self.neighbors[k][i_deg + np.min(i_neigs)]                            # Identify the degenerate neighbors
-                    i_sort = np.argsort(k_deg)                                                  # Sort the degenerate neighbors
-                    k_deg = k_deg[i_sort]                                                       # Sort the degenerate neighbors
-                    bn_deg = bn_deg[i_sort]                                                     # Sort the degenerate bands    
-                    k_unique, index_unique = np.unique(k_deg, return_index=True)                # Identify unique neighbors
-                    bn_unique = np.split(bn_deg, index_unique[1:])                              # Classify the bands by unique neighbor
-                    len_bn = np.array([len(k_len) for k_len in bn_unique])                      # Look how many bands have each neighbor
-                    if np.any(len_bn > 1):
-                        # If for some neighbor exist more than one unique band,
-                        # the k-point is degenerate
-                        i_deg = np.where(len_bn > 1)[0]                                             # Obtain the neighbors
-                        k_deg = k_unique[i_deg]                                                     # Obtain the neighbors
-                        bns_deg = [bn_unique[j_deg] for j_deg in i_deg]                             # Get the unique bands
-                        k_basis_rotation.append([k, k_deg, bn, bns_deg])                            # Append the information of the degenerate k-point
                 score += np.mean(dps)                                                       # Update the band score
             score /= self.nks                                                               # Compute the mean socore
             self.final_score[bn] = score                                                    # Storage the band score
 
-        if not last:
-            # If it is not the last iteration, the program ends here (the pair
-            # matching below is only consumed by the last-iteration grouping,
-            # so its O(n^2) scan is skipped on every in-loop call).
-            self.degenerate_final = np.array(self.degenerate_final)
-            return
-
-        degenerates = []
-        for i, (k, k_deg, bn, bns_deg) in enumerate(k_basis_rotation[:-1]):
-            # For each possible degenerate point have to exist a pair
-            for k_, k_deg_, bn_, bns_deg_ in k_basis_rotation[i+1:]:
-                # Comparison between each possible degenerate point.
-                k_deg = np.array(k_deg)
-                k_deg_ = np.array(k_deg_)
-                if k != k_ or k_deg.shape != k_deg_.shape or not np.all(k_deg == k_deg_):
-                    # The k_ point is not the k's pair
-                    continue
-                if not np.all([np.all(np.isin(bns, bns_deg_[j])) for j, bns in enumerate(bns_deg)]):
-                    # If they do not belong to the same bands, The k_ point is not the k's pair
-                    continue
-                degenerates.append([k, bn, bn_])
-
-        analyzed = []                                                            # K-points analyzed
-        for i, (k, bn, bn_) in enumerate(degenerates):
-            # For each possible degenerate point stored inside k_basis_rotation.
-            # There are only a few that are true degenerates; the other ones are their neighbors
-            if i in analyzed:
-                # The degenerates[i] point was already analyzed
-                continue
-            analyzed.append(i)
-            # It is necessary to search group of points that are degenerate
-            # These points are stored in same_group
-            same_group = [[k, bn, bn_]]
-            for j, (k_, bn0, bn1) in enumerate(degenerates[i+1:]):
-                # Comparison between each possible pair of degenerate point.
-
-                if not np.all(np.isin([bn, bn_], [bn0, bn1])):
-                    # If they do not belong to the same bands, the analysis can not be done
-                    continue
-
-                ik =  self.kpoints_index[k, 0] if self.dimensions > 1 else self.kpoints_index[k]       # Obtain the matrix indices of k-space projection (k-point)
-                ik_ = self.kpoints_index[k_, 0] if self.dimensions > 1 else self.kpoints_index[k_]     # Obtain the matrix indices of k-space projection (k_-point)
-
-                idif = np.abs(ik - ik_)                                                                 # Manhattan distance i axes
-
-                if idif > 1:
-                    # If the total Manhattan distance is more than 2,
-                    # the analysis can not be done
-                    continue
-
-                if self.dimensions >= 2:
-                    jk = self.kpoints_index[k, 1]                                                       # Obtain the matrix indices of k-space projection (k-point)
-                    jk_ = self.kpoints_index[k_, 1]                                                     # Obtain the matrix indices of k-space projection (k_-point)
-                    jdif = np.abs(jk - jk_)                                                             # Manhattan distance j axes
-                    if jdif > 1:
-                        # If the total Manhattan distance is more than 2,
-                        # the analysis can not be done
-                        continue
-                
-                if self.dimensions == 3:
-                    kk = self.kpoints_index[k, 2]                                                       # Obtain the matrix indices of k-space projection (k-point)
-                    kk_ = self.kpoints_index[k_, 2]                                                     # Obtain the matrix indices of k-space projection (k_-point)
-                    kdif = np.abs(kk - kk_)                                                             # Manhattan distance k axes
-                    if kdif > 1:
-                        # If the total Manhattan distance is more than 2,
-                        # the analysis can not be done
-                        continue
-
-                analyzed.append(j+i+1)                                                      # The point k_ was analyzed
-                same_group.append([k_, bn0, bn1])                                           # The k_-point belongs to the same group of k
-
-            same_group = np.array(same_group)
-            ks = same_group[:, 0]                                                           # K-points
-            neighs = self.neighbors[ks]                                                     # K-points' neighbors
-            points = [np.sum(neighs == k) for k in ks]                                      # How many points the k-point is neighbor?
-            self.degenerate_final.append(same_group[np.argmax(points)])                     # There is only one degenerate point
-        
         self.degenerate_final = np.array(self.degenerate_final)
     
     def print_report(self, signal_report: np.ndarray, description:str, show:bool=True, header_text:list=None) -> (str, np.ndarray):
@@ -3069,7 +2966,7 @@ class MATERIAL:
             chunk_result = []
             for k, bn in iterator:
                 signal, scores = evaluate_point(self.dimensions, k, bn, self.kpoints_index,
-                                                self.matrix, self.signal_final,
+                                                self.matrix,
                                                 self.bands_final, self.eigenvalues,
                                                 accept_E=self.accept_E, disp_scale=self.disp_scale,
                                                 local_gap=self.local_gap, band_disp=self.band_disp)  # Obtain the new signal
@@ -3106,12 +3003,6 @@ class MATERIAL:
         ###########################################################################
         k_error, bn_error = np.where(self.correct_signalfinal == MISTAKE)           # Identify Mistakes
         k_other, bn_other = np.where(self.correct_signalfinal == OTHER)             # Identify k-points with some discontinuity
-        if last:
-            for k, bn in zip(k_error, bn_error):
-                signal = self.correct_signalfinal[k, bn]                                       # The k-point's signal
-                if self.final_score[bn] > 0.96 and signal == MISTAKE:
-                    self.correct_signalfinal[k, bn] = OTHER
-                    self.signal_final[k, bn] = POTENTIAL_CORRECT
 
         ###########################################################################
         # Invalidate the canvas only where the attribution failed energy continuity
@@ -3138,6 +3029,18 @@ class MATERIAL:
         # row (best energy fit). Runs before the graph rebuild so the continuity
         # edges below are built from a duplicate-free canvas.
         self._enforce_bijection()
+
+        total_not_solved = np.sum(self.correct_signalfinal == NOT_SOLVED) + np.sum(self.correct_signalfinal == MISTAKE)
+        self.logger.info(f'\n{BODY_INDENT}Total not solved: ' + str(total_not_solved) + '\n')
+        self.total_not_solved = total_not_solved        # exposed so solve() can pace the alpha sweep by convergence
+
+        if last:
+            # Final pass: the graph rebuild below (continuity edges + error-region
+            # dot-product edges + connectivity guard) is consumed only by the NEXT
+            # get_components, which never runs after this -- skip the dead work and
+            # just verify the bijection invariant on what is shipped.
+            self._verify_no_duplicates()
+            return
 
         ks = np.concatenate((k_error, k_other))                                     # Join the k-points marked as a mistake or other signal
         bnds = np.concatenate((bn_error, bn_other))                                 # Join the k-points' bands
@@ -3168,11 +3071,7 @@ class MATERIAL:
 
         # Near-degenerate cells for the glue test below: inside a collapsed gap
         # (adjacent gap < degen_ethr) a vanishing overlap is gauge, not evidence.
-        _ethr = getattr(self, 'degen_ethr', 0.005)
-        _dE_close = np.diff(self.eigenvalues, axis=1) < _ethr
-        _close = np.zeros(self.eigenvalues.shape, bool)
-        _close[:, 1:] |= _dE_close
-        _close[:, :-1] |= _dE_close
+        _close = self._near_degenerate_mask()
 
         # Degenerate K-POINTS only (first column of the [k, bn1, bn2] triples):
         # a plain `kp in self.degenerate_final` would match kp against the BAND
@@ -3287,12 +3186,6 @@ class MATERIAL:
                                     if b_p < 0 or b_pn < 0:
                                         continue                                             # invalidated cell -> no continuity edge
                                     continuity_edge(kp, kneig, b_p, b_pn)                     # weight-1 ratchet edge unless glue (see continuity_edge)
-
-        self.correct_signalfinal_prev = np.copy(self.correct_signalfinal)                       # Save the currect result
-
-        total_not_solved = np.sum(self.correct_signalfinal == NOT_SOLVED) + np.sum(self.correct_signalfinal == MISTAKE)
-        self.logger.info(f'\n{BODY_INDENT}Total not solved: ' + str(total_not_solved) + '\n')
-        self.total_not_solved = total_not_solved        # exposed so solve() can pace the alpha sweep by convergence
 
         # Which k-points still carry an error in any band. A k-point is "bad" if any of
         # its slots failed the energy-continuity validation (NOT_SOLVED / MISTAKE / OTHER);
@@ -3665,8 +3558,11 @@ class MATERIAL:
                 # raw csf scale FORCED_CONTINUITY (5) would outrank CORRECT (4),
                 # letting a force-fill evict a validated cell -- remap it below
                 # everything validated (above MISTAKE only): a force-fill is not
-                # a genuine solve.
-                _rank = lambda c: sig[k, c] if sig[k, c] != FORCED_CONTINUITY else 1.5
+                # a genuine solve. In the LAST pass the completeness-pass cells
+                # still carry the raw dot-product-scale FORCED (6) here (they are
+                # excluded from re-evaluation and the FORCED_CONTINUITY stamp
+                # happens only after correct_signal returns), so remap that too.
+                _rank = lambda c: 1.5 if sig[k, c] in (FORCED_CONTINUITY, FORCED) else sig[k, c]
                 for v in dup_vals:
                     cs = where[v]
                     keep = max(cs, key=lambda c: (_rank(c), -self._slot_energy_penalty(k, c, v)))
@@ -3773,8 +3669,7 @@ class MATERIAL:
         under half of accept_E -- so locking sheets can never create a cliff.
 
         Returns ``sheet_id`` (nks, nbnd) int32, -1 for singleton states, and
-        caches: ``self.sheet_id``, ``self._sheet_members`` {sid: [state ids]},
-        ``self._sheet_glue`` [(a, b, 1.0), ...] (the kept links, for gluing).
+        caches ``self.sheet_id`` and ``self._sheet_members`` {sid: [state ids]}.
         The connections array is static input, so this is computed once.
         '''
         cached = getattr(self, 'sheet_id', None)
@@ -3836,7 +3731,7 @@ class MATERIAL:
         # already unkeepable). Consumed by the min-cut seam placement.
         self._sheet_refusals = set(frozenset(l) for l in refused_links)
 
-        # components -> sheet ids (size >= 2), glue = every kept (intra-sheet) link
+        # components -> sheet ids (size >= 2)
         roots: dict = {}
         for st in range(nks * nb):
             roots.setdefault(find(st), []).append(st)
@@ -3850,11 +3745,6 @@ class MATERIAL:
                 sheet_id[st % nks, st // nks] = sid
             self._sheet_members[sid] = mem
             sid += 1
-        glue = set()
-        for _, a, c in links:
-            if find(a) == find(c):
-                glue.add((a, c) if a < c else (c, a))
-        self._sheet_glue = [(a, c, 1.0) for a, c in glue]
         self.sheet_id = sheet_id
 
         sizes = sorted((len(m) for m in self._sheet_members.values()), reverse=True)
@@ -4002,11 +3892,7 @@ class MATERIAL:
                 rev[ok[back], d] = dr
 
         # near-degenerate (k, band) cells: exempt (gauge territory)
-        ethr = getattr(self, 'degen_ethr', 0.005)
-        dE_close = np.diff(self.eigenvalues, axis=1) < ethr
-        close = np.zeros(self.eigenvalues.shape, bool)
-        close[:, 1:] |= dE_close
-        close[:, :-1] |= dE_close
+        close = self._near_degenerate_mask()
 
         changed_cells: list = []
         frozen: set = set()                                          # cells changed once stay put
@@ -4210,7 +4096,7 @@ class MATERIAL:
                 self.correct_signalfinal[k, s] = NOT_SOLVED
                 continue
             sig, _ = evaluate_point(self.dimensions, k, s, self.kpoints_index,
-                                    self.matrix, self.signal_final, bf, self.eigenvalues,
+                                    self.matrix, bf, self.eigenvalues,
                                     accept_E=self.accept_E, disp_scale=self.disp_scale,
                                     local_gap=self.local_gap, band_disp=self.band_disp)
             self.correct_signalfinal[k, s] = sig
@@ -4633,7 +4519,7 @@ class MATERIAL:
                 self.correct_signalfinal[k, s] = NOT_SOLVED
                 continue
             sig, _ = evaluate_point(self.dimensions, k, s, self.kpoints_index,
-                                    self.matrix, self.signal_final, bf, self.eigenvalues,
+                                    self.matrix, bf, self.eigenvalues,
                                     accept_E=self.accept_E, disp_scale=self.disp_scale,
                                     local_gap=self.local_gap, band_disp=self.band_disp)
             self.correct_signalfinal[k, s] = sig
@@ -5444,7 +5330,7 @@ class MATERIAL:
             if self.signal_final[k, s] == DEGENERATE:
                 continue
             sig, _ = evaluate_point(self.dimensions, k, s, self.kpoints_index,
-                                    self.matrix, self.signal_final, bf, self.eigenvalues,
+                                    self.matrix, bf, self.eigenvalues,
                                     accept_E=self.accept_E, disp_scale=self.disp_scale,
                                     local_gap=self.local_gap, band_disp=self.band_disp)
             if sig != self.correct_signalfinal[k, s]:
@@ -5477,11 +5363,7 @@ class MATERIAL:
         CORRECT_C = 4                                               # energy-continuity scale
         bf = self.bands_final
         sup, tot = self._dp_support_counts()
-        ethr = getattr(self, 'degen_ethr', 0.005)
-        close = np.zeros(self.eigenvalues.shape, bool)              # (k, band) near-degenerate w/ a neighbour band
-        dE = np.diff(self.eigenvalues, axis=1) < ethr
-        close[:, 1:] |= dE
-        close[:, :-1] |= dE
+        close = self._near_degenerate_mask()                        # (k, band) near-degenerate w/ a neighbour band
         att = bf >= 0
         in_degen = np.zeros(bf.shape, bool)
         in_degen[att] = close[np.where(att)[0], bf[att]]
@@ -5571,8 +5453,6 @@ class MATERIAL:
             # benign_ks): benign in-doublet force-fills do not count against the
             # band and are excluded from its score.
             ncols = self.bands_final.shape[1]
-            if i >= ncols:
-                return 0, np.empty(0, dtype=int)
             ks = np.where(self.correct_signalfinal[:, i] == FORCED_CONTINUITY)[0]
             suspect = 0
             benign_ks = []
@@ -5602,9 +5482,6 @@ class MATERIAL:
             # averages over comparable points only (not over nks, which counted
             # force-filled/unattributed points as zeros). Falls back to the
             # in-loop score if the slot has no comparable points left.
-            ncols = self.bands_final.shape[1]
-            if i >= ncols:
-                return self.final_score[i]
             benign = np.zeros(self.nks, dtype=bool)
             benign[benign_ks] = True
             all_neigs = np.arange(self.number_neighbors)
@@ -5911,9 +5788,7 @@ class MATERIAL:
         # only stop if the result happened to stabilise — otherwise it spins forever (H2).
         if step <= 0:
             raise ValueError(f"solve() requires step > 0 to converge (the alpha sweep would never advance); got step={step}.")
-        self.step = step
         self.alpha = alpha # The initial alpha is 1.0: alpha*<i|j> + (1-alpha)*f(E)
-        self.init_alpha = alpha
         COUNT = 0     # Counter iteration
         self.final_report = ''
         self.bands_final_prev = np.copy(self.bands_final)
@@ -5921,7 +5796,6 @@ class MATERIAL:
         self.best_score = np.zeros(self.total_bands, dtype=float)
         self.final_score = np.zeros(self.total_bands, dtype=float)
         self.signal_final = np.zeros((self.nks, self.total_bands), dtype=int)
-        self.correct_signalfinal_prev = np.full(self.signal_final.shape, -1, int)
         self.correct_signalfinal_best = np.full(self.signal_final.shape, -1, int)
         self.degenerate_best = None
         max_solved = 0  # The maximum number of solved bands
@@ -6088,7 +5962,6 @@ class MATERIAL:
         self.final_score = np.copy(self.best_score)
         self.degenerate_final = np.copy(self.degenerate_best)
         self.signal_final = np.copy(self.best_signal_final)
-        self.max_solved = max_solved
 
         # Snapshot the in-loop best (bands + validation) BEFORE the post-loop passes
         # run, so the verbose provenance log can tell genuine in-loop solves apart from
