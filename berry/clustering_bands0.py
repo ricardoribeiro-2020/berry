@@ -11,11 +11,15 @@ from berry._subroutines.clustering_libs import MATERIAL
 try:
     import berry._subroutines.loaddata as d
     import berry._subroutines.loadmeta as m
-except:
+except ImportError:
     pass
 
 
 def run_clustering(max_band: int, tol: float = 0.80, alpha : float = 1.0, step : float = 0.5, npr: int = 1, logger_name: str = "cluster", logger_level: int = logging.INFO, flush: bool = False):
+    if "m" not in globals() or "d" not in globals():
+        raise SystemExit("berry data not found -- run inside a preprocessed working directory "
+                         "(the data/ metadata could not be imported).")
+
     logger = log(logger_name, "CLUSTER", level=logger_level, flush=flush)
 
     logger.header()
@@ -23,7 +27,6 @@ def run_clustering(max_band: int, tol: float = 0.80, alpha : float = 1.0, step :
     ###########################################################################
     # 1. DEFINING THE CONSTANTS
     ###########################################################################
-    OUTPUT_PATH = ''
     max_band = max_band if max_band != -1 else m.final_band
     # The minimum band is fixed by the preprocessing cutoff: every band-indexed
     # file downstream of preprocessing (wfc files, dp.npy) starts at
@@ -32,11 +35,7 @@ def run_clustering(max_band: int, tol: float = 0.80, alpha : float = 1.0, step :
 
     ###########################################################################
     # 2. STDOUT THE PARAMETERS
-    ########################################################################### 
-    if OUTPUT_PATH != "" and not os.path.exists(OUTPUT_PATH):
-        os.mkdir(OUTPUT_PATH)
-        logger.warning(f'The {OUTPUT_PATH} was created.')
-
+    ###########################################################################
     logger.info(f'\tMin band: {min_band}    Max band: {max_band}')
     logger.info(f'\tTolerance: {tol}')
     logger.info(f'\tNumber of CPUs: {npr}\n')
@@ -59,10 +58,11 @@ def run_clustering(max_band: int, tol: float = 0.80, alpha : float = 1.0, step :
     ########################################################################### 
 
     material = MATERIAL(m.dimensions, [m.nkx, m.nky, m.nkz], m.nbnd, m.nks, d.eigenvalues,
-                        connections, d.neighbors, logger, min_band, n_process=npr)
+                        connections, d.neighbors, logger, min_band,
+                        max_band=max_band, n_process=npr)
 
     logger.info('\tCalculating Vectors')
-    material.make_vectors(min_band=min_band, max_band=max_band)
+    material.make_vectors()
 
     logger.info('\n\tCalculating Connections')
     material.make_connections(tol=tol)
@@ -101,6 +101,3 @@ def run_clustering(max_band: int, tol: float = 0.80, alpha : float = 1.0, step :
 
     sys.stdout.write('\n')
     logger.footer()
-
-if __name__ == "__main__":
-    run_clustering(9, logger_name="clustering", logger_level=logging.DEBUG)
