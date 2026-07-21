@@ -37,6 +37,20 @@ def restricted_float(x):
         raise argparse.ArgumentTypeError("%r not in range [0.0, 1.0]"%(x,))
     return x
 
+GEOMETRY_PROPS = ("both", "conn", "curv", "chern", "chern_curl", "chern_bp", "chern_bp_bz", "chern_all", "all")
+
+def geometry_prop(value):
+    """Validates the geometry -prop option: a token or comma-separated list of
+    tokens from GEOMETRY_PROPS. Returns the string unchanged (the geometry
+    program parses it)."""
+    tokens = [t.strip() for t in value.split(",") if t.strip()]
+    if not tokens:
+        raise argparse.ArgumentTypeError(f"no property given; choose from {', '.join(GEOMETRY_PROPS)}")
+    for token in tokens:
+        if token not in GEOMETRY_PROPS:
+            raise argparse.ArgumentTypeError(f"invalid property {token!r}; choose from {', '.join(GEOMETRY_PROPS)}")
+    return value
+
 
 WFCGEN = DOT = DEGENROT = CLUSTER = BASIS = R2K = GEOMETRY = CONDUCTIVITY = SHG = 0
 
@@ -486,11 +500,18 @@ berry [package options] script parameter [script options]
                                               "(data/dp_interp_mask.npy) -- the report's dpBrk points on non-FAIL bands -- "
                                               "because the FD gradient spikes there. Pass this to write the raw values.")
             geometry_parser.add_argument("-prop",
-                                         type=str,
+                                         type=geometry_prop,
                                          default="both",
                                          metavar="",
-                                         choices=["both", "conn", "curv", "chern", "chern_curl", "chern_bp", "chern_bp_bz"],
-                                         help="Specify which property to calculate. Possible choices are 'both', 'conn', 'curv', 'chern', 'chern_curl', 'chern_bp' and 'chern_bp_bz' (default: both)")
+                                         help="Property (or comma-separated list of properties) to calculate. "
+                                              "Possible choices are 'both', 'conn', 'curv', 'chern', 'chern_curl', "
+                                              "'chern_bp' and 'chern_bp_bz', plus the aliases 'chern_all' (all four "
+                                              "Chern methods) and 'all' (everything). E.g. -prop chern,chern_bp "
+                                              "(default: both)")
+            geometry_parser.add_argument("-force",
+                                         action="store_true",
+                                         help="Recompute the Berry connections/curvatures even if all their output "
+                                              "files already exist (by default the calculation is skipped when they do).")
             geometry_parser.add_argument("-d",
                                          type=int,
                                          default=0,
@@ -888,6 +909,7 @@ def berry_props_cli(args: argparse.Namespace):
     args_dict["digits"] = args.d
     args_dict["mem_gb"] = args.mem
     args_dict["regularize"] = args.regularize
+    args_dict["force"] = args.force
     args_dict["flush"] = args.flush
 
     run_berry_geometry(**args_dict)

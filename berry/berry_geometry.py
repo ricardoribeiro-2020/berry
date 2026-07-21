@@ -1,5 +1,3 @@
-from typing import Literal
-
 import os
 from time import time
 import logging
@@ -63,6 +61,47 @@ def _kshape():
     if m.dimensions == 2:
         return (m.nkx, m.nky)
     return (m.nkx, m.nky, m.nkz)
+
+
+CHERN_METHODS = ("chern", "chern_curl", "chern_bp", "chern_bp_bz")
+
+
+def _parse_props(prop) -> set:
+    """Expand the -prop value into the set of requested properties.
+
+    Accepts a single token or a comma-separated list of tokens among
+    'both', 'conn', 'curv' and the four Chern methods, plus the aliases
+    'chern_all' (all four Chern methods) and 'all' (connection, curvature
+    and all four Chern methods)."""
+    valid = {"both", "conn", "curv"} | set(CHERN_METHODS)
+    props = set()
+    for token in str(prop).split(","):
+        token = token.strip()
+        if token == "all":
+            props |= {"both"} | set(CHERN_METHODS)
+        elif token == "chern_all":
+            props |= set(CHERN_METHODS)
+        elif token in valid:
+            props.add(token)
+        elif token:
+            raise ValueError(f"invalid property {token!r}; choose from "
+                             f"{sorted(valid)} or the aliases 'chern_all', 'all'")
+    if not props:
+        raise ValueError("no property requested")
+    return props
+
+
+def _geometry_files_complete(bands, kind: str, logger) -> bool:
+    """True iff the berryConn ('conn') or berryCur ('curv') .npy file exists in
+    m.geometry_dir for every pair of the requested bands (existence only; no
+    shape or staleness check)."""
+    prefix = {"conn": "berryConn", "curv": "berryCur"}[kind]
+    missing = sum(1 for a in bands for b in bands
+                  if not os.path.exists(os.path.join(m.geometry_dir, f"{prefix}{a}_{b}.npy")))
+    if missing:
+        logger.debug(f"\t{missing} of {len(bands)**2} {prefix} files missing "
+                     f"for bands {bands[0]}-{bands[-1]}")
+    return missing == 0
 
 
 def _pos_file(band: int, comp: int = None):
@@ -496,13 +535,19 @@ def chern_number_bp_bz(pos) -> np.complex128:
     return chern
 
 
-def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
+def berry_curvature_curl(idx: int, idx_: int, berry_connection, offset: int = 0) -> None:
     """
     Calculates the Berry curvature using the curl of Berry connections.
+
+    ``idx``/``idx_`` are absolute band numbers (used in the output file name);
+    ``offset`` is the first band held in ``berry_connection``, whose band axes
+    are indexed relative to it (load_berry_connections shifts by initial_band).
     """
     if m.dimensions == 1:
         logger.warning("\tBerry curvature (curl) is not defined for 1D materials; skipping.")
         return
+
+    s, s_ = idx - offset, idx_ - offset
 
     # deriv(bc, s, s', alpha1, alpha2, dk) = d_{alpha2} A_{alpha1}, so the curl
     # Omega_c = d_a A_b - d_b A_a is deriv(..., b, a, ...) - deriv(..., a, b, ...).
@@ -515,8 +560,8 @@ def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
             Attention: this is valid for 2D and 3D materials.
             """
 
-            bcr = (deriv(berry_connection, idx, idx_, 1, 0, m.step)
-                   - deriv(berry_connection, idx, idx_, 0, 1, m.step))
+            bcr = (deriv(berry_connection, s, s_, 1, 0, m.step)
+                   - deriv(berry_connection, s, s_, 0, 1, m.step))
 
             return bcr
 
@@ -527,14 +572,14 @@ def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
             Attention: this is valid for 2D and 3D materials.
             """
 
-            bcr0 = (deriv(berry_connection, idx, idx_, 2, 1, m.step)
-                    - deriv(berry_connection, idx, idx_, 1, 2, m.step))
+            bcr0 = (deriv(berry_connection, s, s_, 2, 1, m.step)
+                    - deriv(berry_connection, s, s_, 1, 2, m.step))
 
-            bcr1 = (deriv(berry_connection, idx, idx_, 0, 2, m.step)
-                    - deriv(berry_connection, idx, idx_, 2, 0, m.step))
+            bcr1 = (deriv(berry_connection, s, s_, 0, 2, m.step)
+                    - deriv(berry_connection, s, s_, 2, 0, m.step))
 
-            bcr2 = (deriv(berry_connection, idx, idx_, 1, 0, m.step)
-                    - deriv(berry_connection, idx, idx_, 0, 1, m.step))
+            bcr2 = (deriv(berry_connection, s, s_, 1, 0, m.step)
+                    - deriv(berry_connection, s, s_, 0, 1, m.step))
 
             return bcr0, bcr1, bcr2
 
@@ -548,41 +593,59 @@ def berry_curvature_curl(idx: int, idx_: int, berry_connection) -> None:
     return bcr
 
 
-def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Literal["curv", "conn", "both", "chern", "chern_curl", "chern_bp", "chern_bp_bz"] = "both", digits: int = 0, mem_gb: float = 32.0, regularize: bool = True, logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
-    global chern_num, logger
+def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: str = "both", digits: int = 0, mem_gb: float = 32.0, regularize: bool = True, force: bool = False, logger_name: str = "geometry", logger_level: int = logging.INFO, flush: bool = False):
+    """``prop`` is a token or comma-separated list among 'both', 'conn', 'curv',
+    'chern', 'chern_curl', 'chern_bp', 'chern_bp_bz', plus the aliases
+    'chern_all' (the four Chern methods) and 'all' (everything).  The
+    connection/curvature pass is skipped when all its output files already
+    exist, unless ``force``; Chern methods compute their missing prerequisite
+    files automatically."""
+    global logger
     logger = log(logger_name, "BERRY GEOMETRY", level=logger_level, flush=flush)
 
     logger.header()
 
+    props = _parse_props(prop)
+
     if npr <= 0:
         npr = os.cpu_count()
-
-    # 2D: one Chern number per band; 3D: a three-component Chern vector per band
-    if m.dimensions == 3:
-        chern_num = np.zeros((max_band + 1, 3), dtype=np.complex128)
-    else:
-        chern_num = np.zeros((max_band + 1), dtype=np.complex128)
 
     ###########################################################################
     # 1. STDOUT THE PARAMETERS
     ###########################################################################
     logger.info(f"\tUnique reference of run: {m.refname}")
-    logger.info(f"\tProperties to calculate: {prop}")
+    logger.info(f"\tProperties to calculate: {', '.join(sorted(props))}")
     logger.info(f"\tMinimum band: {min_band}")
     logger.info(f"\tMaximum band: {max_band}")
     logger.info(f"\tNumber of threads: {npr}")
     logger.info(f"\tMemory budget: {mem_gb} GB")
-    logger.info(f"\tSeam regularization: {'on (dp-broken seams)' if regularize else 'off'}\n")
+    logger.info(f"\tSeam regularization: {'on (dp-broken seams)' if regularize else 'off'}")
+    logger.info(f"\tForce recomputation: {force}\n")
     logger.info(f"\t{m.dimensions} dimensions calculation.\n")
 
     ###########################################################################
     # 2. CALCULATE BERRY GEOMETRY
     ###########################################################################
     bands = list(range(min_band, max_band + 1))
-    do_conn = prop in ("both", "conn")
-    do_curv = prop in ("both", "curv") and m.dimensions > 1
-    if prop in ("both", "curv") and m.dimensions == 1:
+    want_conn = bool(props & {"both", "conn"})
+    want_curv = bool(props & {"both", "curv"}) and m.dimensions > 1
+    if props & {"both", "curv"} and m.dimensions == 1:
         logger.info(f"\tBerry curvature is not defined for 1D materials.")
+
+    conn_done = _geometry_files_complete(bands, "conn", logger)
+    curv_done = _geometry_files_complete(bands, "curv", logger)
+    # prerequisites: 'chern' integrates the berryCur files, 'chern_curl'
+    # differentiates the berryConn files -- compute whichever is missing
+    need_conn = "chern_curl" in props and not conn_done
+    need_curv = "chern" in props and not curv_done and m.dimensions > 1
+    do_conn = need_conn or (want_conn and (force or not conn_done))
+    do_curv = need_curv or (want_curv and (force or not curv_done))
+    if want_conn and not do_conn:
+        logger.info(f"\tberryConn files for bands {bands[0]}-{bands[-1]} already "
+                    f"present; skipping (use -force to recompute)")
+    if want_curv and not do_curv:
+        logger.info(f"\tberryCur files for bands {bands[0]}-{bands[-1]} already "
+                    f"present; skipping (use -force to recompute)")
 
     if do_conn or do_curv:
         try:
@@ -596,13 +659,21 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Lit
                                          regularize=regularize)
         logger.info(f"\tconnection/curvature pass took {time() - start:.2f} seconds")
 
-    def _log_chern_numbers(values):
-        logger.info(f"\n{'Band:' : >13} Chern Number")
+    def _new_chern_array():
+        # 2D: one Chern number per band; 3D: a three-component Chern vector per band
+        if m.dimensions == 3:
+            return np.zeros((max_band + 1, 3), dtype=np.complex128)
+        return np.zeros((max_band + 1), dtype=np.complex128)
+
+    def _log_chern_numbers(method, values):
+        logger.info(f"\n\t{method}:")
+        logger.info(f"{'Band:' : >13} Chern Number")
         for idx in bands:
             logger.info(f"{f'{idx}:' : >13} {values[idx]}")
 
     if m.dimensions > 1:
-        if prop == "chern":
+        if "chern" in props:
+            chern_num = _new_chern_array()
             for idx in bands:
                 curv = np.load(os.path.join(m.geometry_dir, f"berryCur{idx}_{idx}.npy"))
                 chern_num[idx] = chern_number(curv)
@@ -611,9 +682,10 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Lit
             chern_num = np.round(np.real(chern_num), decimals=digits)
             np.save(os.path.join(m.geometry_dir, "chern_number.npy"), chern_num)
             logger.info(f"\tchern_number.npy saved")
-            _log_chern_numbers(chern_num)
+            _log_chern_numbers("chern", chern_num)
 
-        if prop == "chern_curl":
+        if "chern_curl" in props:
+            chern_num = _new_chern_array()
             number_of_bands = max_band + 1 - min_band
             if m.dimensions == 2:
                 berry_conn_size  = m.dimensions * m.nkx * m.nky * (number_of_bands) ** 2
@@ -621,29 +693,34 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: Lit
             else:
                 berry_conn_size  = m.dimensions * m.nkx * m.nky * m.nkz * (number_of_bands) ** 2
                 berry_conn_shape = (number_of_bands, number_of_bands, m.dimensions, m.nkx, m.nky, m.nkz)
-            berry_connections = load_berry_connections(max_band, berry_conn_size, berry_conn_shape, min_band)
+            # (the old call passed the arguments in a stale order -- crashed
+            # since load_berry_connections moved to (initial, conduction, ...))
+            berry_connections = load_berry_connections(min_band, max_band, berry_conn_size, berry_conn_shape)
             for idx in bands:
-                curv = berry_curvature_curl(idx, idx, berry_connections)
+                curv = berry_curvature_curl(idx, idx, berry_connections, offset=min_band)
                 chern_num[idx] = chern_number(curv)
             np.save(os.path.join(m.geometry_dir, "chern_number_curl.npy"), chern_num)
             logger.info(f"\tchern_number_curl.npy saved")
-            _log_chern_numbers(np.real(chern_num))
+            _log_chern_numbers("chern_curl", np.real(chern_num))
 
-        if prop == "chern_bp":
+        if props & {"chern_bp", "chern_bp_bz"}:
+            # both methods read the same (large) wfcpos files: load once per band
+            chern_bp_num = _new_chern_array() if "chern_bp" in props else None
+            chern_bz_num = _new_chern_array() if "chern_bp_bz" in props else None
             for idx in bands:
                 pos = loadz(os.path.join(m.data_dir, f"wfcpos{idx}.npz"), os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
-                chern_num[idx] = chern_number_bp(pos)
-            np.save(os.path.join(m.geometry_dir, "chern_number_bp.npy"), chern_num)
-            logger.info(f"\tchern_number_bp.npy saved")
-            _log_chern_numbers(np.real(chern_num))
-
-        if prop == "chern_bp_bz":
-            for idx in bands:
-                pos = loadz(os.path.join(m.data_dir, f"wfcpos{idx}.npz"), os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
-                chern_num[idx] = chern_number_bp_bz(pos)
-            np.save(os.path.join(m.geometry_dir, "chern_number_bp_bz.npy"), chern_num)
-            logger.info(f"\tchern_number_bp_bz.npy saved")
-            _log_chern_numbers(np.real(chern_num))
+                if chern_bp_num is not None:
+                    chern_bp_num[idx] = chern_number_bp(pos)
+                if chern_bz_num is not None:
+                    chern_bz_num[idx] = chern_number_bp_bz(pos)
+            if chern_bp_num is not None:
+                np.save(os.path.join(m.geometry_dir, "chern_number_bp.npy"), chern_bp_num)
+                logger.info(f"\tchern_number_bp.npy saved")
+                _log_chern_numbers("chern_bp", np.real(chern_bp_num))
+            if chern_bz_num is not None:
+                np.save(os.path.join(m.geometry_dir, "chern_number_bp_bz.npy"), chern_bz_num)
+                logger.info(f"\tchern_number_bp_bz.npy saved")
+                _log_chern_numbers("chern_bp_bz", np.real(chern_bz_num))
 
     ###########################################################################
     # Finished
