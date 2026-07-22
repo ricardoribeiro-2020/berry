@@ -40,6 +40,24 @@ def loadz(pathz, path, mmap_mode=None):
     return r
 
 
+def _load_chern_pos(idx: int):
+    """wfcpos for band ``idx`` as a single array whose axis-0 inner products
+    give the physical overlap <u_a|u_b>.  For a noncolinear run the two spinor
+    components (wfcpos{idx}-0, wfcpos{idx}-1) are stacked along axis 0, so
+    np.sum(pos[:, a].conj() * pos[:, b]) sums over both components -- exactly
+    the spinor overlap the Berry-phase links need (the berry_phase 1/nr**4 and
+    the chern_bp_bz per-link normalization are both angle/gauge invariant, so
+    the doubled axis length is harmless)."""
+    if m.noncolin:
+        p0 = loadz(os.path.join(m.data_dir, f"wfcpos{idx}-0.npz"),
+                   os.path.join(m.data_dir, f"wfcpos{idx}-0.npy"))
+        p1 = loadz(os.path.join(m.data_dir, f"wfcpos{idx}-1.npz"),
+                   os.path.join(m.data_dir, f"wfcpos{idx}-1.npy"))
+        return np.concatenate((p0, p1), axis=0)
+    return loadz(os.path.join(m.data_dir, f"wfcpos{idx}.npz"),
+                 os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
+
+
 ###############################################################################
 # Streaming computation of the Berry connection and curvature
 #
@@ -708,7 +726,7 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: str
             chern_bp_num = _new_chern_array() if "chern_bp" in props else None
             chern_bz_num = _new_chern_array() if "chern_bp_bz" in props else None
             for idx in bands:
-                pos = loadz(os.path.join(m.data_dir, f"wfcpos{idx}.npz"), os.path.join(m.data_dir, f"wfcpos{idx}.npy"))
+                pos = _load_chern_pos(idx)
                 if chern_bp_num is not None:
                     chern_bp_num[idx] = chern_number_bp(pos)
                 if chern_bz_num is not None:
