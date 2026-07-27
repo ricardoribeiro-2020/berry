@@ -295,6 +295,22 @@ def _local_scales(accept_E: float, disp_scale: float,
 REPAIR_W_DP, REPAIR_W_E = 0.6, 0.4
 
 
+# Numerical-noise floor for the per-band dispersion scale (Ry, the units of
+# eigenvalues.npy). A band whose p95 one-step dispersion falls below this is
+# FLAT: its k-dependence is SCF/diagonalization noise, not physics (white noise
+# -- lag-1 autocorr of dE ~ 0, vs ~+1.0 for every dispersive band). Without a
+# floor, _local_scales sharpens the continuity sigma onto that noise and then
+# asks the quadratic extrapolation to reproduce the eigenvalue to better than
+# the noise -- impossible, so the band grades MISTAKE/OTHER at random (each
+# direction lands right on the score >= 0.5 threshold). Measured on
+# nanotube-300 bands 0-1 (BZ width 1e-6 Ry, autocorr -0.01/-0.05): max
+# extrapolation residual 7.2e-7 Ry, so this is ~3x the observed noise. Note
+# QE's ethr (8.9e-10 Ry there) is NOT a usable predictor of it -- the per-k
+# Davidson error does not cancel in k-differences, so the noise actually seen
+# in E(k) is ~800x larger.
+DISP_NOISE_FLOOR = 2e-6   # Ry
+
+
 EVALUATE_RESULT_HEADER = ['NOT', 'MIS', 'DEG', 'PMI', 'PCO', 'COR', 'FOR']
 VALIDATE_RESULT_HEADER = ['NOT', 'MIS', 'DEG', 'OTH', 'COR', 'FOR']
 
@@ -957,8 +973,16 @@ class MATERIAL:
         ###########################################################################
         if disp_values:
             band_steps = np.concatenate(disp_values, axis=0)            # (n_pairs, nbnd)
-            self.band_disp = np.maximum(np.percentile(band_steps, 95, axis=0), 1e-12)
+            _band_p95 = np.percentile(band_steps, 95, axis=0)
+            # Floor at the numerical-noise level (see DISP_NOISE_FLOOR): a flat
+            # band's p95 step IS the noise, and sharpening onto it makes the
+            # energy machinery reject its own noise. Applied at the source so
+            # every consumer inherits it (_local_scales, _local_accept,
+            # continuity_gate below, the region-growing sovereignty test).
+            self.band_disp = np.maximum(_band_p95, DISP_NOISE_FLOOR)
+            n_flat = int(np.sum(_band_p95 < DISP_NOISE_FLOOR))
         else:
+            n_flat = 0
             self.band_disp = np.full(self.eigenvalues.shape[1], self.disp_scale)
         dE_adj = np.abs(np.diff(self.eigenvalues, axis=1))
         self.local_gap = np.full(self.eigenvalues.shape, np.inf)
@@ -987,6 +1011,10 @@ class MATERIAL:
                          if n_sharp else
                          f'{BODY_INDENT}Local energy gates: no cell resolves its local gap '
                          f'-- global scales everywhere')
+        self.logger.info(f'{BODY_INDENT}Dispersion noise floor: {DISP_NOISE_FLOOR:.4g} Ry, '
+                         f'{n_flat} flat band(s) floored'
+                         + (' (their p95 step is SCF noise, not dispersion)'
+                            if n_flat else ''))
 
         ###########################################################################
         # f(E) diagnostics, Tier 3: report the energy scales f(E) depends on, once.

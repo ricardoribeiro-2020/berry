@@ -8,4 +8,7 @@ No special order.
 5. Create a GUI for the software
 6. Improve the parallelization
 7. Compact some scripts into one
+8. Implement the calculation on the actual BZ
+9. Re-use the DFT calculations made for other runs
+
 
