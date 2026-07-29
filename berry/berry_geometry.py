@@ -44,10 +44,7 @@ def _load_chern_pos(idx: int):
     """wfcpos for band ``idx`` as a single array whose axis-0 inner products
     give the physical overlap <u_a|u_b>.  For a noncolinear run the two spinor
     components (wfcpos{idx}-0, wfcpos{idx}-1) are stacked along axis 0, so
-    np.sum(pos[:, a].conj() * pos[:, b]) sums over both components -- exactly
-    the spinor overlap the Berry-phase links need (the berry_phase 1/nr**4 and
-    the chern_bp_bz per-link normalization are both angle/gauge invariant, so
-    the doubled axis length is harmless)."""
+    np.sum(pos[:, a].conj() * pos[:, b]) sums over both components."""
     if m.noncolin:
         p0 = loadz(os.path.join(m.data_dir, f"wfcpos{idx}-0.npz"),
                    os.path.join(m.data_dir, f"wfcpos{idx}-0.npy"))
@@ -69,8 +66,7 @@ def _load_chern_pos(idx: int):
 # each wfcpos file is read from disk exactly once.  The k-space gradient
 # (formerly precomputed by r2k and stored as wfcgra files) is applied on the
 # fly to each tile: it acts only along the k axes, so tiling nr does not
-# change it (same findiff stencil as r2k, acc=2).  wfcgra files are no longer
-# read (r2k does not write them by default anymore).
+# change it.
 ###############################################################################
 
 def _kshape():
@@ -154,8 +150,7 @@ class _PosStream:
     """Streams nr-tiles of all bands' wfcpos files with one prefetch thread.
 
     Yields, per tile, one (nk-flat, nbands, tile) complex array per spinor
-    component (one for colinear, two for noncolinear) -- k-major, so the
-    per-k batched matmuls and the k-axis gradient stencil act on it directly.
+    component (one for colinear, two for noncolinear).
     Reads are positioned (os.preadv), sequential within each file, and each
     file is read once; the (tile, k) -> (k, tile) transpose happens in the
     prefetch thread, overlapped with the compute of the previous tile.
@@ -360,8 +355,7 @@ def _stream_connection_curvature(bands, do_conn: bool, do_curv: bool,
     ``regularize`` interpolates the connection/curvature over the
     clustering-signalled dp-broken seam k-points (``dp_interp_mask.npy``) before
     writing -- the wavefunction-discontinuity points where the finite-difference
-    gradient spikes (see ``_broken_kpoint_masks`` /
-    docs/berry_geometry_seam_regularization.md). Set to ``False`` to disable.
+    gradient spikes. Set to ``False`` to disable.
     """
     N = len(bands)
     kshape = _kshape()
@@ -372,7 +366,7 @@ def _stream_connection_curvature(bands, do_conn: bool, do_curv: bool,
     logger.info(f"\tStreaming {stream.n_tiles} tile(s) of {stream.tile} r-points, "
                 f"{N} bands, {stream.ncomp} spinor component(s)")
 
-    # accumulators are k-mesh sized only: a few MB for every pair at once
+    # accumulators are k-mesh sized only
     acc_conn = np.zeros((D, K, N, N), np.complex128) if do_conn else None
     # curvature needs M[d,d'][a,b,k] = sum_r grad_d u_a * conj(grad_d' u_b);
     # only one of each (d,d') pair is accumulated, the transpose-conjugate
@@ -449,10 +443,6 @@ def _stream_connection_curvature(bands, do_conn: bool, do_curv: bool,
         for a in range(N):
             for b in range(N):
                 if D == 2:
-                    # NOTE shape change: the scalar Omega_z(k) is saved as
-                    # (nkx, nky) -- the old code broadcast it into (2, nkx, nky)
-                    # with two identical planes, which double-counted in
-                    # prop="chern" and misled vis into quiver-plotting it
                     bcr = -np.conj(comps_std[0][:, a, b]).reshape(kshape)
                 else:
                     bcr = -np.conj(np.stack([c[:, a, b] for c in comps_std])).reshape((3,) + kshape)
@@ -473,8 +463,7 @@ def chern_number(curv):
 
     3D: returns the three-component Chern vector.  C_alpha is a 2D integral
     over a slice perpendicular to axis alpha, averaged over the n_alpha
-    slices.  (The old form summed each component over the whole 3D mesh times
-    a single 1D spacing -- dimensionally inconsistent.)
+    slices.
     """
     if m.dimensions == 1:
         logger.warning("\tChern number is not defined for 1D materials; returning 0.")
@@ -495,9 +484,8 @@ def berry_phase(pos, x, y):
     with the standard sign: bp = +Omega * dk^2 in the continuum limit.
 
     The discrete link <u_k|u_{k+dk}> has angle -A.dk (since <u|du> = -iA with
-    A = i<u|grad u>), so the counterclockwise product of THESE links gives
-    -flux; the minus sign restores the standard orientation.  Verified against
-    the gauge-invariant perturbation formula on a C=+1 model."""
+    A = i<u|grad u>), so the counterclockwise product of these links gives
+    -flux; the minus sign restores the standard orientation."""
     bp = (np.sum(pos[:, x, y].conj()     * pos[:, x+1, y])
        *  np.sum(pos[:, x+1, y].conj()   * pos[:, x+1, y+1])
        *  np.sum(pos[:, x+1, y+1].conj() * pos[:, x, y+1])
@@ -531,8 +519,7 @@ def chern_number_bp_bz(pos) -> np.complex128:
     from C+-1; use chern_bp for the integer).  Each link is normalized to unit
     modulus before entering the product: the result stays fully gauge
     invariant (intermediate gauge phases cancel in the product) and the float
-    underflow of a long product of |overlap|<1 factors is gone (the old code
-    needed np.complex256 for that, which no longer exists in NumPy 2)."""
+    underflow of a long product of |overlap|<1 factors is gone."""
     chern = 0.0
     if m.dimensions == 2:
         def _link(z):
@@ -569,8 +556,6 @@ def berry_curvature_curl(idx: int, idx_: int, berry_connection, offset: int = 0)
 
     # deriv(bc, s, s', alpha1, alpha2, dk) = d_{alpha2} A_{alpha1}, so the curl
     # Omega_c = d_a A_b - d_b A_a is deriv(..., b, a, ...) - deriv(..., a, b, ...).
-    # (The old code had TWO bugs here: the second term was a dangling expression
-    # statement -- never subtracted -- and the term order gave -Omega.)
     if m.dimensions == 2:                # 2D case
         def aux_curvature() -> np.ndarray:
             """
@@ -711,8 +696,6 @@ def run_berry_geometry(max_band: int, min_band: int = 0, npr: int = 0, prop: str
             else:
                 berry_conn_size  = m.dimensions * m.nkx * m.nky * m.nkz * (number_of_bands) ** 2
                 berry_conn_shape = (number_of_bands, number_of_bands, m.dimensions, m.nkx, m.nky, m.nkz)
-            # (the old call passed the arguments in a stale order -- crashed
-            # since load_berry_connections moved to (initial, conduction, ...))
             berry_connections = load_berry_connections(min_band, max_band, berry_conn_size, berry_conn_shape)
             for idx in bands:
                 curv = berry_curvature_curl(idx, idx, berry_connections, offset=min_band)

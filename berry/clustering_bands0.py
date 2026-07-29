@@ -95,7 +95,7 @@ def run_clustering(max_band: int, tol: float = 0.80, alpha : float = 1.0, step :
 
     # (nks, nslots) mask of the dp-broken seam k-points (non-FAIL bands) that the
     # Berry-geometry pass interpolates over -- exactly the report's signalled
-    # dpBrk points, nothing more. See MATERIAL.dp_interp_mask / berry_geometry.
+    # dpBrk points.
     with open(os.path.join(m.data_dir, 'dp_interp_mask.npy'), 'wb') as f:
         np.save(f, material.dp_interp_mask())
 

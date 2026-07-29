@@ -22,7 +22,7 @@ def read_wfc_files(banda: int, npr: int) -> None:
     global read_wfc_kp
 
     def read_wfc_kp(kp):
-        # NOT_SOLVED sentinel: cluster0 left this (k-point, band) slot unattributed (-1),
+        # NOT_SOLVED sentinel: cluster left this (k-point, band) slot unattributed (-1),
         # so there is no raw QE band to read. Zero-fill the column and skip the point
         # (warned once per band in the parent below) instead of crashing on a missing file.
         if bandsfinal[kp, banda] < 0:
@@ -76,8 +76,6 @@ def calculate_wfcpos(npr: int) -> np.ndarray:
     u-convention: the .wfc files hold u_nk(r) (wfck2r.x output) and the k-space
     derivative in calculate_wfcgra acts directly on u, so wfcpos is just u
     re-indexed onto the (kx, ky, kz) mesh -- NO Bloch-phase multiplication.
-    (The old ``d_phase *`` factor built the pseudo-Bloch e^{ik.r}u instead,
-    contaminating the Berry connection with an intracell position term.)
     """
     global calculate_wfcpos_kp
     if m.dimensions == 1:
@@ -133,7 +131,7 @@ def interpolate_wfcpos(banda: int) -> None:
     """Replace wfcpos at unattributed (-1) k-points with the average of their valid in-BZ
     neighbours, BEFORE the k-space gradient is taken.
 
-    cluster0 leaves bandsfinal == -1 where it could not attribute a band, and read_wfc_files
+    cluster leaves bandsfinal == -1 where it could not attribute a band, and read_wfc_files
     zero-fills those k-points (there is no raw .wfc to read). Interpolating here -- upstream of
     calculate_wfcgra -- keeps the zero-fill discontinuity out of the gradient stencil, so
     neither the bad k-point nor its neighbours get a corrupted wfcgra. Warns once per band; a
@@ -170,16 +168,14 @@ def r_to_k(banda: int, npr: int, compress: bool, save_gra: bool) -> None:
     need_pos = b not in bands_pos
     # wfcgra is only written on request (-savegra): geometry applies the same
     # findiff gradient on the fly while streaming wfcpos, so the files are
-    # redundant (and as large as wfcpos itself)
+    # redundant 
     need_gra = save_gra and b not in bands_gra
     if not need_pos and not need_gra:
         logger.debug(f"\tband {b} already saved, skipping")
         return
 
     # the buffers hold nothing usable on entry (fresh process on resume, or a
-    # previous band), so wfcpos must be rebuilt whenever anything is written --
-    # the old code skipped this for b in bands_pos and then re-saved the stale
-    # buffer, zeroing already-finished files on resume
+    # previous band), so wfcpos must be rebuilt whenever anything is written. 
     start = time()
     read_wfc_files(banda, npr)
     logger.debug(f"\twfc files read in {time() - start:.2f} seconds")
@@ -310,9 +306,7 @@ def run_r2k(max_band: int, npr: int = 1, min_band: int = 0, logger_name: str = "
     logger.info(f"\tSignal and bands files loaded")
 
     if m.noncolin:
-        # NOTE: each array needs its OWN buffer -- the old code made the -0 and
-        # -1 spinor components two views of the SAME allocation, so component 1
-        # silently overwrote component 0 in every noncolinear output
+        # NOTE: each array needs its own buffer.
         buffer0 = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)
         buffer1 = Array(ctypes.c_double, 2 * WFCT_K_SIZE, lock=False)
         wfct_k0 = np.frombuffer(buffer0, dtype=np.complex128).reshape(WFCT_K_SHAPE)

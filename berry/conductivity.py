@@ -76,7 +76,7 @@ def correct_eigenvalues(bandsfinal: np.ndarray, logger) -> np.ndarray:
     # bandsfinal columns are 0-based from m.initial_band; the script's band window starts
     # at initial_band (-mb), which may be higher, so offset the column lookup accordingly.
     band0 = initial_band - m.initial_band
-    # bandsfinal == -1 marks k-points cluster0 could not attribute; index with NaN here (a raw
+    # bandsfinal == -1 marks k-points cluster could not attribute; index with NaN here (a raw
     # -1 would silently read the last band) and interpolate from neighbours afterwards.
     def energy(kp, banda):
         bf = bandsfinal[kp, band0 + banda]

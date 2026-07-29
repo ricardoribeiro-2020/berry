@@ -244,7 +244,7 @@ def run_degenrotation(
         else:
             zone_groups.append((sig, [(zi, zone)]))
 
-    # Check for fork availability once (not on Windows).
+    # Check for fork availability once 
     try:
         _fork_ctx = mp.get_context('fork')
     except ValueError:

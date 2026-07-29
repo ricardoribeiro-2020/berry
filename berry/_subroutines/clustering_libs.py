@@ -8,8 +8,6 @@ to classify the points into bands.
 
 TODO:
   - Implement functionality to allow the algorithm to save intermediate results.
-    Also, consider adding the ability to resume the algorithm or select the best result,
-    which may differ from the last one.
   - Implement the algorithm to resolve forbidden paths
   - Implement the algorithm to address points connected to more than one band
 """
@@ -74,9 +72,8 @@ DP_SUP_TOL = 0.5
 # therefore form a partial matching per (k, direction) and act as must-keep
 # constraints -- but only LOCALLY: character transport is path-dependent (around a
 # conical intersection it returns on the other sheet), so the transitive closure is
-# NOT single-slottable and global constructions over it are meaningless (see
-# _repair_certain_links for the local enforcement and _certain_partner_map for the
-# map). DP_FORBID marks the other mode of the bimodal distribution: a same-slot
+# NOT single-slottable and global constructions over it are meaningless. 
+# DP_FORBID marks the other mode of the bimodal distribution: a same-slot
 # continuation this weak is evidence AGAINST the attribution whenever any evidence
 # exists at all.
 DP_CERTAIN = 0.9
@@ -84,12 +81,10 @@ DP_CERTAIN = 0.9
 # its acceptance accounting. Still unique-partner-valid (> 1/sqrt(2), Bessel).
 # Counting split links at 0.9 only lets a patch "improve" by relocating its
 # damage into merely sub-certain (0.8-0.9) seams; counting at 0.8 closes that
-# blind spot (observed: two (14,17) patches zeroed their 0.9-links while
-# growing the finer-grained refuted-edge count).
+# blind spot.
 DP_FLOOD_SUPPORT = 0.8
 DP_FORBID = 0.1
-# Post-loop min-cut seam placement (S2 of the dp-seam correction plan,
-# docs/cluster0_dp_seam_correction_proposal.md): after the greedy dp-seam
+# Post-loop min-cut seam placement after the greedy dp-seam
 # relocation, place the label seam of each remaining refuted (s,t) pattern
 # region at its exact optimum via s-t min-cut (seams are free inside
 # near-degenerate corridors and on the certain forest's refusal cuts -- the
@@ -105,9 +100,8 @@ DP_SEAM_MINCUT = True
 # patches into the right slot (so the seam becomes dp-continuous), leaving the
 # intra-subspace gauge to basisrotation. When True, an accepted exchange must also
 # not raise the strict (0.9-map) refuted census on its border -- a non-regression
-# floor that can only reject, never wrongly accept (guards the run-6 429->474
-# border-refuted failure mode). Flip to False to relax to pure "seam halves, no new
-# wall" acceptance.
+# floor that can only reject, never wrongly accept.
+# Flip to False to relax to pure "seam halves, no new wall" acceptance.
 DEGEN_FREEZE_REFUTED = True
 
 # Seeded region-growing of oversized (multi-band fused) graph components,
@@ -146,7 +140,7 @@ def _parallel_dispatch(chunk):
 # quadratic to its trajectory at fixed integer offsets. For a given set of
 # offsets that prediction is a constant linear combination of the sampled
 # energies, so the weight row is cached per offset-set instead of refitting with
-# np.polyfit on every (k-point, band, direction) -- ~66x faster at scale, and
+# np.polyfit on every (k-point, band, direction) -- faster at scale, and
 # bit-identical to polyfit. At most a handful of distinct offset-sets occur.
 _EXTRAP_WEIGHT_CACHE: dict = {}
 
@@ -169,11 +163,9 @@ def _extrap_weights(offsets: tuple) -> np.ndarray:
 ###########################################################################
 # The in-loop energy term (fit_energy/predict_energy + difference_energy inside
 # COMPONENT.get_cluster_score) decides how a sample attaches to a cluster. To
-# find out WHY f(E) helps or hurts, the hot path accumulates a handful of
+# find out why f(E) helps or hurts, the hot path accumulates a handful of
 # counters into this module-global dict. Every field is an int/float so two
-# dicts merge by summation -- this is what lets the per-chunk counts collected
-# inside the forked Pool workers be returned and summed in the parent without a
-# shared-memory Manager (same copy-on-write discipline as _PARALLEL_FN). The
+# dicts merge by summation. The
 # residual buckets are counts of |E_pred - E_neighbour| / disp_scale falling in
 # fixed ranges, so the distribution shape is mergeable too. _FE_DEBUG gates the
 # accumulation so a production run pays nothing when it is off.
@@ -229,20 +221,12 @@ def _energy_continuity_score(Enew: float, Ecand: float,
     ``Enew`` (extrapolated along the line joining the reference and the new
     point) and a specific candidate energy ``Ecand`` (the neighbour's band).
 
-    This REPLACES the old ``min(|Enew - E_all_bands|) / |Enew - Ecand|`` objective,
-    which scored how close ``Ecand`` was to being the *globally nearest* band --
-    a non-directional, scale-blind measure that (a) rewarded the energetically
-    nearest band rather than the continuous one (wrong at crossings) and (b)
-    could not forbid a gross inter-group jump, since it only ever looked at the
-    nearest of all bands.
-
-    New behaviour:
+    Behaviour:
       * Gross-jump gate: if |Enew - Ecand| exceeds ``accept_E`` (a LOOSE
         gross-jump scale ~ 3*disp_scale, wider than any legitimate one-step
         dispersion but far below a genuine inter-band wall), return 0.0 -- the
         candidate is on the far side of an energy wall and must never be joined.
-        This is deliberately NOT keyed to gap_scale (the SOC-pair splitting),
-        which is what shattered the graph in the e90a33a regression.
+        This is deliberately NOT keyed to gap_scale (the SOC-pair splitting).
       * Otherwise a smooth, scale-aware match: 1.0 at a perfect match, decaying
         on the ``disp_scale`` (local one-step dispersion) scale.
 
@@ -275,8 +259,7 @@ def _local_scales(accept_E: float, disp_scale: float,
     and decay the score on the band's own dispersion. Where the gap does NOT
     resolve the dispersion (near-degenerate / unresolved crowding), return the
     global scales unchanged: energy cannot referee there and a sharp gate
-    would only manufacture mistakes (the e90a33a lesson); dot-product evidence
-    has to decide.
+    would only manufacture mistakes; dot-product evidence has to decide.
     '''
     if (accept_E is None or local_gap is None or band_disp is None
             or not np.isfinite(local_gap) or band_disp <= 0
@@ -302,9 +285,7 @@ REPAIR_W_DP, REPAIR_W_E = 0.6, 0.4
 # floor, _local_scales sharpens the continuity sigma onto that noise and then
 # asks the quadratic extrapolation to reproduce the eigenvalue to better than
 # the noise -- impossible, so the band grades MISTAKE/OTHER at random (each
-# direction lands right on the score >= 0.5 threshold). Measured on
-# nanotube-300 bands 0-1 (BZ width 1e-6 Ry, autocorr -0.01/-0.05): max
-# extrapolation residual 7.2e-7 Ry, so this is ~3x the observed noise. Note
+# direction lands right on the score >= 0.5 threshold).  Note
 # QE's ethr (8.9e-10 Ry there) is NOT a usable predictor of it -- the per-k
 # Davidson error does not cancel in k-differences, so the noise actually seen
 # in E(k) is ~800x larger.
@@ -446,14 +427,12 @@ def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_ma
     OTHER = 3
 
     # Continuity threshold, re-tuned for the directional continuity-residual score
-    # (difference_energy now returns disp_scale/(disp_scale+resid), not the old
-    # min/delta ratio). A direction "preserves continuity" when its prediction
+    # (difference_energy returns disp_scale/(disp_scale+resid).
+    # A direction "preserves continuity" when its prediction
     # error is within ~one local dispersion step:
     #     score = disp_scale/(disp_scale + resid) >= 0.5  <=>  resid <= disp_scale.
-    # The old TOL=0.9 was calibrated to the min/delta ratio and is far too strict
-    # here (it would demand resid < disp_scale/9 and flag smooth bands / legitimate
-    # anticrossings). Gross inter-group jumps are vetoed by the gate (resid >
-    # accept_E -> score 0) regardless of this threshold. This is the primary tunable
+    # Gross inter-group jumps are vetoed by the gate (resid > accept_E -> score 0)
+    # regardless of this threshold. This is the primary tunable
     # knob: lower it toward 1/3 (resid <= 2*disp_scale) if smooth bands over-flag.
     # If no scales are passed (unwired path) keep the original 0.9 so behaviour is
     # unchanged for any caller that does not supply disp_scale.
@@ -493,13 +472,6 @@ def evaluate_point(dimension:int, k: Kpoint, bn: Band, k_index: np.ndarray, k_ma
         "continuous" when the band's own energy matches the prediction from that
         direction's trajectory, within the local dispersion ``disp_scale``, with a
         gross-jump veto at ``accept_E`` for inter-group walls.
-
-        This replaces the old ``min(|Enew - E_all_bands|) / |Enew - Ek|`` ratio,
-        which scored "is Ek the globally nearest band" -- non-directional and
-        unreliable once the gap collapses below disp_scale (SOC/Kramers manifold),
-        where the nearest band is no longer the continuous one. See the shared
-        ``_energy_continuity_score`` for the gate/decay definition; ``accept_E``
-        and ``disp_scale`` are threaded in from the caller.
         '''
         return _energy_continuity_score(float(Ek), float(Enew),
                                         accept_E=accept_E, disp_scale=disp_scale)
@@ -941,7 +913,7 @@ class MATERIAL:
         #                one-step continuation (even in steep bands) is never cut.
         # NOTE: gap_scale collapses to the SOC splitting in noncolinear systems
         # (Kramers pairs), so it must NEVER be used as a sharp penalty width —
-        # only as a loose floor (see the e90a33a in-solve gate regression).
+        # only as a loose floor. 
         ###########################################################################
         gaps = np.diff(np.sort(self.eigenvalues, axis=1), axis=1)
         gaps = gaps[gaps > 0]
@@ -1000,7 +972,7 @@ class MATERIAL:
         # does not (near-degenerate crowding) it falls back to the LOOSE accept_E,
         # so genuine crossings are never flagged. accept_E, _energy_continuity_score
         # and the in-loop clustering score are deliberately left untouched (a tight
-        # gate on graph edges is the e90a33a shatter trap); the cliff pass is
+        # gate on graph edges is a shatter trap); the cliff pass is
         # post-loop and confined to raw-band SWITCH edges.
         self.continuity_gate = np.where(_resolved, _gate, self.accept_E)
         n_sharp = int(np.sum(_resolved & (_gate < self.accept_E)))
@@ -1100,7 +1072,7 @@ class MATERIAL:
         Unit step (per axis, on the k-space grid) pointing from ``k_ref`` toward
         ``k_neighbor``. Neighbours are adjacent grid points, so exactly one axis
         differs by +/-1. No periodic (BZ-wrapping) boundary is assumed: the
-        k-mesh may be open (as for MoS2), so stepping past an edge leaves the
+        k-mesh may be open, so stepping past an edge leaves the
         mesh rather than wrapping around.
 
         Returns
@@ -1334,10 +1306,6 @@ class MATERIAL:
         that cannot be repaired keep their original attribution (left for the final
         validation to flag honestly) or stay -1 for the FORCED pass.
 
-        This replaces the in-solve energy gate (e90a33a), which regressed badly:
-        gating edges on a half-built solution shattered the graph (47 -> ~10k
-        components) and extrapolated the wrong trajectories near crossings.
-
         Returns
             repaired_mask : np.ndarray[bool], shape (nks, total_bands)
                 True where bands_final was reassigned (changed or newly attributed)
@@ -1430,8 +1398,7 @@ class MATERIAL:
                         # take part in any admissible exchange, so freeing them only
                         # risks losing them to the Hungarian. Without this, valence OTHER
                         # cells co-freed at conduction-failure k-points ended as holes ->
-                        # force-fill -> "suspect", costing a clean band (phosphorene
-                        # band 5, Jul 10 run).
+                        # force-fill -> "suspect", costing a clean band.
                         bad_bands = self.bands_final[k, bad_slots]
                         anchors = list(self.eigenvalues[k, bad_bands[bad_bands >= 0]])
                         anchors += [r for r in bad_refs if r is not None]
@@ -1467,9 +1434,8 @@ class MATERIAL:
                 # gross-jump gate of the candidate band (half the local adjacent gap
                 # in a resolved manifold, the loose global accept_E elsewhere). In a
                 # crowded manifold the global gate admits 2-4 adjacent bands, and the
-                # old energy-nearest choice was character-blind -- the phosphorene
-                # failures all held a dp~0.5 band while a dp~0.99 continuation was
-                # available. The dot product to the trusted same-slot neighbours now
+                # old energy-nearest choice was character-blind. 
+                # The dot product to the trusted same-slot neighbours now
                 # picks among the energy-admissible candidates.
                 ###########################################################################
                 pred_idx = [i for i, r in enumerate(refs) if r is not None]
@@ -2162,8 +2128,7 @@ class MATERIAL:
         Louvain optimises modularity -- an edge-density objective with no notion
         of energy, dot-product quality or the one-state-per-k constraint -- so
         when crossing filaments fuse several bands into one component its cuts
-        through the ambiguous regions are arbitrary (phosphorene: 4-9 oversized
-        components survived every iteration and all conduction bands failed).
+        through the ambiguous regions are arbitrary.
         Here each fused band is grown from a seed that is correct by
         construction, claiming one node at a time on wavefunction evidence:
 
@@ -2203,9 +2168,7 @@ class MATERIAL:
         if not targets:
             return None
 
-        # One group per state node (the P0 certain-sheet quotient was removed
-        # Jul 2026 -- atomic mixed sheets starved their twin slot and froze the
-        # sweep; see docs/cluster0_dp_seam_correction_proposal.md).
+        # One group per state node
         group_of = {n: n for n in comp_nodes}           # state node -> group key
         members = {n: [n] for n in comp_nodes}          # group key -> [state nodes]
         gks = {n: {n % nks} for n in comp_nodes}        # group key -> {k-points}
@@ -2216,10 +2179,6 @@ class MATERIAL:
         # in-component same-band neighbour overlap is certain), expressed as
         # the set of GROUPS covering that region. With singleton groups
         # the seed IS the region.
-        # (The Jul-11 sheet-atomic rewrite seeded "greedily by sovereign
-        # mass" per group, which with singleton groups degenerates to mass-1
-        # ties -- ONE arbitrary state per band -- and wrecked the in-loop
-        # solve: phosphorene NS stuck ~3100-3500 vs run 6's descent to 5.)
         ###########################################################################
         neigh = np.asarray(self.neighbors)
         ks_of_band = {b: set() for b in targets}
@@ -2444,11 +2403,7 @@ class MATERIAL:
         while flag_resolution:
             ###########################################################################
             # Always start from the RAW connected components: they are the true
-            # fused structures. The old path ran Louvain over the whole graph
-            # first (when compute_communities), which pre-fragmented a fused
-            # multi-band component into mid-size mixed chunks that slipped under
-            # the oversized threshold and were never split on physics -- exactly
-            # the arbitrary cuts the region-growing is meant to remove. Now every
+            # fused structures. Every
             # component too big to be a single band is split by seeded
             # region-growing (physics-anchored, per-k bijection enforced during
             # the partition -- see _partition_fused_component); Louvain (with the
@@ -2967,9 +2922,8 @@ class MATERIAL:
             # In-loop, CORRECT slots skip re-evaluation (cheap, and it keeps the solver
             # dynamics stable), but that exempts whichever side of a label swap was
             # assigned FIRST from ever being energy-checked: of a swapped pair only the
-            # slot filled last gets flagged and its partner ships as clean (MoS2 bands
-            # 12/13: slot 13 held the swapped band at the same 5 k-points with zero dp
-            # support and still reported CORRECT). DEGENERATE cells keep their marker
+            # slot filled last gets flagged and its partner ships as clean.
+            # DEGENERATE cells keep their marker
             # (ROTATE grading) and FORCED cells keep their audit trail (solve() stamps
             # them FORCED_CONTINUITY right after this returns).
             sel = ((self.bands_final >= 0) &
@@ -3047,7 +3001,7 @@ class MATERIAL:
         # Complete energy-isolated near-degenerate groups by a within-group bijection
         # BEFORE the generic bijection. Inside a degenerate manifold the per-band label
         # is gauge, so the dp graph can split a Kramers/SOC pair across components and
-        # leave a slot empty even where the dot product is clean (band-7 NOT=38). This
+        # leave a slot empty even where the dot product is clean. This
         # fills those slots from the group's own bands and never touches isolated bands,
         # so genuine crossings of well-separated bands stay dp-tracked. See the method.
         self._resolve_degenerate_groups()
@@ -3113,8 +3067,7 @@ class MATERIAL:
             Append the continuity edge (same slot at adjacent k-points), UNLESS the
             step it asserts is GLUE: dot product < DP_FORBID with both endpoints
             energy-resolved (outside any near-degenerate group). Such a step is an
-            assignment-agreement across a vanishing overlap -- e.g. the 12/13 seam
-            staircase, dp ~0.02 across a 13 mRy jump -- and re-fused the
+            assignment-agreement across a vanishing overlap and re-fused the
             mis-attributed patch every iteration. Steps inside near-degenerate /
             crossing corridors keep their edge regardless of dp (there the label
             is gauge and slot chains legitimately switch sheet-owners).
@@ -3124,8 +3077,7 @@ class MATERIAL:
             iteration's accepted assignment at region-growing cost 0, which is
             what lets each iteration re-claim the full bands and converge.
             Replacing them with dp-metric weights removed the ratchet and the
-            in-loop descent froze at its first fixed point (phosphorene: 3312
-            not-solved forever, vs 18 with the ratchet; bands 10-24 collapsed).
+            in-loop descent froze at its first fixed point.
             '''
             i_neig = np.where(self.neighbors[kp] == kneig)[0]
             if len(i_neig) == 0:
@@ -3233,13 +3185,7 @@ class MATERIAL:
             # full-graph rebuild, whose dense cross-band edges + Louvain shattered the
             # done bands on every iteration.
             #
-            # This rebuild used to be gated on `total_not_solved > 1000`. That gate was
-            # REMOVED: once not_solved dropped below 1000 the code fell through to the
-            # continuity-only `else`, which omits these dot-product edges. With a freshly
-            # reset graph (every node isolated) plus only sparse continuity edges, the
-            # graph fragmented into thousands of singleton components and get_components
-            # then ran the O(samples^2) assignment (count = len(samples)**2) -- a ~2.4e8
-            # evaluation blow-up (~11 h for a single step on MoS2). The dot-product
+            # The dot-product
             # reconnection must stay active for the whole descent, so it now fires whenever
             # ANY error remains; the alpha sweep is paced by convergence in solve()
             # instead of by this point count.
@@ -3497,7 +3443,7 @@ class MATERIAL:
                     # A band held exactly once ANYWHERE in the row is attributed --
                     # judging only slots lo..hi declared such rows broken, force-
                     # filled duplicates over correct cells and left FOR/"suspect"
-                    # grades on them (cost phosphorene band 5 its CLEAN grade).
+                    # grades on them.
                     row_counts = {}
                     for v in bf[k]:
                         if v >= 0:
@@ -3647,8 +3593,7 @@ class MATERIAL:
         ``tot > 0`` means the slot's content is orthogonal to the same slot at every
         neighbour: the wavefunction evidence contradicts the attribution no matter
         how quiet the energy is. This is the signature of a label swap between
-        near-parallel bands (MoS2 12/13: a ~5 mRy energy error passes every energy
-        gate, but the cross dot-product is exactly 0).
+        near-parallel bands.
         '''
         if tol is None:
             tol = DP_SUP_TOL
@@ -3675,26 +3620,22 @@ class MATERIAL:
     def _certain_sheet_forest(self) -> np.ndarray:
         '''
         The maximal collision-free certain forest (the "sheets"). POST-LOOP
-        MEASUREMENT ONLY: the in-loop locking that once consumed this (P0
-        SHEET_LOCK: glue in every graph build, whole-sheet claims, Louvain
-        reunification, final audit) froze the sweep and was removed Jul 2026
-        (see docs/cluster0_dp_seam_correction_proposal.md). The measurement
+        MEASUREMENT ONLY: the in-loop locking that once consumed this 
+        froze the sweep and was removed Jul 2026. The measurement
         itself is sound and feeds the post-loop seam passes (refusal cuts =
         free seam locations) and a future sheet-guided relabel.
 
         Every certain link (dp >= DP_CERTAIN, unique partner by Bessel) is a
         must-keep constraint -- but only locally: character transport around a
         conical intersection returns on the other sheet, so the full closure is
-        not single-slottable (measured: 44k-state component, 41k same-k
-        collisions). The maximal consistent subset is built here: union-find
+        not single-slottable.
+        The maximal consistent subset is built here: union-find
         over states (node id = k + b*nks), processing links strongest-first and
         REFUSING any merge that would put two states at the same k-point in one
         component. The refusals land exactly on the frustrated loops -- the
         physical branch cuts of the crossings.
 
-        Energy safety is measured, not assumed: on phosphorene run 6 the energy
-        step along every one of the 139,184 certain links is <= 0.033 Ry --
-        under half of accept_E -- so locking sheets can never create a cliff.
+        Energy safety is measured, not assumed so locking sheets can never create a cliff.
 
         Returns ``sheet_id`` (nks, nbnd) int32, -1 for singleton states, and
         caches ``self.sheet_id`` and ``self._sheet_members`` {sid: [state ids]}.
@@ -3859,7 +3800,7 @@ class MATERIAL:
           * a self-consistent wrong PATCH (a smooth sheet carried by the wrong
             slot over a stretch of k-points): its interior cells keep dp support
             from their equally-wrong neighbours, so the ``sup == 0`` trigger
-            never fires (phosphorene bands 12/13, rows 37/38 seam);
+            never fires;
           * permutation CYCLES of order > 2, and cells invalidated to -1 (a
             pairwise swap needs two occupied cells).
 
@@ -3875,8 +3816,7 @@ class MATERIAL:
              same-slot neighbour. Deliberately NOT triggered: energy-quiet
              cells whose links are dp-forbidden -- those mark the corridors
              where sheet ownership legitimately switches (and the braid), and
-             relabelling them trades energy continuity away (tested: FAIL
-             11 -> 72 on phosphorene when they are included).
+             relabelling them trades energy continuity away.
           2. At each triggered k-point, EVERY slot collects the certain
              successors of its trusted neighbours. A slot with a UNANIMOUS
              mandate b* != current takes b*; disagreeing or absent mandates
@@ -3891,7 +3831,7 @@ class MATERIAL:
              from mandated slots are matched to the vacated/empty slots by dp
              affinity with an energy tie-break, and a row is committed only if
              it remains a duplicate-free permutation (reverted otherwise). A
-             row-scale permutation cycle (the 12->13->15->14 seam) resolves in
+             row-scale permutation cycle resolves in
              one shot because every member slot receives its mandate from the
              SAME trusted neighbouring row.
 
@@ -4349,7 +4289,7 @@ class MATERIAL:
         '''
         Log the global strict refuted-edge census (len of _dp_refuted_seam_edges)
         so consecutive runs are comparable pass-by-pass without an external
-        audit script. Cheap: the 0.9 partner map is cached.
+        audit script. The 0.9 partner map is cached.
         '''
         n = len(self._dp_refuted_seam_edges())
         self.logger.info(f'{BODY_INDENT}dp-refuted census [{tag}]: {n} edge(s)')
@@ -4583,9 +4523,8 @@ class MATERIAL:
         The tighter sibling of ``_relocate_wall_patches``: the SUB-accept_E
         cliffs. The same mid-sheet collision that produces a gross wall (see
         ``_relocate_wall_patches``) also lands on jumps that are large on the
-        scale of the LOCAL band gap yet still below the flat gross-jump gate --
-        the phosphorene band-13 seam (~1 eV, but accept_E ~ 1.02 eV, so it reads
-        as "0 silent"). Seeded on ``_cliff_seam_edges`` (raw-band switch edges
+        scale of the LOCAL band gap yet still below the flat gross-jump gate.
+        Seeded on ``_cliff_seam_edges`` (raw-band switch edges
         whose step exceeds the per-(k, band) ``continuity_gate``), it exchanges
         the mis-slotted patch onto the crossing corridor exactly as tier 1 does.
 
@@ -4607,9 +4546,7 @@ class MATERIAL:
         links, ``_dp_refuted_seam_edges``): mis-slotted patches whose energy
         step sits BELOW accept_E, so tier 1 never sees them, while the
         wavefunction evidence -- the quantity this program exists to make
-        continuous -- is broken across the seam with near-certainty
-        (phosphorene run 5: the 13<->15 staircase attenuated to 93% of the
-        gate, the 10-12 mirror filament, the 19-21 skirt).
+        continuous -- is broken across the seam with near-certainty.
 
         Same patch-exchange machinery as tier 1 with the roles of the two
         guards inverted (see ``_relocate_patches``): seeds and flood cost come
@@ -4691,13 +4628,12 @@ class MATERIAL:
             _dp_refuted_seam_edges) may not increase. Without this guard the
             tier-2 halving acts on the looser 0.8-map count -- a SUPERSET of
             the refuted edges -- so an accepted exchange could reduce 0.8-splits
-            while increasing strict refuted edges on its border (observed:
-            run-6 refuted 429 -> 474).
+            while increasing strict refuted edges on its border.
 
         Halving (not mere decrease) keeps out the marginal mega-exchanges that
         shuffle hundreds of cells for a few defects and relocate damage instead
-        of removing it (A/B on the real canvas: new silent cells 24 -> 1, walls
-        healed 450->47 vs 450->32). Signals and the forced/repaired audit
+        of removing it.
+        Signals and the forced/repaired audit
         masks travel with the exchanged content, changed cells are re-graded on
         the final canvas, and the per-row exchange preserves the bijection by
         construction. Braids that no pairwise exchange improves are left alone
@@ -5170,8 +5106,7 @@ class MATERIAL:
         correctors cannot unwind and ``_repair_certain_links`` never sees.
 
         A label frontier collision inside a near-parallel band group leaves a
-        k-region where the slots hold a cyclically PERMUTED set of bands
-        (phosphorene: 11<->12 2-cycles, the 15/16/17 and 17/18/19 3-cycles).
+        k-region where the slots hold a cyclically PERMUTED set of bands.
         The energy is flat across the group so every gate passes (zero walls)
         and the swapped interior validates -- so ``_repair_certain_links`` (its
         trigger is energy-keyed: unattributed / NOT-MIS / gross jump) never
@@ -5419,8 +5354,7 @@ class MATERIAL:
         Connectivity guard (anti-shatter safety net). No node may be left as a degree-0
         singleton: thousands of isolated nodes would each become their own community and
         feed the O(samples^2) assignment loop in get_components (count = len(samples)**2)
-        -- the ~2.4e8-evaluation blow-up seen on MoS2 (~11 h for one step). The
-        error-region dot-product rebuild normally reconnects the bad nodes, but it only
+        The error-region dot-product rebuild normally reconnects the bad nodes, but it only
         keeps edges whose overlap clears `tol`; a high `tol`, or a bad point whose every
         neighbour is also bad, can still leave slots edgeless. Here every remaining orphan
         is wired to its single best-overlap same-band k-space neighbour, ignoring `tol`.
@@ -5503,7 +5437,7 @@ class MATERIAL:
             return int(suspect), np.array(benign_ks, dtype=int)
 
         def _score_excl_benign(i, benign_ks):
-            # Honest band score: the mean, over slot i's genuine points, of the
+            # Band score: the mean, over slot i's genuine points, of the
             # dot product to its attributed neighbours -- dropping any edge
             # incident to a benign (in-doublet) force-fill so a gauge-level
             # relabeling cannot deflate it. Mirrors the in-loop scoring loop but
@@ -5587,7 +5521,7 @@ class MATERIAL:
             else:
                 suspect, benign_ks = 0, np.empty(0, dtype=int)
             benign = forced - suspect
-            # Honest score: recompute over the band's genuine points, excluding
+            # Score: recompute over the band's genuine points, excluding
             # benign (in-doublet) force-fills, so a gauge-level relabeling cannot
             # deflate it. Overwrite the in-loop score (which divided by nks and so
             # counted force-filled/unattributed points as zeros) so the table and
@@ -5866,9 +5800,7 @@ class MATERIAL:
 
             # An attempt identical to the previous one is a fixed point of the
             # (deterministic) region-growing partition at this alpha: repeating it can
-            # change nothing. It used to end the whole solve here -- which under the
-            # deterministic partitioner fired before the stall patience could ever
-            # elapse and left the alpha sweep dead. Now it fast-forwards the alpha
+            # change nothing. It fast-forwards the alpha
             # descent below, so the sweep always completes down to min_alpha.
             result_stable = COUNT > 1 and np.array_equal(self.bands_final_prev, self.bands_final)
             self.bands_final_prev = np.copy(self.bands_final)
@@ -5922,9 +5854,8 @@ class MATERIAL:
             total_solved_flag = total_solved_flag or (total_score/n_bands > 0.9 and total_best_score/n_bands < 0.9)
             # A drastically cleaner attempt (under half the reigning best's not-solved
             # count) wins even when its contiguous solved-band count is lower: the
-            # per-band chain above breaks at the first non-improving band, which let a
-            # 10-band draw with 4566 not-solved hold the title against a 734-not-solved
-            # one (phosphorene, Jul 10). The score guard keeps a low-not-solved but
+            # per-band chain above breaks at the first non-improving band.
+            # The score guard keeps a low-not-solved but
             # low-overlap solution from displacing a genuinely solved one.
             much_cleaner = (n_not < 0.5 * n_not_best
                             and total_score >= 0.9 * total_best_score)
@@ -5954,8 +5885,8 @@ class MATERIAL:
             # stalls for `alpha_patience` consecutive iterations. A new best resets the
             # stall counter, so brief oscillations are absorbed and alpha drops only when
             # the current alpha has genuinely stopped improving. The tolerance is relaxed
-            # one notch per descent (bounded, floored at 0.10 -- unlike the old
-            # per-iteration decay), and the alpha sweep still guarantees termination
+            # one notch per descent (bounded, floored at 0.10)
+            # and the alpha sweep still guarantees termination
             # (alpha eventually drops below min_alpha).
             if result_stable:
                 # Fixed point at this alpha: skip the remaining patience and descend now.
@@ -6041,9 +5972,8 @@ class MATERIAL:
         # sensitive to their STARTING canvas: applied once to the raw in-loop
         # canvas (frontier-collision seams everywhere) they settle in a far worse
         # optimum than when re-applied to their own, cleaner output. A second
-        # sweep from the cleaner canvas escapes that local optimum -- on
-        # phosphorene the refuted census drops 176 -> 95 on the re-sweep (band 15
-        # heals) and then converges. Iterate the sweep until the combined seam
+        # sweep from the cleaner canvas escapes that local optimum.
+        # Iterate the sweep until the combined seam
         # census (refuted + cliffs + walls) stops decreasing; each pass is
         # monotone and the census is a non-negative integer, so this terminates.
         def _seam_census():
@@ -6358,15 +6288,14 @@ class COMPONENT:
                 # energy (Ei=Enew) lands from the neighbour it is scored against.
                 _FE_STATS['resid_n'] += 1
                 _FE_STATS['resid_buckets'][_fe_resid_bucket(float(delta_energy), disp_scale)] += 1
-            # Directional continuity-residual with a gross-jump gate, replacing the
-            # old min(|Ei - E_all_bands|)/delta_energy ratio: score the candidate
+            # Directional continuity-residual with a gross-jump gate:
+            # score the candidate
             # band against the prediction along the join line ONLY, and veto any
             # jump beyond the gate (a real inter-group wall can never be crossed).
             # The gate stays at the GLOBAL scales on purpose: band_disp is a p95, so
-            # ~5% of genuine one-step dispersions exceed it (the max is ~2.3x p95 on
-            # phosphorene) and a locally sharpened gate vetoes real continuations in
-            # the steep parts of a resolved manifold, fragmenting clusters (the
-            # log1-vs-log2 phosphorene regression, and e90a33a before it). The local
+            # ~5% of genuine one-step dispersions exceed it 
+            # and a locally sharpened gate vetoes real continuations in
+            # the steep parts of a resolved manifold, fragmenting clusters. The local
             # gates (_local_accept) stay where a trusted trajectory exists to judge
             # against: seeds/growth in _partition_fused_component, the repair pass,
             # the outlier mask and the completeness fill.
@@ -6394,7 +6323,7 @@ class COMPONENT:
             N = 4                                                               # Number of points to take account into the curve fitting
 
             ###########################################################################
-            # New f(E): cliff-aware, dispersion-clipped one-step extrapolation,
+            # f(E): cliff-aware, dispersion-clipped one-step extrapolation,
             # applied here in the IN-LOOP score term (mirrors the post-loop
             # MATERIAL._extrapolate_energy). Enabled only when accept_E/disp_scale
             # are supplied; otherwise predict_energy reproduces the original plain
@@ -6652,8 +6581,8 @@ class COMPONENT:
                 # Gross-jump gate: fit_energy returns exactly 0.0 only when the
                 # candidate band sits across an energy wall (|dE| > accept_E).
                 # Veto the WHOLE edge then -- a spuriously high dot product must
-                # never pull a band across a genuine inter-group gap (the band-1
-                # leak across the 0.46 Ry MoS2 wall). Loose gate (accept_E), so it
+                # never pull a band across a genuine inter-group gap.
+                # Loose gate (accept_E), so it
                 # only ever cuts gross jumps, not intra-manifold continuations.
                 gate = 0.0 if energy_val == 0.0 else 1.0
                 # Cross-band dot-product veto (mirror of the make_connections
