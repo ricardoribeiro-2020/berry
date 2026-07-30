@@ -86,6 +86,7 @@ def _process_zone_worker(args: tuple) -> list:
         n_workers                = 1,  # avoid nested parallelism inside a worker
         logger                   = logger,
         holonomy_min_plaquettes  = ctx.get('holonomy_min_plaquettes', 2),
+        mem_budget_bytes         = ctx.get('mem_budget_bytes'),
     )
 
 
@@ -266,6 +267,11 @@ def run_degenrotation(
                     f"\t  [Parallel zones] bands {sorted(_sig)}: "
                     f"{_n_zones} zone(s) → {_n_pool} worker(s)"
                 )
+                # Split the RAM budget across the pool: each worker sizes its
+                # own wfc cache independently, and without a share they would
+                # all measure the same free memory and each claim it in full.
+                # Set before forking so children inherit the value.
+                _zone_ctx['mem_budget_bytes'] = _available_memory_bytes() // _n_pool
                 _args = [(_zi, _sig, _zone) for _zi, _zone in _sig_zone_list]
                 with ProcessPoolExecutor(max_workers=_n_pool, mp_context=_fork_ctx) as _ex:
                     for _zone_rows in _ex.map(_process_zone_worker, _args):

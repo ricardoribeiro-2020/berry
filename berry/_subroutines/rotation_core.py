@@ -15,6 +15,8 @@ the same N x N unitary is applied to both spinor components simultaneously.
 """
 import os
 import time
+import ctypes
+import ctypes.util
 from collections import deque, defaultdict
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -78,6 +80,56 @@ def _available_memory_bytes() -> int:
         return 0
 
 
+# Peak RSS of the refinement sweep as a multiple of the wfc cache it holds.
+# Empirical; see the guard in _process_zone for how it was measured.
+SWEEP_PEAK_FACTOR = 2.2
+
+
+def _make_malloc_trim():
+    """Resolve glibc's malloc_trim once, or None where it does not exist."""
+    try:
+        libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6")
+        return libc.malloc_trim
+    except (OSError, AttributeError):
+        return None
+
+
+_MALLOC_TRIM = _make_malloc_trim()
+
+
+def _release_free_memory() -> None:
+    """Hand glibc's freed-but-retained heap back to the OS.
+
+    The refinement sweep replaces every wavefunction in the zone once per
+    iteration.  The superseded arrays are dropped immediately, but glibc keeps
+    the blocks on its heap for reuse rather than unmapping them.  This does not
+    lower the sweep's own high-water mark (that peak occurs mid-sweep, before
+    we get here); what it bounds is the carry-over into whatever runs next.
+    Measured over three consecutive zones with a 6.14 GB cache each, the RSS
+    left behind after a zone released its cache was 0.66 GB with this call and
+    1.34 GB without -- worth having across 674 zones.  No-op on allocators
+    without malloc_trim.
+    """
+    if _MALLOC_TRIM is not None:
+        try:
+            _MALLOC_TRIM(0)
+        except Exception:
+            pass
+
+
+def _process_rss_bytes() -> int:
+    """Return this process's resident set size in bytes, 0 if unavailable.
+
+    Logged per refinement iteration: a zone whose wfc cache is a large fraction
+    of RAM gives no other warning before the OOM killer fires, apart from
+    iterations slowing down as the machine starts to swap.
+    """
+    try:
+        return psutil.Process().memory_info().rss
+    except Exception:
+        return 0
+
+
 # ---------------------------------------------------------------------------
 # Core linear-algebra helpers
 # ---------------------------------------------------------------------------
@@ -100,13 +152,14 @@ def _overlap_matrix(ref_wfcs, cur_wfcs, dphase, nr: int, noncolin: bool) -> np.n
     M = np.zeros((N, N), dtype=complex)
     for i, ref in enumerate(ref_wfcs):
         for j, cur in enumerate(cur_wfcs):
+            # vdot conjugates its first argument internally; np.dot(x.conj(), y)
+            # would materialise a full-size temporary for every inner product.
             if noncolin:
                 r0, r1 = ref
                 c0, c1 = cur
-                M[i, j] = (np.dot(r0.conj(), c0) +
-                            np.dot(r1.conj(), c1)) / nr
+                M[i, j] = (np.vdot(r0, c0) + np.vdot(r1, c1)) / nr
             else:
-                M[i, j] = np.dot(ref.conj(), cur) / nr
+                M[i, j] = np.vdot(ref, cur) / nr
     return M
 
 
@@ -493,37 +546,54 @@ def _refine_zone_gauge(
         n_active       = 0
 
         if use_jacobi:
-            # Freeze the current wfc state so every worker reads the same
-            # pre-sweep snapshot.  Shallow copy is sufficient because _put
-            # replaces cache values (dict[key] = new_array) rather than
-            # mutating arrays in-place, so snap entries stay unchanged.
-            snap = dict(wfc_cache)
-
-            def _jacobi_worker(nk):
-                cur_w   = [snap[(nk, b)] for b in bands]
+            # Two passes, so the sweep never holds more than one generation of
+            # wavefunctions.  Pass 1 is strictly read-only, which makes
+            # wfc_cache itself the frozen pre-sweep state — no snapshot copy is
+            # needed, and only the N×N rotations are carried between passes.
+            # Pass 2 then rewrites each k-point in isolation, so the superseded
+            # array is released the moment _put rebinds the cache entry.
+            #
+            # Collecting the rotated wavefunctions instead (the obvious
+            # one-pass form) pins a second full copy of the cache, and with the
+            # Anderson correction below a third; measured peak was 4.08x the
+            # cache versus 2.07x here.  At 121 GB of cache for a whole-BZ zone
+            # that is what OOM-killed the InSe run.
+            def _jacobi_rotation(nk):
+                cur_w   = [wfc_cache[(nk, b)] for b in bands]
                 M_total = None
                 for nb in valid_nbrs[nk]:
-                    ref_w   = [snap[(nb, b)] for b in bands]
+                    ref_w   = [wfc_cache[(nb, b)] for b in bands]
                     M_nb    = _overlap_matrix(ref_w, cur_w, None, nr, noncolin)
                     M_total = M_nb if M_total is None else M_total + M_nb
                 if M_total is None:
-                    return nk, None, None, 0.0, 0.0
+                    return nk, None, 0.0, 0.0
                 R       = _procrustes_rotation(M_total)
-                new_w   = _apply_rotation(cur_w, R, noncolin)
                 quality = float(np.real(np.trace(M_total @ R))) / N
                 rot_chg = float(np.linalg.norm(R - np.eye(N, dtype=complex)))
-                return nk, R, new_w, quality, rot_chg
+                return nk, R, quality, rot_chg
 
             with ThreadPoolExecutor(max_workers=n_workers) as ex:
-                updates = list(ex.map(_jacobi_worker, sorted_zone))
+                rotations = list(ex.map(_jacobi_rotation, sorted_zone))
 
-            for nk, R, new_w, q, rc in updates:
+            # Each task reads and writes only its own k-point's entries, so the
+            # threads never observe each other's writes; assigning to a key that
+            # is already present cannot resize the dict either.
+            def _jacobi_apply(item):
+                nk, R = item
+                _put(nk, _apply_rotation(_get(nk), R, noncolin))
+
+            with ThreadPoolExecutor(max_workers=n_workers) as ex:
+                list(ex.map(
+                    _jacobi_apply,
+                    [(nk, R) for nk, R, _, _ in rotations if R is not None],
+                ))
+
+            for nk, R, q, rc in rotations:
                 if R is None:
                     continue
                 total_quality  += q
                 n_active       += 1
                 max_rot_change  = max(max_rot_change, rc)
-                _put(nk, new_w)
                 Q_acc[nk] = R @ Q_acc[nk]
 
         else:
@@ -555,6 +625,11 @@ def _refine_zone_gauge(
 
         mean_quality = total_quality / n_active if n_active > 0 else 0.0
 
+        # The sweep just discarded a full generation of wavefunctions; return
+        # it to the OS before the next one is built, so the baseline does not
+        # ratchet up across iterations and zones.
+        _release_free_memory()
+
         # Logging and convergence check (uses pure GS residual).
         if it == 1:
             max_rot_change_0 = max_rot_change if max_rot_change > 0.0 else 1.0
@@ -570,7 +645,8 @@ def _refine_zone_gauge(
         logger.info(
             f"\t    [{pct_iter:5.1f}%]  iter {it:>3}/{max_iter}  "
             f"max_ΔR={max_rot_change:.2e}  ΔR_reduced={pct_conv:+.1f}%  "
-            f"quality={mean_quality:.6f} ({pct_qual:+.1f}%)  elapsed={elapsed:.1f}s"
+            f"quality={mean_quality:.6f} ({pct_qual:+.1f}%)  "
+            f"rss={_process_rss_bytes() / 1e9:.1f}GB  elapsed={elapsed:.1f}s"
         )
         if max_rot_change < tol:
             logger.info(
@@ -998,12 +1074,18 @@ def _process_zone(
     n_workers: int,
     logger,
     holonomy_min_plaquettes: int = 2,
+    mem_budget_bytes: int | None = None,
 ) -> list:
     """Run Phases 3-4 + boundary check + holonomy + refinement for one zone.
 
     Returns a list containing one 9-tuple:
         (zi, bands, zone_size, n_rotated, best_k, ref_type, mean_sigma,
          n_holo_sweeps, zone_set)
+
+    `mem_budget_bytes` caps what this zone may claim for its wfc cache.  Pass a
+    share of available RAM when several zones run as parallel processes,
+    otherwise each of them independently sees the whole machine as free and
+    they collectively overcommit it.  None means "measure available RAM".
     """
     bands = sorted(sig)
     N     = len(bands)
@@ -1039,25 +1121,39 @@ def _process_zone(
                 nb = neighbors[nk, j]
                 if nb != -1:
                     all_cache_kpts.add(nb)
+        per_kpt   = len(bands) * (2 if noncolin else 1) * nr * 16
         n_arrays  = len(all_cache_kpts) * len(bands) * (2 if noncolin else 1)
         est_bytes = n_arrays * nr * 16
-        avail     = _available_memory_bytes()
+        # Admitting a cache commits us to the refinement sweep that follows,
+        # and the sweep -- not the cache -- is what runs out of memory, so the
+        # guard has to size the sweep.  Measured peak RSS over a zone whose
+        # cache is 6.14 GB, at 8/16/20 workers: 2.07-2.14x the cache, released
+        # again once the sweep returns.  The transient does not scale with the
+        # worker count (it is dominated by allocator behaviour during the
+        # rewrite, not by per-worker scratch), so it is a factor, not a term.
+        # 2.2 rounds the measurement up.  For reference, the one-pass sweep
+        # this replaced measured 4.08x, which is what OOM-killed InSe.
+        peak_bytes = int(SWEEP_PEAK_FACTOR * est_bytes) + 2 * n_workers * per_kpt
+        avail      = mem_budget_bytes if mem_budget_bytes is not None \
+            else _available_memory_bytes()
         over_limit = (
-            (avail > 0 and est_bytes > avail * 0.8) or
-            (avail == 0 and est_bytes > 4 * 1024 ** 3)  # psutil failed; conservative cap
+            (avail > 0 and peak_bytes > avail * 0.8) or
+            (avail == 0 and peak_bytes > 4 * 1024 ** 3)  # psutil failed; conservative cap
         )
         if over_limit:
             logger.warning(
-                f"\t  Wfc cache disabled: {est_bytes / 1e9:.2f} GB needed"
-                + (f", {avail / 1e9:.2f} GB available" if avail > 0
+                f"\t  Wfc cache disabled: {est_bytes / 1e9:.2f} GB cache would "
+                f"peak at {peak_bytes / 1e9:.2f} GB during refinement"
+                + (f", {avail / 1e9:.2f} GB budget" if avail > 0
                    else ", available memory unknown")
             )
         else:
-            avail_str = (f"{avail / 1e9:.1f} GB available"
+            avail_str = (f"{avail / 1e9:.1f} GB budget"
                          if avail > 0 else "available memory unknown")
             logger.info(
                 f"\t  Building wfc cache: {len(all_cache_kpts)} k-point(s), "
-                f"{est_bytes / 1e6:.1f} MB ({avail_str})"
+                f"{est_bytes / 1e6:.1f} MB "
+                f"(refinement peak ~{peak_bytes / 1e9:.1f} GB, {avail_str})"
             )
             t_cache = time.time()
             wfc_cache = {}
