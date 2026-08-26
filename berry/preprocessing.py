@@ -629,6 +629,20 @@ class Preprocess:
         self.logger.info(f"\tNumber of bands that will be used: {int(self.nbnd) - int(self.wfcut) - 1}")
         self.logger.info(f"\tFinal band is band nr {int(self.nbnd) - 1}")
 
+        if self.Deltaz == 0 and self.Deltay == 0:
+            self.logger.info(f"\n\tNo volume removed from the supercell.")
+        else:
+            self.logger.info(f"\n\tVolume removal: wavefunctions will be set to zero in the region")
+            if self.Deltaz != 0:
+                self.logger.info(f"\t\tz: initial limit z1 = {self.z1} bohr, width Deltaz = {self.Deltaz} bohr")
+            if self.Deltay != 0:
+                self.logger.info(f"\t\ty: initial limit y1 = {self.y1} bohr, width Deltay = {self.Deltay} bohr")
+            self.logger.info(f"\tThe supercell and the real space grid are not changed by this.")
+            if self.Deltaz != 0 and self.dimensions not in (1, 2):
+                self.logger.info(f"\tAttention: Deltaz is only used in 1 and 2 dimensions; it will be ignored.")
+            if self.Deltay != 0 and self.dimensions != 1:
+                self.logger.info(f"\tAttention: Deltay is only used in 1 dimension; it will be ignored.")
+
         self.logger.info(f"\n\tWill use {self.npr} processors\n")
         self.logger.info(f"\tWorking directory: {self.work_dir}")
         self.logger.info(f"\tData directory: {self.data_dir}")

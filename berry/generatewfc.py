@@ -192,6 +192,40 @@ class WfcGenerator:
         else:
             self.ycut = False
 
+        self._log_cut()
+
+    def _log_cut(self):  # information about the discarded region, for the log file
+        if not self.zcut and not self.ycut:
+            self.logger.info(f"\tNo volume removed from the supercell.\n")
+            return
+
+        self.logger.info(f"\tVolume removal: wavefunctions will be set to zero in the region")
+        if self.zcut:
+            self.logger.info(f"\t\tz: from {self.z1} to {self.z2} bohr" +
+                             (f", wrapping around the cell boundary a3 = {m.a3[2]} bohr" if self.splitz else ""))
+        if self.ycut:
+            self.logger.info(f"\t\ty: from {self.y1} to {self.y2} bohr" +
+                             (f", wrapping around the cell boundary a2 = {m.a2[1]} bohr" if self.splity else ""))
+
+        removed = int(np.count_nonzero(self._cut_mask()))
+        self.logger.info(f"\tPoints in real space set to zero: {removed} of {m.nr} ({removed / m.nr * 100:.2f} %)")
+        self.logger.info(f"\tThe supercell and the real space grid are not changed by this.\n")
+
+    def _cut_mask(self):  # points of the real space grid where psi is set to zero
+        y = d.r[:m.nr, 1]
+        z = d.r[:m.nr, 2]
+
+        if self.zcut:
+            maskz = (self.z1 < z) | (self.z2 > z) if self.splitz else (self.z1 < z) & (self.z2 > z)
+        if self.ycut:
+            masky = (self.y1 < y) | (self.y2 > y) if self.splity else (self.y1 < y) & (self.y2 > y)
+
+        if self.zcut and self.ycut:
+            return masky | maskz
+        if self.zcut:
+            return maskz
+        return masky
+
     def _cut(self):  # selection of the cut on the psi
         if self.zcut and self.ycut:
             if self.splitz and self.splity:
