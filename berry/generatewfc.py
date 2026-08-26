@@ -106,7 +106,7 @@ class WfcGenerator:
         # Sets the program used for converting wavefunctions to the real space
         if m.noncolin:
             self.k2r_program = "wfck2rFR.x"
-            self.logger.info("\tNoncolinear calculation, will use wfck2rFR.x")
+            self.logger.info("\tNoncollinear calculation, will use wfck2rFR.x")
         else:
             self.k2r_program = "wfck2r.x"
             self.logger.info("\tNonrelativistic calculation, will use wfck2r.x")

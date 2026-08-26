@@ -173,7 +173,7 @@ def run_conductivity(conduction_band: int, npr: int = 1, min_band: int = 0, ener
     alat  = float(np.dot(m.a1, m.b1))                                           # lattice parameter (bohr)
     UNIT  = (2 * np.pi / alat) ** (m.dimensions - 2)
     # i e^2/hslash 1/(2pi)^d in Rydberg units (e^2 = 2);
-    # doubled for spin degeneracy unless this is a noncolinear calculation
+    # doubled for spin degeneracy unless this is a noncollinear calculation
     if m.noncolin:
         CONST = 2j / (2 * np.pi) ** m.dimensions
     else:
@@ -211,7 +211,7 @@ def run_conductivity(conduction_band: int, npr: int = 1, min_band: int = 0, ener
     logger.info(f"\tEnergy step (Ry): {energy_step}")
     logger.info(f"\tEnergy broadening (Ry): {np.imag(broadening)}")
     if m.noncolin:
-        logger.info(f"\tThis is a noncolinear calculation.")
+        logger.info(f"\tThis is a noncollinear calculation.")
         logger.info(f"\tConstant e^2/hslash 1/(2pi)^d in Rydberg units: {np.imag(CONST)}")
     else:
         logger.info(f"\tThis is a no spin calculation.")

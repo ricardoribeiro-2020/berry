@@ -11,7 +11,7 @@ The main differences in this version are:
 
 - Extension of the software to one and three dimension materials.
 
-- Extension of the software to noncolinear calculations of Quantum ESPRESSO.
+- Extension of the software to noncollinear calculations of Quantum ESPRESSO.
 
 
 

@@ -238,7 +238,7 @@ def run_shg(conduction_band: int, min_band: int = 0, npr: int = 1, energy_max: f
     alat  = float(np.dot(m.a1, m.b1))                                           # lattice parameter (bohr)
     UNIT  = (2 * np.pi / alat) ** (m.dimensions - 3)
     # |e|^3/hslash 1/(2pi)^d in Rydberg units (e^2 = 2 so |e|^3 = 2*sqrt(2));
-    # doubled for spin degeneracy unless this is a noncolinear calculation.
+    # doubled for spin degeneracy unless this is a noncollinear calculation.
     # The -e^3 prefactor of the formula is positive with the signed electron charge e = -|e|.
     if m.noncolin:
         CONST = 2 * np.sqrt(2) / (2 * np.pi) ** m.dimensions
@@ -277,7 +277,7 @@ def run_shg(conduction_band: int, min_band: int = 0, npr: int = 1, energy_max: f
     logger.info(f"\tEnergy step (Ry): {energy_step}")
     logger.info(f"\tEnergy broadening (Ry): {np.imag(broadening)}")
     if m.noncolin:
-        logger.info(f"\tThis is a noncolinear calculation.")
+        logger.info(f"\tThis is a noncollinear calculation.")
         logger.info(f"\tConstant e^3/hslash 1/(2pi)^d in Rydberg units: {np.real(CONST)}")
     else:
         logger.info(f"\tThis is a no spin calculation.")

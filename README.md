@@ -13,7 +13,7 @@ Then the Berry connections can be used to calculate the first order optical cond
 
 Therefore, this suite of programs can be used in calculations other than Berry connections and related topics, with small adaptations.
 
-Version 2 can be used with 1D, 2D and 3D materials, with either no spin or noncolinear DFT calculations.
+Version 2 can be used with 1D, 2D and 3D materials, with either no spin or noncollinear DFT calculations.
 It uses DFT suite Quantum Espresso.
 
 It is expected that this software will evolve with many more possibilities in the near future.
@@ -25,8 +25,54 @@ The list of TODOs is already large.
 under project  **QUEST2D - Excitations in quantum 2D materials**
 PTDC/FIS-MAC/2045/2021 and in the framework of the Strategic Funding UIDB/04650/2020.
 
-- **Requirements** To install requirements, run:
-```pip install -r requirements.txt```
+## Installation
+
+```
+pip install berry-suite
+```
+
+or, from a source checkout:
+
+```
+pip install -e .
+```
+
+A working [Quantum ESPRESSO](https://www.quantum-espresso.org/) installation
+(version 7.5 or higher) must be present and on your `$PATH`.
+Noncollinear calculations additionally require a patched `wfck2rFR.x`.
+See [docs/INSTALL](docs/INSTALL) for details.
+
+## Usage
+
+Installing puts two commands on your `$PATH`: `berry`, which runs the
+calculation pipeline, and `berry-vis`, which draws the results.
+
+```
+berry [package options] script parameter [script options]
+```
+
+The scripts must be run **in this order**, because each one uses the results of
+the previous ones:
+
+| Command | What it does |
+| --- | --- |
+| `preprocess` | Run and extract data from DFT calculations. This should be the first script to run. |
+| `wfcgen` | Extracts wavefunctions from DFT calculations. |
+| `degenrot` | Finds degenerate subspaces and rotates wavefunctions into a smooth basis. |
+| `dot` | Calculates the dot product of Bloch factors of nearby wavefunctions. |
+| `cluster` | Classifies the eigenstates in bands. (`cluster0` is a backwards-compatible alias.) |
+| `basis` | Rotates degenerate wavefunctions flagged by the clustering into a smooth basis. |
+| `r2k` | Converts wavefunctions from r-space to k-space. |
+| `geometry` | Calculates the Berry connections and curvatures. |
+| `conductivity` | Calculates the optical linear conductivity of the system. |
+| `shg` | Calculates the second harmonic generation conductivity of the system. |
+
+`berry-vis` provides `debug`, `geometry` and `bands` for inspecting the data,
+drawing the Berry connection and curvature vectors, and showing the electronic
+band structure.
+
+Run `berry --help` or `berry <script> --help` for the options of each script,
+and see [docs/documentation.pdf](docs/documentation.pdf) for the full manual.
 
 Copyright (c) 2022, 2023
 

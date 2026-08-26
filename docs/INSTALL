@@ -1,2 +1,74 @@
-For instalation, please read the documentation file in this directory.
+Installation of the berry suite
+===============================
 
+Prerequisites
+-------------
+
+- Python 3 (this version was tested with Python 3.12, but it likely works with
+  other Python 3 releases).
+
+- A working installation of Quantum ESPRESSO, version 7.5 or higher, with its
+  executables reachable through $PATH.  berry only supports Quantum ESPRESSO as
+  the DFT package.
+
+Python dependencies are installed automatically by pip; they are listed in
+requirements.txt at the root of the repository.
+
+
+Installing
+----------
+
+From PyPI:
+
+    pip install berry-suite
+
+Or, from a source checkout, run this in the directory containing setup.py:
+
+    pip install -e .
+
+Developer extras (twine, for publishing) are available as:
+
+    pip install berry-suite[dev]
+
+or, from a checkout:
+
+    pip install -e .[dev]
+
+
+What gets installed
+-------------------
+
+Installing the package puts two commands on your $PATH:
+
+    berry        the main suite; runs every step of the calculation pipeline
+    berry-vis    the visualization programs
+
+Both take a subcommand.  Run
+
+    berry --help
+    berry-vis --help
+
+to list them.  The scripts must be run in order, because each one consumes the
+output of the previous one.  See the README for the pipeline overview, and
+documentation.pdf for the full description of every option.
+
+
+Noncollinear calculations
+-------------------------
+
+Noncollinear calculations need an extra step.  Quantum ESPRESSO's wfck2r.x
+writes only the first component of the spinor, while berry needs the full
+spinor in real space.  A patched version of that program, wfck2rFR.x, has to be
+built.
+
+The procedure (editing wfck2rFR.f90 and the PP/src Makefile, then compiling) is
+described in the appendix "Installing for noncollinear calculations" of
+documentation.pdf, in this directory.
+
+
+Further documentation
+---------------------
+
+documentation.pdf (built from documentation.tex, in this directory) contains
+the full manual: theoretical background, the input file format, and a
+description of each program in the suite.

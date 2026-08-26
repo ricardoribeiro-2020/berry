@@ -911,7 +911,7 @@ class MATERIAL:
         #                (a robust "max" that ignores a rare outlier step). The
         #                gross-jump guard is a multiple of this so a legitimate
         #                one-step continuation (even in steep bands) is never cut.
-        # NOTE: gap_scale collapses to the SOC splitting in noncolinear systems
+        # NOTE: gap_scale collapses to the SOC splitting in noncollinear systems
         # (Kramers pairs), so it must NEVER be used as a sharp penalty width —
         # only as a loose floor. 
         ###########################################################################

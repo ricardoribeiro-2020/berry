@@ -9,8 +9,8 @@ zone construction, and per-zone orchestration.  Every function takes all of
 its inputs as explicit parameters (no module-level state), so they are safe to
 call from forked worker processes.
 
-For colinear calculations each wavefunction is a complex array of shape (nr,).
-For non-colinear calculations each wavefunction is a spinor pair (two arrays);
+For collinear calculations each wavefunction is a complex array of shape (nr,).
+For non-collinear calculations each wavefunction is a spinor pair (two arrays);
 the same N x N unitary is applied to both spinor components simultaneously.
 """
 import os
@@ -31,8 +31,8 @@ import psutil
 def _load_wfc(nk: int, band: int, noncolin: bool, wfcdir: str):
     """Return wavefunction(s) for k-point nk, band band.
 
-    Colinear    → ndarray of shape (nr,)
-    Non-colinear → tuple (spin-up array, spin-down array), each shape (nr,)
+    Collinear     → ndarray of shape (nr,)
+    Non-collinear → tuple (spin-up array, spin-down array), each shape (nr,)
     """
     def _read(path):
         arr = np.load(path)
@@ -145,7 +145,7 @@ def _overlap_matrix(ref_wfcs, cur_wfcs, dphase, nr: int, noncolin: bool) -> np.n
     is accepted for call-site compatibility and must be None; passing an array
     would reintroduce the pseudo-Bloch e^{ik.r}u convention.
 
-    For non-colinear wavefunctions the inner product sums both spinor components.
+    For non-collinear wavefunctions the inner product sums both spinor components.
     """
     assert dphase is None, "u-convention: overlaps must not be phase-weighted"
     N = len(ref_wfcs)
@@ -169,7 +169,7 @@ def _apply_rotation(wfcs, R: np.ndarray, noncolin: bool):
     New wavefunction k: psi_new_k = Σ_j R[j, k] * wfcs[j]
 
     This is column k of the matrix product  Ψ @ R  where Ψ[:, j] = wfcs[j].
-    The same R is applied to both spinor components in the non-colinear case.
+    The same R is applied to both spinor components in the non-collinear case.
     """
     N = len(wfcs)
     result = []

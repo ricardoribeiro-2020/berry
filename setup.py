@@ -5,8 +5,10 @@ def get_long_description():
         return f.read()
 
 def get_requirements():
+    """Runtime dependencies, read from requirements.txt (comments stripped)."""
     with open('requirements.txt') as f:
-        return f.read().splitlines()
+        return [line.strip() for line in f
+                if line.strip() and not line.startswith('#')]
 
 import re
 
@@ -24,17 +26,7 @@ setup(
     long_description=get_long_description(),
     long_description_content_type='text/markdown',
     packages=['berry', 'berry/_subroutines', 'berry/utils', 'berry/vis'],
-    install_requires=[
-        "numpy",
-        "numba",
-        "networkx",
-        "findiff",
-        "matplotlib",
-        "scipy",
-        "argcomplete",
-        "colorama",
-        "tqdm",
-    ],
+    install_requires=get_requirements(),
     extras_require={
         'dev': [
             "twine",

@@ -24,7 +24,7 @@ except:
 
 
 def _load_wfc(k: int, band: int, comp: str) -> np.ndarray:
-    """Load a single wavefunction (one spinor component for the noncolinear
+    """Load a single wavefunction (one spinor component for the noncollinear
     case, ``comp=""`` otherwise), transparently handling compressed .npz."""
     wfc = np.load(os.path.join(m.wfcdirectory, f"k0{k}b0{band}{comp}.wfc"))
     if isinstance(wfc, np.lib.npyio.NpzFile):  # compressed wfc
@@ -49,8 +49,8 @@ def dot(nk: int, j: int, neighbor: int, jNeighbor: int) -> None:
     keep memory bounded it is tiled in band blocks of ``BAND_BLOCK`` rows, so
     peak memory per worker is ~``2 * BAND_BLOCK * nr * ncomp * 16`` bytes
     regardless of the total number of bands.  COMPS is ``("",)`` in the
-    colinear case and ``("-0", "-1")`` (the two spinor components, summed) in
-    the noncolinear case.
+    collinear case and ``("-0", "-1")`` (the two spinor components, summed) in
+    the noncollinear case.
     """
     start = time()
 

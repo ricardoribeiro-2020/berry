@@ -134,7 +134,7 @@ berry [package options] script parameter [script options]
         if BASIS:
             basis_parser = main_sub_parser.add_parser("basis",
                                                       help="Rotates degenerate wavefunctions flagged by the clustering into a smooth basis.",
-                                                      description="Reads the degenerate k-points found by cluster/cluster0 (degeneratefinal.npy), groups adjacent flagged points into zones (single flagged points stay isolated), and propagates an SVD-based (Procrustes) basis rotation through each zone. Only flagged k-points are modified. Supports colinear and noncolinear calculations. Run after cluster and before r2k.")
+                                                      description="Reads the degenerate k-points found by cluster/cluster0 (degeneratefinal.npy), groups adjacent flagged points into zones (single flagged points stay isolated), and propagates an SVD-based (Procrustes) basis rotation through each zone. Only flagged k-points are modified. Supports collinear and noncollinear calculations. Run after cluster and before r2k.")
         if R2K:
             r2k_parser = main_sub_parser.add_parser("r2k", 
                                                     help="Converts wavefunctions from r-space to k-space.", 

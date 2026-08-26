@@ -18,9 +18,9 @@
     * Only flagged k-points are ever written; clean neighbours are read as
       reference anchors but never modified.
 
-  For colinear calculations each wavefunction is a complex array of shape (nr,);
+  For collinear calculations each wavefunction is a complex array of shape (nr,);
   rotated wavefunctions overwrite ``k0{nk}b0{band}.wfc`` in place.
-  For non-colinear calculations each wavefunction is a spinor pair stored as
+  For non-collinear calculations each wavefunction is a spinor pair stored as
   ``-0``/``-1`` files; the same N x N unitary is applied to both components.
 """
 import os
@@ -249,7 +249,7 @@ def run_basis_rotation(
     logger.info(f"\tTotal number of points in real space: {m.nr}")
     logger.info(f"\tBands: [{initial_band}, {final_band}]")
     logger.info(f"\tDimensions: {m.dimensions}")
-    logger.info(f"\tNoncolinear: {m.noncolin}")
+    logger.info(f"\tNoncollinear: {m.noncolin}")
     logger.info(f"\tEnergy threshold (reference selection): {ethr}")
     logger.info(f"\tEnergy-coherence grouping threshold: "
                 + (f"{group_ethr}" if group_ethr is None else f"{group_ethr} Ry")

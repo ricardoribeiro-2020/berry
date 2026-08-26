@@ -319,7 +319,7 @@ class Preprocess:
             np.save(fich, self.nr)  # Total number of points of wfc in real space
             np.save(fich, self.nbnd)  # Number of bands in DFT calculations
 
-            np.save(fich, self.non_colinear)  # If the calculation is noncolinear
+            np.save(fich, self.non_colinear)  # If the calculation is noncollinear
             np.save(fich, self.lsda)  # Spin polarized calculation
             np.save(fich, self.nelec)  # Number of electrons
             np.save(fich, self.wfck2r)  # File for extracting DFT wfc to real space
@@ -533,7 +533,7 @@ class Preprocess:
         self.logger.info(f"\tNumber of k-points in the DFT calculation: {nks}")
 
         self.non_colinear = False if output.find("band_structure").find("noncolin").text == "false" else True
-        self.logger.info(f"\tNon-colinear calculation: {self.non_colinear}")
+        self.logger.info(f"\tNon-collinear calculation: {self.non_colinear}")
         self.lsda = False if output.find("band_structure").find("lsda").text == "false" else True
         self.logger.info(f"\tSpin polarized calculation: {self.lsda}")
 

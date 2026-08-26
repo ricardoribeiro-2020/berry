@@ -42,7 +42,7 @@ def loadz(pathz, path, mmap_mode=None):
 
 def _load_chern_pos(idx: int):
     """wfcpos for band ``idx`` as a single array whose axis-0 inner products
-    give the physical overlap <u_a|u_b>.  For a noncolinear run the two spinor
+    give the physical overlap <u_a|u_b>.  For a noncollinear run the two spinor
     components (wfcpos{idx}-0, wfcpos{idx}-1) are stacked along axis 0, so
     np.sum(pos[:, a].conj() * pos[:, b]) sums over both components."""
     if m.noncolin:
@@ -150,7 +150,7 @@ class _PosStream:
     """Streams nr-tiles of all bands' wfcpos files with one prefetch thread.
 
     Yields, per tile, one (nk-flat, nbands, tile) complex array per spinor
-    component (one for colinear, two for noncolinear).
+    component (one for collinear, two for noncollinear).
     Reads are positioned (os.preadv), sequential within each file, and each
     file is read once; the (tile, k) -> (k, tile) transpose happens in the
     prefetch thread, overlapped with the compute of the previous tile.

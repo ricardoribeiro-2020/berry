@@ -45,7 +45,7 @@ def log_data():
     print(f"\tNumber of bands                                    {m.nbnd}")
     print(f"\tNumber of electrons                                {m.nelec}")
     print(f"\tValence band number                                {m.vb}")
-    print(f"\tNoncolinear calculation                            {m.noncolin}")
+    print(f"\tNoncollinear calculation                            {m.noncolin}")
     print(f"\tSpin polarized calculation                         {m.lsda}\n")
 
     print(f"\t Valence band number                               {m.vb}")

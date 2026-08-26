@@ -6,8 +6,8 @@
 
   Run after wfcgen and before dot.
 
-  For colinear calculations:   wavefunctions are complex arrays of shape (nr,).
-  For non-colinear calculations: each wavefunction is a spinor with two
+  For collinear calculations:   wavefunctions are complex arrays of shape (nr,).
+  For non-collinear calculations: each wavefunction is a spinor with two
   components stored as separate files (band-0.wfc, band-1.wfc). The same
   N×N unitary rotation is applied to both spinor components simultaneously.
 """
@@ -123,7 +123,7 @@ def run_degenrotation(
     logger.info(f"\tTotal number of points in real space: {m.nr}")
     logger.info(f"\tBands: [{initial_band}, {final_band}]")
     logger.info(f"\tDimensions: {m.dimensions}")
-    logger.info(f"\tNoncolinear: {m.noncolin}")
+    logger.info(f"\tNoncollinear: {m.noncolin}")
     logger.info(f"\tLSDA: {m.lsda}")
     logger.info(f"\tEnergy degeneracy threshold: {ethr} Ry")
     logger.info(

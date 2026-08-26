@@ -44,7 +44,7 @@ with open("data/datafile.npy", "rb") as fich:
     nr = int(np.load(fich))    # Total number of points of wfc in real space
     nbnd = int(np.load(fich))  # Number of bands in DFT calculations
   
-    noncolin = bool(np.load(fich)) # If the calculation is noncolinear
+    noncolin = bool(np.load(fich)) # If the calculation is noncollinear
     lsda = bool(np.load(fich))     # Spin polarized calculation
     nelec = float(np.load(fich))   # Number of electrons
     wfck2r = str(np.load(fich))    # File for extracting DFT wfc to real space
