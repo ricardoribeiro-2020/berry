@@ -109,8 +109,14 @@ class Preprocess:
             self.npr = 1                     # Number of processes to be run
             self.logger.info(f"\n\tNumber of processors changed to 1, since no mpirun was found.\n")
 
+        # Determine which axes actually carry more than one k-point
+        x_active = self.nkx > 1
+        y_active = self.nky > 1
+        z_active = self.nkz > 1
+        num_active = x_active + y_active + z_active
+
         # Verification of the vectors that define k-space that will be dealt with
-        if self.nkx > 1 and self.nky > 1 and self.nkz > 1:
+        if num_active == 3:
             self.dimensions = 3                  # Number of spatial dimensions of the material
             if self.kvector1[0]*self.kvector2[0] + self.kvector1[1]*self.kvector2[1] + self.kvector1[2]*self.kvector2[2] != 0:
                 self.logger.info(f"\tVectors 1 and 2 that define the volume in reciprocal space have to be orthogonal.")
@@ -136,7 +142,13 @@ class Preprocess:
             if self.kvector3[0]**2 + self.kvector3[1]**2 + self.kvector3[2]**2 != 1:
                 modulus_kvector3 = np.sqrt(self.kvector3[0]**2 + self.kvector3[1]**2 + self.kvector3[2]**2)
                 self.kvector3 = np.array(self.kvector3)/modulus_kvector3
-        elif self.nkz == 1 and self.nky > 1:
+        elif num_active == 2:
+            if not (x_active and y_active):
+                self.logger.error(f"\tA 2D material must lie in the xy plane: nkz must be 1, with nkx > 1 and nky > 1 "
+                                   f"(got nkx={self.nkx}, nky={self.nky}, nkz={self.nkz}).")
+                self.logger.error(f"\tExiting program.")
+                self.logger.footer()
+                exit(0)
             self.dimensions = 2
             if self.kvector1[0]*self.kvector2[0] + self.kvector1[1]*self.kvector2[1] + self.kvector1[2]*self.kvector2[2] != 0:
                 self.logger.info(f"\tThe two vectors that define the area in reciprocal space have to be orthogonal.")
@@ -149,13 +161,25 @@ class Preprocess:
             if self.kvector2[0]**2 + self.kvector2[1]**2 + self.kvector2[2]**2 != 1:
                 modulus_kvector2 = np.sqrt(self.kvector2[0]**2 + self.kvector2[1]**2 + self.kvector2[2]**2)
                 self.kvector2 = np.array(self.kvector2)/modulus_kvector2
-        else:
+        elif num_active == 1:
+            if not x_active:
+                self.logger.error(f"\tA 1D material must be aligned with the x axis: nky = nkz = 1, with nkx > 1 "
+                                   f"(got nkx={self.nkx}, nky={self.nky}, nkz={self.nkz}).")
+                self.logger.error(f"\tExiting program.")
+                self.logger.footer()
+                exit(0)
             self.dimensions = 1
             if self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2 != 1:
                 modulus_kvector = np.sqrt(self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2)
                 self.kvector1 = np.array(self.kvector1)/modulus_kvector
                 #self.kvector2 = [0.0,1.0,0.0]
                 #self.kvector3 = [0.0,0.0,1.0]
+        else:
+            # num_active == 0: single k-point (Gamma-only)
+            self.dimensions = 1
+            if self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2 != 1:
+                modulus_kvector = np.sqrt(self.kvector1[0]**2 + self.kvector1[1]**2 + self.kvector1[2]**2)
+                self.kvector1 = np.array(self.kvector1)/modulus_kvector
         # If it is 2D, use x and y directions
         # If it is 1D, use x direction
         # Only these possibilities are available

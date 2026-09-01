@@ -74,7 +74,7 @@ band structure.
 Run `berry --help` or `berry <script> --help` for the options of each script,
 and see [docs/documentation.pdf](docs/documentation.pdf) for the full manual.
 
-Copyright (c) 2022, 2023
+Copyright (c) 2022 - 2026
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
