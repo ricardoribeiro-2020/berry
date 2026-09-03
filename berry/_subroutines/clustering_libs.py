@@ -2592,7 +2592,7 @@ class MATERIAL:
 
         self.clusters : list[COMPONENT] = clusters
 
-    def obtain_output(self, last=False) -> None:
+    def obtain_output(self) -> None:
         '''
         This function prepares the final data structures
         that are essential to other programs.
