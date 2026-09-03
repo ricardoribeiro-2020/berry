@@ -55,7 +55,7 @@ v2.0}
 
 \chapter{Introduction}\label{ch:introduction}
 
- This guide gives a general introduction to the \textbf{berry} suite of programs, including instalation and running.
+ This guide gives a general introduction to the \textbf{berry} suite of programs, including installation and running.
  An introduction to the basics of electronic structure calculations is given, in the context of this suite.
  Another introduction (for version 1.0) can be found in
   \medskip
@@ -84,7 +84,7 @@ With the Bloch wavefunctions, berry can calculate:
   \item Second harmonic generation (SHG) optical conductivity
 \end{itemize}
 
-It can be used in one, two or three dimension materials, with noncolinear or no-spin calculations.
+It can be used in one, two or three dimension materials, with noncollinear or no-spin calculations.
 
 For the DFT calculations, {\sc Quantum Espresso}\cite{Giannozzi2009,Giannozzi2017} has to be used,
 as of version 2 of the program.
@@ -102,7 +102,7 @@ Other contributors include
 \begin{itemize}
  \item Irving Leander Reascos Valencia (Braga, Portugal) for improving the performance
  and AI work;
- \item Daniel Sousa (Braga, Portugal) for implementing the noncolinear code
+ \item Daniel Sousa (Braga, Portugal) for implementing the noncollinear code
  and extension to 1D and 3D materials;
  \item Fábio Carneiro (Braga, Portugal) for the parallelization of the python code
  and its performance;
@@ -122,14 +122,14 @@ The web site for the \textbf{berry} suite is\medskip
 
 https://ricardoribeiro-2020.github.io/berry/\medskip
 
-All files for instalation can be found there.
+All files for installation can be found there.
 
 There is no mailling list yet for reporting bugs or other questions, but an email can be sent to
 ricardo.ribeiro@physics.org or you can create an issue in the github page.
 
-\section{Aknowledgement}
+\section{Acknowledgement}
 
-We aknowledge the Fundação para a Ciência e a Tecnologia (FCT)
+We acknowledge the Fundação para a Ciência e a Tecnologia (FCT)
 under project \\ QUEST2D \emph{Excitations in quantum 2D materials}
 PTDC/FIS-MAC/2045/2021 \\
 and in the framework of the Strategic Funding UIDB/04650/2020.
@@ -139,7 +139,7 @@ and in the framework of the Strategic Funding UIDB/04650/2020.
 
 
 
-\chapter{Instalation and running}
+\chapter{Installation and running}
 
 \section{PIP install}
 
@@ -166,14 +166,14 @@ or
   pip install -e .[dev]
 \end{verbatim}
 
-\subsection{Patch for noncolinear calculations}
+\subsection{Patch for noncollinear calculations}
 
 As for the time of this version, the {\sc Quantum ESPRESSO} suite of programs
-does not include a script to correctly extract the spinors of the noncolinear calculation
+does not include a script to correctly extract the spinors of the noncollinear calculation
 in real space.
 
 The script that should do it is \verb*|wfck2r.x|, but it only writes the first function of the spinor.
-In order to use the \textbf{berry} correctly in noncolinear calculations,
+In order to use the \textbf{berry} correctly in noncollinear calculations,
 a modified version of \verb*|wfck2r.x| has to be used.
 
 In appendix \ref{ch:noncolinear}, we explain how to do it.
@@ -183,7 +183,7 @@ In appendix \ref{ch:noncolinear}, we explain how to do it.
 \section{Requirements}
 
 This version of \textbf{berry} only supports the DFT package {\sc Quantum Espresso}, version v.7.5 or higher.
-So a working {\sc Quantum Espresso} instalation has to be in the system, and must be in the \$PATH.
+So a working {\sc Quantum Espresso} installation has to be in the system, and must be in the \$PATH.
 
 This version was tested with python 3.12, but likely works with other versions of python3.
 
@@ -225,7 +225,7 @@ where the \texttt{script} is one of the following
 \begin{verbatim}
  preprocess
  wfcgen
- degenrot
+ degenrot (optional; required for noncollinear calculations)
  dot
  cluster
  basis (optional)
@@ -234,14 +234,14 @@ where the \texttt{script} is one of the following
  conductivity
  shg
 \end{verbatim}
-and the parameter is dependent on which script is beeing run.
+and the parameter is dependent on which script is being run.
 The command \texttt{berry} is a command line interface (CLI) of the package.
 
 These scripts should be run in sequence, in the order shown, and the \texttt{berry} command assures
 that all the needed files are present for each run.
 The package options are shown in table \ref{tab:package_options}.
 
-\begin{table}[h]
+\begin{table}[ht]
  \centering
  \caption{The berry package options.}\label{tab:package_options}
 \begin{tabular}[]{lr}
@@ -260,7 +260,7 @@ what parameters are required and what options they have.
 The flowchart in the next page explains how \textbf{berry} works.
 
 First a preprocessing script is run which runs the DFT calculations, reads data from those
-calculations, and saves it in files ready to be read by the folllowing scripts.
+calculations, and saves it in files ready to be read by the following scripts.
 
 Then another script reads the wavefunctions from the DFT calculations and make them coherent.
 This is done with the help of a script from the DFT suite.
@@ -307,7 +307,7 @@ is repeated in two dimensions, in a plane.
 
 The unit cell is defined by three vectors (two in 2D) $\pmb{a}_1$, $\pmb{a}_2$ and $\pmb{a}_3$,
 in position space (the real space).
-One can go from one unit cell to any other one by aplying the translation
+One can go from one unit cell to any other one by applying the translation
 \begin{equation}
  \pmb{R} = n_1\pmb{a}_1 + n_2\pmb{a}_2 + n_3\pmb{a}_3
 \end{equation}
@@ -383,12 +383,12 @@ because it frequently has discontinuities, i.e. is non-analytic.
  The dots on the orange curve in the bottom figure indicate the positions of the k point sampling.}
  \label{fig:orderbands}
 \end{figure}
-Figure \ref{fig:orderbands} ilustrates the problem.
+Figure \ref{fig:orderbands} illustrates the problem.
 Where actual bands cross, the simple energy ordering cannot keep with the right band and jumps to another,
 leading in fact to a discontinuity.
 
 In order to be able to apply a gradient in momentum space we need to have the eigenstates ordered and grouped
-in such a way that analycity is guaranteed.
+in such a way that analyticity is guaranteed.
 That is the first goal of this suite of programs.
 
 Berry curvatures can also be calculated using Equation \ref{eq:curvature} \cite{Gradhand_2012}
@@ -499,7 +499,7 @@ where $N_r$ is the number of real-space grid points, the sum runs over all
 grid points $\pmb{r}$, and $i,j = 1,\ldots,N$ index the bands in the
 degenerate subspace.
 
-For non-colinear (NC) calculations, each Bloch factor is a two-component
+For non-collinear (NC) calculations, each Bloch factor is a two-component
 spinor $u_{\pmb{k}s} = (u_{\pmb{k}s}^{\uparrow}, u_{\pmb{k}s}^{\downarrow})$
 and the inner product sums over both spin components:
 \begin{equation}
@@ -608,7 +608,7 @@ described below must act before refinement when the spread is large.
 \subsection*{Gauge repair --- holonomy correction}
 
 \textbf{Trigger:} boundary spread $> 0.1$ and the zone contains at least
-\texttt{-holonomy-min-plaquettes} internal plaquettes (default: 2).
+\texttt{-holonomy-\allowbreak min-\allowbreak plaquettes} internal plaquettes (default: 2).
 When the spread is very large ($> 0.5$) and the worst boundary singular value
 is below 0.6 --- indicating a topological discontinuity --- the correction is
 skipped and a warning is logged, because the holonomy cannot be reduced in
@@ -755,13 +755,13 @@ The edges are the set defined by
     E = \left\{(v_1, v_2) : v_1, v_2 \in V \wedge \exists\, R(v_1, v_2)\right\}
 \end{equation}
 
-The edges are oriented when the relationship between two nodes are diferent in each direction ($R(v_1, v_2) \neq R(v_2, v_1)$).
+The edges are oriented when the relationship between two nodes are different in each direction ($R(v_1, v_2) \neq R(v_2, v_1)$).
 Thus, the graph is a directed graph, for example, the papers' citations (one paper cites another, but the opposite is not true).
 However, if all pairs of nodes have the same edge in both directions ($ R(v_1, v_2) = R(v_2, v_1)$) or the orientation is irrelevant, its graph is undirected.
 
 Furthermore, all relations need not have the same weight. For example, getting back to the co-authorship graph, some authors may collaborate more times with a few than others.
 Thus, the edge between these two authors may include this weight $\omega(v_1, v_2)$ (it is a weighted graph).
-Nonetheless, if the weights $\omega_e$ of all edges $e$ are the same ($\forall\, e\in E\; : \;\omega_e = \omega$) or the edges expresse a binary relation (may exist or not), the graph is unweighted.
+Nonetheless, if the weights $\omega_e$ of all edges $e$ are the same ($\forall\, e\in E\; : \;\omega_e = \omega$) or the edges express a binary relation (may exist or not), the graph is unweighted.
 In this work, we will use unweighted and undirected graphs.
 
 Another essential concept is that of the subgraph.
@@ -823,6 +823,9 @@ we obtain, for a diagonal component of the SHG, $\sigma^{\beta\alpha_1\alpha_2}(
  \left(\nabla^{\alpha_2} \Delta \epsilon_{\pmb{k}ss'} \right)
  \left[ \xi_{\pmb{k}s's}^{\beta},\xi_{\pmb{k}ss'}^{\alpha_1}\right]
  \dfrac{\Delta f_{\pmb{k}s's}}{  h_{\omega\pmb{k}ss'}^2 }
+ \right.
+ \\ \nonumber
+ &{}\left.
  + \left[ \xi_{\pmb{k}s's}^{\beta},(\xi_{\pmb{k}ss'}^{\alpha_1})_{;\alpha_2}\right]
  \dfrac{\Delta f_{\pmb{k}s's}}{  h_{\omega\pmb{k}ss'} }
  \bigg\rbrace
@@ -835,6 +838,9 @@ we obtain, for a diagonal component of the SHG, $\sigma^{\beta\alpha_1\alpha_2}(
    \dfrac{\Delta f_{\pmb{k}s'r}}{  h_{\omega\pmb{k}rs'} }
  \left( \xi_{\pmb{k}s's}^{\beta} \xi_{\pmb{k}sr}^{\alpha_2} \xi_{\pmb{k}rs'}^{\alpha_1}
      +  \xi_{\pmb{k}s'r}^{\alpha_1} \xi_{\pmb{k}rs}^{\alpha_2} \xi_{\pmb{k}ss'}^{\beta}\right)
+ \right.
+ \\ \nonumber
+ &{}\left.
  - \dfrac{\Delta f_{\pmb{k}rs }}{  h_{\omega\pmb{k}sr } }
  \left( \xi_{\pmb{k}s's}^{\beta} \xi_{\pmb{k}sr}^{\alpha_1} \xi_{\pmb{k}rs'}^{\alpha_2}
      +  \xi_{\pmb{k}s'r}^{\alpha_2} \xi_{\pmb{k}rs}^{\alpha_1} \xi_{\pmb{k}ss'}^{\beta}\right)
@@ -919,15 +925,15 @@ File \emph{phase.npy} saves for each (k,r) the phase factor of the Bloch functio
 This finishes the preparatory phase.
 The options for \texttt{preprocess} are shown in table \ref{tab:options_preprocess}.
 
-\begin{table}[h]
+\begin{table}[ht]
  \centering
  \caption{Options for script \texttt{preprocess}}\label{tab:options_preprocess}
 \begin{tabular}[]{lr}
 \hline
   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
   \texttt{-o file\_path}        & Name of output log file\\
-                                & Extension will be ignored \\
-  \texttt{-flush}               & Flush the ouput to stdout \\
+                                & Extension will be .log regardless of user input \\
+  \texttt{-flush}               & Flush the output to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
 \end{tabular}
@@ -947,11 +953,11 @@ All log files are created in directory \verb|log|.
  A full list of the parameters that are accepted with the respective defaults (if any)
  is shown in table \ref{tab:variables_preprocessing}.
  There is a unique reference number that is attributed when running \texttt{preprocess} to guarantee consistency,
- It can be changed in the input file, but is not recomendable,
+ It can be changed in the input file, but is not advisable,
  because it is too easy to forget it
  and attribute the same value for different runs.
 
-\begin{figure}[h]
+\begin{figure}[ht]
  \centering
 \begin{verbatim}
   k0 0.00 0.00 0.00
@@ -996,6 +1002,8 @@ All log files are created in directory \verb|log|.
  For an one dimension material, \verb|nky = nkz = 1|, so the material has to be align with the $x$ axis.
  For a two dimensions material, it has to be in the plane $xy$, so \verb|nkz = 1|.
  This is how the program knows the number of dimensions to be used.
+ This convention is enforced: if \verb|nkx, nky, nkz| indicate that the material varies along an axis
+ other than $x$ (1D) or outside the $xy$ plane (2D), \verb|preprocessing| logs an error and stops.
 
  It is strongly suggested that a preliminary scf run is performed to ascertain the correct
  lattice and reciprocal lattice vectors and dimensions,
@@ -1019,7 +1027,7 @@ $\vec{a}_2 = \dfrac{\sqrt{3}a}{2}\vec{e}_x + \dfrac{a}{2}\vec{e}_y$ &
 $\vec{b}_2 = \dfrac{2\pi}{a\sqrt{3}}\vec{k}_x + \dfrac{2\pi}{a}\vec{k}_y $\\[0.2cm]
 \hline
 \end{tabular}
-\begin{figure}[h]
+\begin{figure}[ht]
  \centering
  \includegraphics[scale=0.5,keepaspectratio=true]{figures/real_symmetric1.png}\hspace*{1.5cm}
  \includegraphics[scale=0.5,keepaspectratio=true]{figures/rec_symmetric1.png}
@@ -1029,14 +1037,14 @@ $\vec{b}_2 = \dfrac{2\pi}{a\sqrt{3}}\vec{k}_x + \dfrac{2\pi}{a}\vec{k}_y $\\[0.2
  \label{fig:2D hexagonal}
 \end{figure}
 
-To sample the area equivalent to the BZ using a rectangle, one can chose the one shown
+To sample the area equivalent to the BZ using a rectangle, one can choose the one shown
 in figure \ref{fig:BZ_2D hexagonal}.
 
-\begin{figure}[h]
+\begin{figure}[ht]
  \centering
  \includegraphics[scale=0.1,keepaspectratio=true]{figures/BZ.png}
  % BZ.png: 1325x1100 px, 72dpi, 46.74x38.81 cm, bb=0 0 1325 1100
- \caption{Rectangle with an equivalente area to the BZ for a 2D hexagonal lattice.}
+ \caption{Rectangle with an equivalent area to the BZ for a 2D hexagonal lattice.}
  \label{fig:BZ_2D hexagonal}
 \end{figure}
 
@@ -1083,7 +1091,7 @@ $\vec{b}_3 = \dfrac{2\pi}{a}\left( \vec{k}_x + \vec{k}_y - \vec{k}_z\right) $\\[
 \end{tabular}
 \bigskip
 
-One possible choice of sample is to chose the following three directions in k-space:
+One possible choice of sample is to choose the following three directions in k-space:
 \begin{align*}
  \hat{k}_1 &= (0,0,1)\\
  \hat{k}_2 &= \dfrac{1}{\sqrt{2}}(1,-1,0)\\
@@ -1119,7 +1127,7 @@ Another way of seeing this is:
  \subsection{The bands to be used}
 
  It is necessary to specify the set of bands that will be processed.
- It is important to obtain and look at a normal band diagram of the material before chosing
+ It is important to obtain and look at a normal band diagram of the material before choosing
  what bands to include.
  Otherwise, a large amount of time and computer resources may be spent uselessly.
 
@@ -1143,22 +1151,31 @@ Another way of seeing this is:
 
 \bigskip
 
- \subsection{Removing volume from the supercell}
+ \subsection{Discarding a region of the supercell}
 
  When performing 1D and 2D calculations, the wavefunctions provided by the DFT don't fill the whole
  supercell.
  There are regions in the supercell where the wavefunctions should be zero, but actually
  there is some noise.
- Knowing this, it should be possible to remove part of the supercell, saving computational
- resources and without compromising the results.
+ Knowing this, it is possible to discard part of the supercell, removing that noise without
+ compromising the results.
+
+ Note that this does not make the supercell smaller: the wavefunctions are simply set to zero
+ on the grid points of the selected region.
+ The lattice vectors, the real space grid (\verb|nr1|, \verb|nr2|, \verb|nr3|) and the size of
+ the wavefunction files are unchanged, so no memory or disk space is saved by using it.
 
  In order to do this, the parameters \verb|z1| and \verb|deltaz| and/or \verb|y1| and \verb|deltay| 
   must be included in the input file.
- \verb|z1| and \verb|y1| are used to define the initial limit of the region to be removed, and 
+ \verb|z1| and \verb|y1| are used to define the initial limit of the region to be discarded, and 
  should have a value between 0 and $a_3$ and $a_2$, respectively.
- Then \verb|deltaz| and \verb|deltay| define the width of the region to be removed, and should have 
+ Then \verb|deltaz| and \verb|deltay| define the width of the region to be discarded, and should have 
  a value between 0 and $a_3$ and $a_2$, respectively.
- The default values are 0, meaning no volume is removed.
+ The default values are 0, meaning no region is discarded.
+ \verb|deltaz| is only taken into account in 1D and 2D calculations, and \verb|deltay| only in 1D
+ calculations; outside of those cases the parameters are silently ignored.
+ The region that was discarded, and the number of grid points it contains, are written to the
+ logs of \verb|preprocess| and of \verb|generatewfc|.
  The final limit, \verb|z2| and \verb|y2| is then calculated by one of the following expressions:
  
 \[
@@ -1176,26 +1193,26 @@ y_1+\Delta y-a_2, & otherwise
 \end{cases}
 \]
 
- Each of the cases will remove volume from the supercell either from the middle (see figure 
- or from its the sides (see figure \ref{fig:vcut}).
+ Each of the cases will discard a region of the supercell either from the middle (see figure
+ \ref{fig:vcut}(\subref{fig:vcutcenter})) or from its sides (see figure \ref{fig:vcut}(\subref{fig:vcutsides})).
 
-\begin{figure}[h]
+\begin{figure}[ht]
     \centering
     \begin{subfigure}{.5\textwidth}
         \centering
         \includegraphics[width=.5\linewidth]{figures/cnt_vcut_center.png}
-        \label{fig:vcutcenter}
         \subcaption{}
+        \label{fig:vcutcenter}
     \end{subfigure}%
     \begin{subfigure}{.5\textwidth}
         \centering
         \includegraphics[width=.5\linewidth]{figures/cnt_vcut_sides.png}
-        \label{fig:vcutsides}
         \subcaption{}
+        \label{fig:vcutsides}
     \end{subfigure}
-    \caption{When \(y_1 \leq a_2\), (\subref{fig:vcutcenter}) the region removed is located
+    \caption{When \(y_1 + \Delta y \leq a_2\), (\subref{fig:vcutcenter}) the region discarded is located
     on the center of the supercell.
-    Otherwise, (\subref{fig:vcutsides}) the region removed will be splitted into two sides.}
+    Otherwise, (\subref{fig:vcutsides}) the region discarded will be split into two sides.}
     \label{fig:vcut}
 \end{figure}
 
@@ -1213,31 +1230,31 @@ y_1+\Delta y-a_2, & otherwise
 
 \newpage
 
-\begin{table}[h]
+\begin{table}[ht]
  \centering
  \caption{List of variables for the input file of \texttt{preprocess}.}
 
  \begin{tabularx}{\textwidth}{Xl}
  \textbf{Role of keyword}                     & \textbf{Variable (and defaults)}\\
 \hline
- origin of k-points (3 real numbers)           & \verb|k0| \\
- number of k-points in each direction (integer)& \verb|nkx, nky, nkz| \\
- step of the k-points (real number)            & \verb|step| \\
- number of bands to be calculated (integer)    & \verb|nbnd| \\
+ origin of k-points (3 real numbers)           & \texttt{k0} \\
+ number of k-points in each direction (integer)& \texttt{nkx, nky, nkz} \\
+ step of the k-points (real number)            & \texttt{step} \\
+ number of bands to be calculated (integer)    & \texttt{nbnd} \\
  \hline
- number of processors                         & \verb|npr = 1| \\
- dft directory                                & \verb|dftdirectory = 'dft/'| \\
- scf file name                                & \verb|name_scf = 'scf.in'| \\
- directory where wavefunctions will be saved  & \verb|wfcdirectory = 'wfc/'| \\
- point in real space where all phases match   & \verb|point = 1.178097| \\
- software for DFT                             & \verb|program = 'QE'| \\
- unique reference of run                      & \verb|refname| = date and time \\
- first direction in k-space                   & \verb|kvector1 = 1.0 0.0 0.0| \\
- second direction in k-space                  & \verb|kvector2 = 0.0 1.0 0.0| \\
- third direction in k-space                   & \verb|kvector3 = 0.0 0.0 1.0| \\
- last band NOT accounted for                  & \verb|wfcut = -1| \\
- initial limit of volume removal              & \verb|y1, z1 = 0| \\
- width of volume removal region               & \verb|deltay, deltaz = 0| \\
+ number of processors                         & \texttt{npr = 1} \\
+ dft directory                                & \texttt{dftdirectory = 'dft/'} \\
+ scf file name                                & \texttt{name\_scf = 'scf.in'} \\
+ directory where wavefunctions will be saved  & \texttt{wfcdirectory = 'wfc/'} \\
+ point in real space where all phases match   & \texttt{point = 1.178097} \\
+ software for DFT                             & \texttt{program = 'QE'} \\
+ unique reference of run                      & \texttt{refname} = date and time \\
+ first direction in k-space                   & \texttt{kvector1 = 1.0 0.0 0.0} \\
+ second direction in k-space                  & \texttt{kvector2 = 0.0 1.0 0.0} \\
+ third direction in k-space                   & \texttt{kvector3 = 0.0 0.0 1.0} \\
+ last band NOT accounted for                  & \texttt{wfcut = -1} \\
+ initial limit of discarded region             & \texttt{y1, z1 = 0} \\
+ width of discarded region                    & \texttt{deltay, deltaz = 0} \\
 
 
 %  DFT prefix  & prefix = '' \\
@@ -1270,11 +1287,11 @@ It uses the same number of processes as used before in the DFT calculations.
 Since wfck2r.x extracts $u_{\bf{k}s}$, that's what is saved.
 
 After extracting the wavefunctions,
- a point in position space is choosen (see table \ref{tab:variables_preprocessing}),
+ a point in position space is chosen (see table \ref{tab:variables_preprocessing}),
 away from points of high symmetry, and all wavefunctions
 are multiplied by a phase such that at that point all have zero phase (are real).
 
-The wavefunctions are then saved in the directory choosen to save them
+The wavefunctions are then saved in the directory chosen to save them
 (see table \ref{tab:variables_preprocessing}; default is \emph{working\_directory/}\emph{wfc/}),
 and the files will be named in the form \emph{k0**b0XX.wfc} where \emph{**} is replaced by the number of the k point
 and \emph{XX} is replaced by the number of the band.
@@ -1283,11 +1300,11 @@ Bands are as given by the DFT software i.e. ordered by energy,
 and the lowest energy band is numbered zero and so on.
 
 The options for \texttt{wfcgen} are shown in table \ref{tab:options_wfcgen}.
-The default is to generate all formated wavefunctions, but for debugging it may be useful
+The default is to generate all formatted wavefunctions, but for debugging it may be useful
 to generate just for a single k-point or a single wavefunction, for which we have the options
 \texttt{-nk} and \texttt{-band} (has to be used in conjunction with \texttt{-nk}).
 
-\begin{table}[h]
+\begin{table}[ht]
  \centering
  \caption{Options for script \texttt{wfcgen}}\label{tab:options_wfcgen}
 \begin{tabular}[]{lr}
@@ -1296,10 +1313,11 @@ to generate just for a single k-point or a single wavefunction, for which we hav
                                 &  (default: All) \\
   \texttt{-band}                & Generates wavefunctions for a single k-point\\
                                 &  and band (default: All) \\
+  \texttt{-c}                   & Compress the output files \\
   \texttt{-h}, \texttt{--help}  &\hspace*{2cm} Show a help message and exit \\
   \texttt{-o file\_path}        & Name of output log file\\
-                                & Extension will be ignored \\
-  \texttt{-flush}               & Flush the ouput to stdout \\
+                                & Extension will be .log regardless of user input \\
+  \texttt{-flush}               & Flush the output to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
 \end{tabular}
@@ -1319,7 +1337,7 @@ script \texttt{degenrot}.
 
 This script is optional but recommended whenever the band structure contains
 degenerate points, i.e.\ k-points at which two or more bands share the same
-(or numerically indistinguishable) energy eigenvalue. For noncolinear calculations,
+(or numerically indistinguishable) energy eigenvalue. For noncollinear calculations,
 this is necessary, since there are whole bands degenerate.
 Without it, the arbitrary basis chosen by the DFT
 solver at those k-points propagates into the dot products and can degrade the
@@ -1400,17 +1418,15 @@ correction sweeps performed (column \emph{Holo}).
 
 The options for \texttt{degenrot} are shown in table~\ref{tab:options_degenrot}.
 
-\begin{table}[h]
+\begin{table}[ht]
  \centering
  \caption{Options for script \texttt{degenrot}.}\label{tab:options_degenrot}
-\begin{tabular}[]{lr}
+\begin{tabularx}{\textwidth}{lX}
 \hline
   \texttt{-h}, \texttt{--help}       & Show a help message and exit \\
-  \texttt{-ethr}                     & Energy threshold for degeneracy detection \\
-                                     & in Ry, the units of \emph{eigenvalues.npy} \\
-                                     & (default: $5\times10^{-3}$~Ry $\approx 68$~meV) \\
+  \texttt{-ethr}                     & Energy threshold for degeneracy detection in Ry, the units of \emph{eigenvalues.npy} (default: $5\times10^{-3}$~Ry $\approx 68$~meV) \\
   \texttt{-c}                        & Compress the output \emph{.wfc} files \\
-  \texttt{-max-ref-iter}             & Minimum refinement iterations per zone (default: 50) \\
+  \texttt{-max-ref-iter}             & Base iteration count used to compute the per-zone refinement cap (not itself a maximum: the cap scales with zone size and is capped by \texttt{-ref-iter-cap}) (default: 50) \\
   \texttt{-ref-iter-cap}             & Hard cap on refinement iterations (default: 500) \\
   \texttt{-anderson-m}               & Anderson mixing history window; 0 to disable (default: 10) \\
   \texttt{-ref-tol}                  & Refinement convergence tolerance (default: $10^{-4}$) \\
@@ -1420,12 +1436,11 @@ The options for \texttt{degenrot} are shown in table~\ref{tab:options_degenrot}.
   \texttt{-holonomy-min-plaquettes}  & Min.\ internal plaquettes to attempt correction (default: 2) \\
   \texttt{-no-cache}                 & Disable in-memory wavefunction cache \\
   \texttt{-np}                       & Number of processes to use (default: 1) \\
-  \texttt{-o file\_path}             & Name of output log file \\
-                                     & Extension will be \emph{.log} regardless of user input \\
+  \texttt{-o file\_path}             & Name of output log file. Extension will be .log regardless of user input \\
   \texttt{-flush}                    & Flush the output to stdout \\
   \texttt{-v}                        & Increase output verbosity \\
 \hline
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 
@@ -1450,7 +1465,7 @@ In the end we get two files \emph{dpc.npy} and \emph{dp.npy}:
 \end{itemize}
 The options for \texttt{dot} are shown in table \ref{tab:options_dot}
 
-\begin{table}[h]
+\begin{table}[ht]
  \centering
  \caption{Options for script \texttt{dot}}\label{tab:options_dot}
 \begin{tabular}[]{lr}
@@ -1461,8 +1476,8 @@ The options for \texttt{dot} are shown in table \ref{tab:options_dot}
                                 & (default: 0 = auto-size from free RAM) \\
   \texttt{-c}                   & Compress the output files \\
   \texttt{-o file\_path}        & Name of output log file.\\
-                                & Extension will be ignored. \\
-  \texttt{-flush}               & Flush the ouput to stdout \\
+                                & Extension will be .log regardless of user input. \\
+  \texttt{-flush}               & Flush the output to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
 \end{tabular}
@@ -1480,8 +1495,8 @@ To find which eigenvalues/eigenfunctions have continuity, one runs script \textt
 This script uses graph theory and unsupervised machine learning to establish electronic bands
 that are analytic in k-space.
 
-It uses data from files \emph{dp.npy} and \emph{eigenvalues.npy} to establish continuity
-between wavefunctions of neighboring k-points.
+It uses data from files \emph{datafile.npy}, \emph{dp.npy}, \emph{eigenvalues.npy} and
+\emph{neighbors.npy} to establish continuity between wavefunctions of neighboring k-points.
 
 The optional positional parameter \texttt{Mb} is the maximum band to consider; if omitted, all
 bands up to the highest one are used. The minimum band is fixed at preprocessing time (the first
@@ -1502,7 +1517,7 @@ band above the \texttt{wfcut} cutoff), since all the band-indexed files the scri
 
  The options for \texttt{cluster} are shown in table \ref{tab:options_cluster}.
 
-\begin{table}[h]
+\begin{table}[ht]
   \centering
   \caption{ Options for script \texttt{cluster}}\label{tab:options_cluster}
   \begin{tabular}[]{lr}
@@ -1514,8 +1529,8 @@ band above the \texttt{wfcut} cutoff), since all the band-indexed files the scri
   \texttt{-step [0.0-1.0]}      & Step for the alpha sweep (default: 0.5, i.e. 1.0 $\to$ 0.5 $\to$ 0.0) \\
   \texttt{-alpha [0.0-1.0]}     & Initial alpha value (default: 1.0) \\
   \texttt{-o file\_path}        & Name of output log file\\
-                                & Extension will be .log \\
-  \texttt{-flush}               & Flush the ouput to stdout \\
+                                & Extension will be .log regardless of user input \\
+  \texttt{-flush}               & Flush the output to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
  \end{tabular}
@@ -1565,12 +1580,12 @@ band above the \texttt{wfcut} cutoff), since all the band-indexed files the scri
 
  Only the flagged k-points are ever modified; clean neighbours are read as reference anchors but
  never changed. The rotated wavefunctions overwrite the \emph{.wfc} files in place
- (there is no \emph{.wfc1} file, as in version 1). Both colinear and non-colinear calculations are supported: for
- the non-colinear case the same $N\times N$ unitary is applied to both spinor components.
+ (there is no \emph{.wfc1} file, as in version 1). Both collinear and non-collinear calculations are supported: for
+ the non-collinear case the same $N\times N$ unitary is applied to both spinor components.
 
 The options for \texttt{basis} are shown in table \ref{tab:options_basis}
 
-\begin{table}[h]
+\begin{table}[ht]
  \centering
  \caption{Options for script \texttt{basis}}\label{tab:options_basis}
  \begin{tabular}[]{lr}
@@ -1583,8 +1598,8 @@ The options for \texttt{basis} are shown in table \ref{tab:options_basis}
                                 & negative disables the guard) \\
   \texttt{-c}                   & Compress the output files \\
   \texttt{-o file\_path}        & Name of output log file\\
-                                & Extension will be .log \\
-  \texttt{-flush}               & Flush the ouput to stdout \\
+                                & Extension will be .log regardless of user input \\
+  \texttt{-flush}               & Flush the output to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
  \end{tabular}
@@ -1602,13 +1617,13 @@ For that, run \texttt{r2k}:
 
 It will calculate from band 0 to the value of the band given (\texttt{highest\_band}),
 unless a minimum band is given.
-The highest band has to be given because in principle not all bands that were initialy calculated will
+The highest band has to be given because in principle not all bands that were initially calculated will
 be complete, and it doesn't make sense to use them in further calculations.
 
-The wave functions originaly are saved for each k-point in a file, and the file contains the value of the wavefunction in each
+The wave functions originally are saved for each k-point in a file, and the file contains the value of the wavefunction in each
 point of the real space.
 This program converts this format to one where for each point in real space there is a file with all the values of wavefunctions
-of the same band as a function of k-points, which is suitable to diferentiate.
+of the same band as a function of k-points, which is suitable to differentiate.
 \begin{equation*}
  \Psi_{\pmb{k}}(\pmb{r}) \rightarrow \Psi_{\pmb{r}}(\pmb{k})
 \end{equation*}
@@ -1621,7 +1636,7 @@ Note that \texttt{geometry} requires uncompressed \emph{wfcpos} files, so \textt
 not be used if \texttt{geometry} will be run afterwards.
 The options for \texttt{r2k} are shown in table \ref{tab:options_r2k}.
 
-\begin{table}[h]
+\begin{table}[ht]
  \centering
  \caption{Options for script \texttt{r2k}}\label{tab:options_r2k}
 \begin{tabular}[]{lr}
@@ -1632,8 +1647,8 @@ The options for \texttt{r2k} are shown in table \ref{tab:options_r2k}.
   \texttt{-c}                   & Compress the output files \\
   \texttt{-savegra}             & Also write the \emph{wfcgra\#.npy} files (default: not written) \\
   \texttt{-o file\_path}        & Name of output log file\\
-                                & Extension will be ignored\\
-  \texttt{-flush}               & Flush the ouput to stdout \\
+                                & Extension will be .log regardless of user input\\
+  \texttt{-flush}               & Flush the output to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
 \end{tabular}
@@ -1651,6 +1666,14 @@ The Berry connections and curvatures are calculated using the script \texttt{geo
 
 The highest band is the number of the last band to be used in the calculations.
 In principle, it will be the same as the one used in \texttt{r2k}.
+
+Depending on the \texttt{-prop} selection, \texttt{geometry} writes some of the following files
+to the \emph{data/geometry} directory: \emph{berryConn\#\_\#.npy} and \emph{berryCur\#\_\#.npy}
+(the Berry connection and curvature for each pair of bands, for \texttt{conn}/\texttt{curv}/\texttt{both}),
+\emph{berryCur\#\_\#\_curl.npy} (curl-method curvature, for \texttt{chern\_curl}), and
+\emph{chern\_number.npy}, \emph{chern\_number\_curl.npy}, \emph{chern\_number\_bp.npy},
+\emph{chern\_number\_bp\_bz.npy} (the Chern number computed by the corresponding method).
+
 The options for \texttt{geometry} are shown in table \ref{tab:options_geometry}.
 
 \begin{table}[ht]
@@ -1662,12 +1685,21 @@ The options for \texttt{geometry} are shown in table \ref{tab:options_geometry}.
   \texttt{-np}                  & Number of threads to use (default: all cores) \\
   \texttt{-mb}                  & Minimum band to consider (default: 0) \\
   \texttt{-mem GB}              & Memory budget in GB for the streaming buffers (default: 32) \\
-  \texttt{-prop}                & Property to calculate: both, conn, curv, chern,\\
-                                & chern\_curl, chern\_bp, chern\_bp\_bz (default: both)\\
+  \texttt{--no-regularize}      & Disable seam regularization. By default the connection/curvature\\
+                                & is interpolated over the clustering-flagged dp-broken seam\\
+                                & k-points (\emph{data/dp\_interp\_mask.npy}) because the finite-\\
+                                & difference gradient spikes there; this flag writes the raw values\\
+  \texttt{-prop}                & Property, or comma-separated list of properties, to calculate:\\
+                                & both, conn, curv, chern, chern\_curl, chern\_bp, chern\_bp\_bz,\\
+                                & plus the aliases chern\_all (all four Chern methods)\\
+                                & and all (everything) (default: both)\\
+  \texttt{-force}               & Recompute the Berry connections/curvatures even if all their\\
+                                & output files already exist (by default the calculation is\\
+                                & skipped when they do)\\
   \texttt{-d}                   & Decimal places to save the Chern number with (default: 0) \\
   \texttt{-o file\_path}        & Name of output log file\\
-                                & Extension will be ignored\\
-  \texttt{-flush}               & Flush the ouput to stdout \\
+                                & Extension will be .log regardless of user input\\
+  \texttt{-flush}               & Flush the output to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
 \end{tabular}
@@ -1693,7 +1725,7 @@ There are several options for the calculation that can be changed and are listed
 table \ref{tab:options_conductivity}.
 
 
-\begin{table}[h]
+\begin{table}[ht]
  \centering
  \caption{Options for scripts \texttt{conductivity} and \texttt{shg}.}\label{tab:options_conductivity}
 \begin{tabular}[]{lr}
@@ -1702,10 +1734,10 @@ table \ref{tab:options_conductivity}.
   \texttt{-np}                  & Number of processes to use (default: 1) \\
   \texttt{-eM}                  & Maximum energy in Ry units (default: 2.5) \\
   \texttt{-eS}                  & Energy step in Ry units (default: 0.001) \\
-  \texttt{-brd}                 & Energy broading in Ry units (default: 0.01) \\
+  \texttt{-brd}                 & Energy broadening in Ry units (default: 0.01) \\
   \texttt{-o file\_path}        & Name of output log file\\
-                                & Extension will be ignored\\
-  \texttt{-flush}               & Flush the ouput to stdout \\
+                                & Extension will be .log regardless of user input\\
+  \texttt{-flush}               & Flush the output to stdout \\
   \texttt{-v}                   & Increase output verbosity \\
   \hline
 \end{tabular}
@@ -1735,15 +1767,15 @@ The details of these calculations can be found in
 
 \begin{appendices}
 
-\chapter{Installing for noncolinear calculations}
+\chapter{Installing for noncollinear calculations}
 \label{ch:noncolinear}
 
-For noncolinear calculations, the fortran script \verb|wfck2r.f90| has to be edited,
+For noncollinear calculations, the fortran script \verb|wfck2r.f90| has to be edited,
 because currently it only prints the first function of the spinor,
 and for \textbf{berry} calculations we need the full spinor in real space.
 
 
-The steps for editing and compiling the fortran scipt are the following:
+The steps for editing and compiling the fortran script are the following:
 
 First, create a copy of \verb|wfck2r.f90| located in PP/src of the {\sc Quantum ESPRESSO}'s home directory
 and name it \verb|wfck2rFR.f90| in the same directory.
@@ -1762,7 +1794,7 @@ if (noncolin) then
   enddo
 endif
 \end{verbatim}
-So this is immediatly after writing the wavefunction (first of the spinor),
+So this is immediately after writing the wavefunction (first of the spinor),
 and simply replicates that writing but for the second wavefunction of the spinor.
 
 The first wavefunction of the spinor is on array \verb|dist_evc_r(:,1)| and the second is on
@@ -1789,7 +1821,7 @@ After this, to compile, just execute the command on the directory PP/src:
     make wfck2rFR.x
 \end{verbatim}
 and it's done.
-You shuld see a link to the executable \verb|wfck2rFR| on the \verb|bin| directory of {\sc Quantum ESPRESSO}.
+You should see a link to the executable \verb|wfck2rFR| on the \verb|bin| directory of {\sc Quantum ESPRESSO}.
 
 \chapter{Glossary}
 
@@ -1902,7 +1934,7 @@ Some utilities are in directory 'utils':
   \item emailSender.py
   \item jit.py
   \item \_logger.py
-  \item wfck2rFR.f90 (Fortran source for the wfck2rFR.x utility, used in noncolinear calculations)
+  \item wfck2rFR.f90 (Fortran source for the wfck2rFR.x utility, used in noncollinear calculations)
 \end{itemize}
 
 It is likely that some of these scripts will be merged with others
@@ -1926,7 +1958,9 @@ The solver's objective is to get closer to the best solution in each iteration b
 
 The bands clustering algorithm uses the wave functions, their dot products, and their corresponding band energy for these calculations.
 
+\begin{sloppypar}
 The output is a set of files that will be used by other programs (\textit{bandsfinal.npy}, \textit{signalfinal.npy}, \textit{correct\_signalfinal.npy}, \textit{degeneratefinal.npy}, \textit{final\_score.npy} and \textit{completed\_bands.npy}), plus a human-readable \textit{final.report}; they are described below.
+\end{sloppypar}
 
 In the following sections we will discuss in more detail the purpose of each band clustering algorithm's part and how it works.
 
@@ -1972,7 +2006,7 @@ It leads to
 \end{equation}
 
 Let us consider the points $p$ and $q$ $\in P$, with $q$ is neighbor of $p$
-(by neighbor we mean that the k-points that are implicit in the varaibles are adjacent in $x$ or $y$ directions in reciprocal space);
+(by neighbor we mean that the k-points that are implicit in the variables are adjacent in $x$ or $y$ directions in reciprocal space);
 the dot product between their Bloch factors is given by $0\leq \left|\braket{p}{q}\right|< 1$.
 If the Bloch factors $p$ and $q$ belong to the same band, and the band is analytic, since they are close together, their dot product should be close to one.
 On the other hand, this dot product should be close to zero if $p$ and $q$ belong to different bands, since different bands are orthogonal.
@@ -2029,7 +2063,7 @@ In the first iteration, these components were computed by constructing the graph
 The initial state of an iteration is the best result of the previous iterations, since SA  is an optimization algorithm.
 
 One SA iteration involves identifying the components, given the initial state in the form of a graph.
-Then, clustering these components gives larger components, that will form a new state that will be used as a initial state of the next iteration.
+Then, clustering these components gives larger components, that will form a new state that will be used as an initial state of the next iteration.
 The optimization process ends when the result does not change between iterations, reaching a stationary solution or the relaxation parameter reaches the minimum value.
 This relaxation value is a parameter for the second part of the algorithm, and will be discussed in more detail later.
 
@@ -2055,7 +2089,7 @@ A component is a sub-graph (i.e., a smaller graph $g$ belonging to a bigger one 
         \caption{}
         \label{fig:Cb}
     \end{subfigure}
-    \caption{Figure }%\ref{fig:Ca} represents a general graph $G(V, E)$ where the vertices $V$ are the gray circles, and the edges $E$ are the line that connects them. Figure \ref{fig:Cb} shows the $G$'s components. Each component is identified with a different color.}
+    \caption{Figure \ref{fig:Ca} represents a general graph $G(V, E)$ where the vertices $V$ are the gray circles, and the edges $E$ are the line that connects them. Figure \ref{fig:Cb} shows the $G$'s components. Each component is identified with a different color.}
     \label{fig:components}
 \end{figure}
 
@@ -2086,8 +2120,8 @@ Nonetheless, for both types of problems, we need a more substantial justificatio
 \subsection{Unsupervised Machine Learning Techniques to Band Clustering}
 
 Since the SA uses UML techniques to classify the components, it is necessary to establish a clear notation.
-We call clusters the components with many points that can not join to another large component, because they are geometricaly incompatibles.
-These clusters are electronic bands of eingenenergies with part of their points attributed.
+We call clusters the components with many points that can not join to another large component, because they are geometrically incompatible.
+These clusters are electronic bands of eigenenergies with part of their points attributed.
 We call samples to the rest of components, that can be assigned to clusters.
 When a cluster has the number of nodes (points $p$) equal to the total number of $k$-points, $N$, this cluster is solved (the band is solved). Otherwise, it is an incomplete cluster, and the sample assignment tries to complete it.
 
@@ -2098,7 +2132,7 @@ So, the $\mathcal{S}$ value must satisfy the following properties:
 
 \begin{enumerate}
     \item It is positive, $\mathcal{S}(\mathrm{X}, \mathrm{Y}) > 0$
-    \item It is symetric, $\mathcal{S}(\mathrm{X}, \mathrm{Y}) = \mathcal{S}(\mathrm{Y}, \mathrm{X})$
+    \item It is symmetric, $\mathcal{S}(\mathrm{X}, \mathrm{Y}) = \mathcal{S}(\mathrm{Y}, \mathrm{X})$
     \item It is maximum when $\mathrm{X}=\mathrm{Y}$, $\mathcal{S}(\mathrm{X}, \mathrm{X})=1$
 \end{enumerate}
 
@@ -2210,20 +2244,20 @@ This UML algorithm is the SA's bottleneck in executing time. Although the scorin
 
 Ultimately, the samples are assigned to clusters, leading to a band solution (a sample may remain unassigned if no compatible cluster remains).
 However, as mentioned before, many problematic points exist.
-In particular, high energy bands usually have many oscilations, and in this case the assumption of smooth variation is inaccurate, and the metric criteria has to be improved.
+In particular, high energy bands usually have many oscillations, and in this case the assumption of smooth variation is inaccurate, and the metric criteria has to be improved.
 
 
 
 
 
 \subsection{Evaluation and optimization of the result}
-The full SA is determinist because the result is always the same for the same conditions. However, after one SA iteration (GT and UML methods), it obtains one solution for the band-crossing problem.
+The full SA is deterministic because the result is always the same for the same conditions. However, after one SA iteration (GT and UML methods), it obtains one solution for the band-crossing problem.
 Different iterations obtain different number of bands completed and correct, which we want to maximize.
-Bands may have points wrongly attributed to them, and so an verification and evaluation is needed.
+Bands may have points wrongly attributed to them, and so a verification and evaluation is needed.
 
 We use two stages to evaluate the iteration result.
 The first one considers only the dot-product information.
-It identifies and signals points acording to their assignment as indicated in table \ref{tab:signals1}.
+It identifies and signals points according to their assignment as indicated in table \ref{tab:signals1}.
 A point is correctly assigned when the mean dot-product $\overline{\left|\braket{p}{q}\right|}$ is close to one.
 
 \begin{table}[H]
@@ -2242,7 +2276,7 @@ A point is correctly assigned when the mean dot-product $\overline{\left|\braket
     \end{tabular}
 \end{table}
 
-This stage signals some points that require more analysis, namelly the ones that are signaled as potentialy correct or mistaken.
+This stage signals some points that require more analysis, namely the ones that are signaled as potentially correct or mistaken.
 The second stage of evaluation analyzes these points to decide if they are effectively correct or not.
 (In-loop, only these doubtful points are analyzed; on the final pass, after the solver stops, every attributed point is re-validated --- see the a-posteriori repair section.)
 This evaluation uses the energy continuity criteria (i.e., the bands need to be analytical in bands-energy space).
