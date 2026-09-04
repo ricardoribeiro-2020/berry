@@ -3,4 +3,5 @@ include README.md
 include setup.py
 include setup.cfg
 include _version.py
+include requirements.txt
 recursive-include berry *.*
